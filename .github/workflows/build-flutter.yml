@@ -22,52 +22,67 @@ jobs:
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
-          java-version: '17' # جافا 17 تدعم بناء كل الإصدارات تقريباً
+          java-version: '17'
 
-      # --- التعديل الذكي: استخدام أحدث نسخة مستقرة لدعم كافة المشاريع ---
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          cache: true
+          flutter-version: '3.19.0' # النسخة الأكثر استقراراً وتوافقاً مع المشاريع المتنوعة
 
       - name: Download & Extract Project
         run: |
           mkdir -p temp_zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
           unzip project.zip -d temp_zip
+          # البحث عن المجلد الرئيسي الذي يحتوي على ملف pubspec
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
-      - name: Auto-Fix Project Dependencies
+      - name: Auto-Repair Project & Inject Identity
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
-          # 1. إجبار المشروع على قبول إصدار Dart الحالي إذا كان هناك تعارض بسيط
-          # يقوم بمسح قيود الإصدار في pubspec لتجنب خطأ "version solving failed"
+          # 1. إصلاح قيود الإصدار في pubspec لتجنب تعارض الـ SDK
           sed -i 's/sdk: ">=.*/sdk: ">=2.12.0 <4.0.0"/g' pubspec.yaml
 
-          # 2. حقن الهوية (الاسم والباكج)
+          # 2. تغيير Package ID واسم التطبيق
           find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
           find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.app_name }}"/' {} +
 
-          # 3. تحديث Gradle Plugin ليتوافق مع Java 17 (الحل السحري لمعظم أخطاء البناء)
+          # 3. معالجة وحقن الأيقونة الجديدة بجميع المقاسات
+          curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
+          mkdir -p android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi
+          convert app_icon_raw.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          convert app_icon_raw.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          convert app_icon_raw.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+          # 4. إصلاح Gradle Wrapper (حل مشكلة filePermissions)
+          if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
+            sed -i 's/gradle-.*-all.zip/gradle-7.5-all.zip/g' android/gradle/wrapper/gradle-wrapper.properties
+          fi
+
+          # 5. تحديث نسخ Kotlin و Gradle Plugin للتوافق مع Java 17
           if [ -f "android/build.gradle" ]; then
             sed -i 's/com.android.tools.build:gradle:[0-9.]*/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
             sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.8.22"/g' android/build.gradle
           fi
 
-          # 4. إصلاح مشاكل الـ SDK Versions القديمة
+          # 6. تحديث Android SDK Versions وحذف الملفات المسببة للأخطاء
           if [ -f "android/app/build.gradle" ]; then
-             sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle
-             sed -i 's/targetSdkVersion .*/targetSdkVersion 34/g' android/app/build.gradle
-             sed -i '/apply from: ".*app_plugin_loader.gradle"/d' android/app/build.gradle
+            sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle
+            sed -i 's/targetSdkVersion .*/targetSdkVersion 34/g' android/app/build.gradle
+            sed -i 's/minSdkVersion .*/minSdkVersion 21/g' android/app/build.gradle
+            sed -i '/apply from: ".*app_plugin_loader.gradle"/d' android/app/build.gradle
           fi
 
       - name: Build APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
-          flutter pub upgrade  # يقوم بتحديث المكتبات المتوافقة تلقائياً
+          flutter clean
+          flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
       - name: Upload to Release
@@ -76,8 +91,8 @@ jobs:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/build/app/outputs/flutter-apk/app-release.apk
           body: |
-            ✅ Build Successful (Universal Mode)
-            App: ${{ github.event.client_payload.app_name }}
-            Package: ${{ github.event.client_payload.package_name }}
+            ✅ تم بناء التطبيق بنجاح عبر Aite.studio
+            - اسم التطبيق: ${{ github.event.client_payload.app_name }}
+            - الحزمة: ${{ github.event.client_payload.package_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

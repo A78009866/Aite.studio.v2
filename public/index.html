@@ -3,185 +3,406 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aite Studio | Flutter Builder</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+    <title>Aite.studio | Flutter Cloud Engine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
     <style>
         :root {
-            --primary: #00E676; /* الأخضر الفسفوري */
-            --bg: #121212;
-            --card: #1E1E1E;
-            --text: #ffffff;
+            --bg-dark: #0a0a0a; --bg-card: #141414;
+            --primary: #00E676; --danger: #ff4444;
+            --text-main: #ffffff; --text-muted: #888888;
+            --border: #333333;
+            --font-ar: 'Cairo', sans-serif;
+            --font-en: 'Outfit', sans-serif;
         }
-        body {
-            font-family: 'Cairo', sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            margin: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        .container {
-            background-color: var(--card);
-            padding: 2rem;
-            border-radius: 15px;
-            width: 90%;
-            max-width: 500px;
-            box-shadow: 0 0 20px rgba(0, 230, 118, 0.1);
-            border: 1px solid #333;
-        }
-        h1 {
-            color: var(--primary);
-            text-align: center;
-            margin-bottom: 2rem;
-            font-weight: 800;
-        }
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-        label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-size: 0.9rem;
-            color: #ccc;
-        }
-        input[type="text"], input[type="file"] {
-            width: 100%;
-            padding: 10px;
-            background: #2C2C2C;
-            border: 1px solid #444;
-            color: white;
-            border-radius: 8px;
-            font-family: 'Cairo', sans-serif;
-            box-sizing: border-box;
-        }
-        input:focus {
-            outline: none;
-            border-color: var(--primary);
-        }
-        .upload-box {
-            border: 2px dashed #444;
-            padding: 20px;
-            text-align: center;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: 0.3s;
-        }
-        .upload-box:hover {
-            border-color: var(--primary);
-            background: rgba(0, 230, 118, 0.05);
-        }
-        button {
-            width: 100%;
-            padding: 15px;
-            background-color: var(--primary);
-            color: #000;
-            border: none;
-            border-radius: 8px;
-            font-size: 1.1rem;
-            font-weight: bold;
-            cursor: pointer;
-            transition: 0.3s;
-        }
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 230, 118, 0.3);
-        }
-        #status {
-            margin-top: 20px;
-            text-align: center;
-            display: none;
-        }
-        .spinner {
-            border: 4px solid rgba(255, 255, 255, 0.1);
-            border-left-color: var(--primary);
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin: 10px auto;
-        }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
+        * { box-sizing: border-box; margin: 0; padding: 0; outline: none; }
+        body { font-family: var(--font-ar); background-color: var(--bg-dark); color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; overflow-x: hidden; }
+
+        /* Loader */
+        #loadingOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-dark); z-index: 9999; display: flex; justify-content: center; align-items: center; }
+        .loader { width: 48px; height: 48px; border: 5px solid #FFF; border-bottom-color: var(--primary); border-radius: 50%; animation: rotation 1s linear infinite; }
+        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Navbar & Lang Switch */
+        .navbar { padding: 1.5rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); max-width: 1400px; margin: 0 auto; width: 100%; }
+        .brand { font-family: var(--font-en); font-size: 1.8rem; font-weight: 700; }
+        .brand .dot { color: var(--primary); }
+        .lang-btn { background: transparent; border: 1px solid var(--border); color: var(--text-main); padding: 5px 15px; border-radius: 20px; cursor: pointer; font-family: var(--font-en); transition: 0.3s; }
+        .lang-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+        /* Layout */
+        .main-container { flex: 1; display: flex; flex-wrap: wrap; width: 100%; padding: 2rem; gap: 4rem; justify-content: center; align-items: flex-start; }
+        .config-panel { flex: 1; min-width: 350px; max-width: 500px; }
+        
+        h2 { font-size: 2.2rem; margin-bottom: 0.5rem; }
+        .subtitle { color: var(--text-muted); margin-bottom: 2.5rem; font-size: 0.95rem; }
+        
+        label { display: block; margin-bottom: 0.6rem; color: var(--text-muted); font-size: 0.9rem; font-weight: 600; }
+        .input-field { width: 100%; background: var(--bg-card); border: 1px solid var(--border); padding: 16px; border-radius: 12px; color: white; margin-bottom: 1.5rem; transition: 0.3s; }
+        .input-field:focus { border-color: var(--primary); }
+
+        /* Upload Areas */
+        .upload-box, .zip-upload-area { border: 2px dashed var(--border); border-radius: 12px; background: var(--bg-card); cursor: pointer; transition: 0.3s; text-align: center; }
+        .upload-box { padding: 1.5rem; margin-bottom: 1.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 120px; }
+        .zip-upload-area { padding: 2rem; background: linear-gradient(145deg, #1a1a1a 0%, #141414 100%); margin-bottom: 2rem; position: relative; }
+        
+        .upload-box:hover, .zip-upload-area:hover { border-color: var(--primary); transform: translateY(-3px); }
+        .zip-upload-area.highlight { border-color: var(--primary); background: rgba(0, 230, 118, 0.05); }
+        
+        .zip-icon { font-size: 3rem; color: #555; margin-bottom: 15px; transition: 0.3s; }
+        .zip-upload-area:hover .zip-icon { color: var(--primary); transform: scale(1.1); }
+        
+        .file-info { display: none; margin-top: 10px; background: rgba(0, 230, 118, 0.1); padding: 8px 15px; border-radius: 50px; color: var(--primary); font-size: 0.9rem; align-items: center; gap: 8px; justify-content: center; }
+
+        /* Button */
+        .build-btn { width: 100%; background: var(--text-main); color: var(--bg-dark); padding: 18px; border-radius: 12px; font-weight: 700; font-size: 1.1rem; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; transition: 0.3s; }
+        .build-btn:hover { background: var(--primary); transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0, 230, 118, 0.2); }
+        .build-btn:disabled { opacity: 0.6; cursor: not-allowed; background: #555; }
+
+        /* Phone Preview */
+        .preview-panel { flex: 1; display: flex; justify-content: center; min-width: 300px; }
+        .phone-frame { width: 310px; height: 630px; background: #000; border-radius: 45px; border: 12px solid #1f1f1f; position: relative; overflow: hidden; box-shadow: 0 40px 80px rgba(0,0,0,0.7); }
+        .status-bar { width: 100%; height: 40px; padding: 0 25px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: white; position: absolute; top: 0; z-index: 10; }
+        .screen { width: 100%; height: 100%; background: linear-gradient(145deg, #1a1a1a 0%, #000 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .app-icon-display { width: 90px; height: 90px; border-radius: 22px; object-fit: cover; display: none; margin-bottom: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.5); }
+        .icon-placeholder { width: 90px; height: 90px; border-radius: 22px; background: #222; display: flex; align-items: center; justify-content: center; margin-bottom: 20px; color: #444; font-size: 2.5rem; border: 2px dashed #333; }
+        .app-name-display { font-size: 1.4rem; font-weight: 600; color: white; text-align: center; width: 80%; }
+
+        /* Status & Modals */
+        #statusContainer { margin-top: 25px; padding: 25px; background: #111; border-radius: 16px; border: 1px solid #222; display: none; }
+        .progress-track { width: 100%; height: 8px; background: #222; border-radius: 10px; overflow: hidden; margin-top: 15px; }
+        .progress-fill { width: 0%; height: 100%; background: var(--primary); transition: width 0.5s ease; }
+        
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 3000; display: none; justify-content: center; align-items: center; backdrop-filter: blur(5px); }
+        .modal-content { background: var(--bg-card); padding: 2rem; border-radius: 16px; border: 1px solid var(--border); width: 90%; max-width: 400px; text-align: center; }
+        .modal-actions { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
+        .modal-btn { padding: 10px 20px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn-confirm { background: var(--primary); color: #000; }
+        .btn-cancel { background: #333; color: white; }
+        .crop-container { width: 100%; height: 350px; background: #000; margin-bottom: 20px; overflow: hidden; border-radius: 8px; }
+        
+        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #222; color: white; padding: 14px 28px; border-radius: 50px; opacity: 0; transition: 0.3s; z-index: 2000; border: 1px solid #333; }
+        .toast.show { opacity: 1; bottom: 45px; }
+
+        @media (max-width: 900px) { .main-container { flex-direction: column-reverse; align-items: center; } .config-panel { width: 100%; } }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>Aite Studio <span style="font-size:0.5em; color:#fff">Flutter Engine</span></h1>
-    
-    <form id="buildForm">
-        <div class="form-group">
-            <label>اسم التطبيق (App Name)</label>
-            <input type="text" id="appName" placeholder="مثال: متجري" required>
-        </div>
+    <div id="loadingOverlay"><span class="loader"></span></div>
 
-        <div class="form-group">
-            <label>معرف الحزمة (Package Name)</label>
-            <input type="text" id="packageName" placeholder="مثال: com.aite.shop" required>
-        </div>
-
-        <div class="form-group">
-            <label>أيقونة التطبيق (PNG)</label>
-            <div class="upload-box">
-                <input type="file" id="appIcon" accept="image/png" required>
+    <div id="cropModal" class="modal-overlay">
+        <div class="modal-content" style="width: 500px; max-width: 95%;">
+            <h3 style="margin-bottom: 15px; color: var(--text-main);" data-i18n="crop_title">Adjust Icon</h3>
+            <div class="crop-container"><img id="cropImage" src="" style="max-width: 100%;"></div>
+            <div class="modal-actions">
+                <button class="modal-btn btn-confirm" onclick="performCrop()"><i class="fa-solid fa-check"></i> <span data-i18n="confirm">Confirm</span></button>
+                <button class="modal-btn btn-cancel" onclick="closeCropModal()" data-i18n="cancel">Cancel</button>
             </div>
         </div>
-
-        <div class="form-group">
-            <label>ملف المشروع (ZIP)</label>
-            <div class="upload-box">
-                <input type="file" id="projectZip" accept=".zip" required>
-            </div>
-            <small style="color:#666; display:block; margin-top:5px;">تأكد أن المجلد يحتوي على ملفات Flutter (android, lib, pubspec.yaml)</small>
-        </div>
-
-        <button type="submit" id="submitBtn">🚀 بدء البناء السحابي</button>
-    </form>
-
-    <div id="status">
-        <div class="spinner"></div>
-        <p id="statusText">جاري رفع الملفات...</p>
     </div>
-</div>
 
-<script>
-    document.getElementById('buildForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
+    <nav class="navbar">
+        <div class="brand">Aite<span class="dot">.</span>studio</div>
+        <button class="lang-btn" onclick="toggleLanguage()">EN / AR</button>
+    </nav>
+
+    <div class="main-container">
         
-        const btn = document.getElementById('submitBtn');
-        const statusDiv = document.getElementById('status');
-        const statusText = document.getElementById('statusText');
-        
-        btn.style.display = 'none';
-        statusDiv.style.display = 'block';
+        <div class="config-panel">
+            <h2 data-i18n="welcome_title">Welcome Developer!</h2>
+            <p class="subtitle" data-i18n="welcome_sub">Upload your Flutter project source code, and we'll build and sign the APK in the cloud.</p>
+            
+            <form id="buildForm">
+                <label data-i18n="label_app_name">App Name</label>
+                <input type="text" class="input-field" id="appName" placeholder="e.g. My Shop" oninput="updatePreview()" required>
+                
+                <label data-i18n="label_pkg_name">Package ID</label>
+                <input type="text" class="input-field" id="packageName" placeholder="e.g. com.aite.shop" required>
 
-        const formData = new FormData();
-        formData.append('appName', document.getElementById('appName').value);
-        formData.append('packageName', document.getElementById('packageName').value);
-        formData.append('icon', document.getElementById('appIcon').files[0]);
-        formData.append('projectZip', document.getElementById('projectZip').files[0]);
+                <label data-i18n="label_icon">App Icon (PNG)</label>
+                <div class="upload-box" onclick="document.getElementById('iconInput').click()">
+                    <div id="uploadText">
+                        <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2rem; margin-bottom: 10px; color:#555;"></i>
+                        <span style="display:block; font-size:0.9rem;" data-i18n="click_upload_icon">Click to select icon</span>
+                    </div>
+                    <input type="file" id="iconInput" accept="image/*" style="display:none">
+                </div>
 
-        try {
-            const response = await fetch('/build-flutter', {
-                method: 'POST',
-                body: formData
+                <label data-i18n="label_zip">Project Source (ZIP)</label>
+                <div class="zip-upload-area" id="zipDropZone" onclick="document.getElementById('zipInput').click()">
+                    <i class="fa-regular fa-folder-open zip-icon"></i>
+                    <h3 style="font-size: 1.1rem; margin-bottom: 5px;" data-i18n="upload_zip_title">Upload Flutter Code</h3>
+                    <p style="font-size: 0.8rem; color: #888;" data-i18n="upload_zip_desc">Folder must contain android/ and lib/</p>
+                    <div id="fileInfo" class="file-info"><i class="fa-solid fa-file-zipper"></i> <span id="fileName">project.zip</span></div>
+                    <input type="file" id="zipInput" accept=".zip" style="display:none">
+                </div>
+
+                <button type="submit" class="build-btn" id="submitBtn">
+                    <i class="fa-solid fa-hammer"></i> <span data-i18n="btn_start_build">Start Cloud Build</span>
+                </button>
+            </form>
+
+            <div id="statusContainer">
+                <div style="display:flex; justify-content:space-between; align-items: center;">
+                    <span style="color:#888; font-size: 0.85rem;" data-i18n="status_label">Status:</span>
+                    <span id="currentStatus" style="color:var(--primary); font-weight: bold; font-size: 0.9rem;">...</span>
+                </div>
+                <div class="progress-track"><div id="progressBar" class="progress-fill"></div></div>
+                <div id="resultArea" style="margin-top: 15px; font-size: 0.9rem; line-height: 1.5; color: #ccc;"></div>
+            </div>
+        </div>
+
+        <div class="preview-panel">
+            <div class="phone-frame">
+                <div class="status-bar" dir="ltr">
+                    <span id="phoneTime">12:00</span>
+                    <div style="display:flex; gap:6px; opacity: 0.8;"><i class="fa-solid fa-signal"></i><i class="fa-solid fa-wifi"></i><i class="fa-solid fa-battery-full"></i></div>
+                </div>
+                <div class="screen">
+                    <div id="iconPlaceholder" class="icon-placeholder"><i class="fa-brands fa-android"></i></div>
+                    <img id="previewIcon" class="app-icon-display">
+                    <div id="previewName" class="app-name-display">App Name</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer style="text-align: center; padding: 2rem; color: #444; font-size: 0.8rem; border-top: 1px solid #1a1a1a;">
+        &copy; 2026 Aite.studio - Flutter Cloud Builder.
+    </footer>
+
+    <div id="toast" class="toast"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+    <script>
+        // --- Translations ---
+        const translations = {
+            ar: {
+                welcome_title: "مرحباً أيها المطور!",
+                welcome_sub: "قم برفع كود مشروع فلاتر الخاص بك، وسنقوم ببنائه وتوقيعه سحابياً.",
+                label_app_name: "اسم التطبيق",
+                label_pkg_name: "معرف الحزمة (Package ID)",
+                label_icon: "أيقونة التطبيق (PNG)",
+                label_zip: "ملف المشروع المضغوط (ZIP)",
+                click_upload_icon: "اضغط لاختيار الأيقونة",
+                upload_zip_title: "ارفع كود فلاتر هنا",
+                upload_zip_desc: "يجب أن يحتوي المجلد على android/ و lib/",
+                btn_start_build: "بدء البناء السحابي",
+                crop_title: "ضبط الأيقونة",
+                confirm: "اعتماد",
+                cancel: "إلغاء",
+                status_label: "حالة البناء:",
+                status_uploading: "جاري رفع الملفات إلى السيرفر...",
+                status_success: "تم الاستلام بنجاح!",
+                status_error: "فشل الإرسال",
+                msg_success: "تم إرسال المهمة. سيصلك التطبيق عبر تليجرام فور الانتهاء.",
+                err_select_icon: "يرجى اختيار وقص أيقونة التطبيق",
+                err_select_zip: "يرجى رفع ملف المشروع (ZIP)",
+                err_only_zip: "يرجى رفع ملف بصيغة ZIP فقط"
+            },
+            en: {
+                welcome_title: "Welcome Developer!",
+                welcome_sub: "Upload your Flutter project source code, and we'll build and sign the APK in the cloud.",
+                label_app_name: "App Name",
+                label_pkg_name: "Package ID",
+                label_icon: "App Icon (PNG)",
+                label_zip: "Project Source (ZIP)",
+                click_upload_icon: "Click to select icon",
+                upload_zip_title: "Upload Flutter Code",
+                upload_zip_desc: "Folder must contain android/ and lib/",
+                btn_start_build: "Start Cloud Build",
+                crop_title: "Adjust Icon",
+                confirm: "Confirm",
+                cancel: "Cancel",
+                status_label: "Build Status:",
+                status_uploading: "Uploading files to server...",
+                status_success: "Received Successfully!",
+                status_error: "Upload Failed",
+                msg_success: "Task submitted. You will receive the APK via Telegram shortly.",
+                err_select_icon: "Please select and crop the app icon",
+                err_select_zip: "Please upload the project ZIP file",
+                err_only_zip: "Please upload ZIP files only"
+            }
+        };
+
+        let currentLang = 'ar';
+
+        window.addEventListener('load', () => {
+            document.getElementById('loadingOverlay').style.display = 'none';
+            updatePhoneTime();
+            setLanguage('ar'); // Default to Arabic
+        });
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'ar' ? 'en' : 'ar';
+            setLanguage(currentLang);
+        }
+
+        function setLanguage(lang) {
+            document.documentElement.lang = lang;
+            document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+            document.body.style.fontFamily = lang === 'ar' ? "var(--font-ar)" : "var(--font-en)";
+
+            // Update Text
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (translations[lang][key]) el.innerText = translations[lang][key];
             });
 
-            const result = await response.json();
-
-            if (result.success) {
-                statusText.innerHTML = "✅ تم الإرسال بنجاح!<br>سيصلك التطبيق عبر تليجرام عند اكتمال البناء.";
-                document.querySelector('.spinner').style.display = 'none';
-            } else {
-                throw new Error(result.error);
-            }
-        } catch (error) {
-            statusText.textContent = "❌ حدث خطأ: " + error.message;
-            btn.style.display = 'block';
+            // Update Placeholders
+            document.getElementById('appName').placeholder = lang === 'ar' ? "مثال: متجري" : "e.g. My Shop";
+            document.getElementById('packageName').placeholder = lang === 'ar' ? "مثال: com.aite.shop" : "e.g. com.aite.shop";
         }
-    });
-</script>
 
+        function updatePhoneTime() {
+            const now = new Date();
+            document.getElementById('phoneTime').innerText = 
+                now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+            setTimeout(updatePhoneTime, 1000);
+        }
+
+        function showToast(msgKey) {
+            const t = document.getElementById('toast');
+            t.innerText = translations[currentLang][msgKey] || msgKey;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 4000);
+        }
+
+        // --- Drag & Drop ZIP ---
+        const dropZone = document.getElementById('zipDropZone');
+        const zipInput = document.getElementById('zipInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileNameSpan = document.getElementById('fileName');
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eName => {
+            dropZone.addEventListener(eName, e => { e.preventDefault(); e.stopPropagation(); }, false);
+        });
+
+        ['dragenter', 'dragover'].forEach(eName => dropZone.addEventListener(eName, () => dropZone.classList.add('highlight'), false));
+        ['dragleave', 'drop'].forEach(eName => dropZone.addEventListener(eName, () => dropZone.classList.remove('highlight'), false));
+
+        dropZone.addEventListener('drop', handleDrop, false);
+        function handleDrop(e) { handleFiles(e.dataTransfer.files); }
+        zipInput.addEventListener('change', function() { handleFiles(this.files); });
+
+        function handleFiles(files) {
+            if (files.length > 0) {
+                const file = files[0];
+                if(file.name.endsWith('.zip')) {
+                    fileNameSpan.innerText = file.name + ` (${(file.size/1024/1024).toFixed(2)} MB)`;
+                    fileInfo.style.display = 'flex';
+                    zipInput.files = files;
+                } else {
+                    showToast('err_only_zip');
+                }
+            }
+        }
+
+        // --- Cropper ---
+        let cropper = null;
+        let finalIconBlob = null;
+        
+        document.getElementById('iconInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    document.getElementById('cropImage').src = evt.target.result;
+                    document.getElementById('cropModal').style.display = 'flex';
+                    if(cropper) cropper.destroy();
+                    cropper = new Cropper(document.getElementById('cropImage'), { aspectRatio: 1, viewMode: 1 });
+                };
+                reader.readAsDataURL(file);
+            }
+            e.target.value = '';
+        });
+
+        window.closeCropModal = function() {
+            document.getElementById('cropModal').style.display = 'none';
+            if(cropper) { cropper.destroy(); cropper = null; }
+        }
+
+        window.performCrop = function() {
+            if(!cropper) return;
+            cropper.getCroppedCanvas({ width: 512, height: 512 }).toBlob((blob) => {
+                finalIconBlob = blob;
+                const previewUrl = URL.createObjectURL(blob);
+                const previewImg = document.getElementById('previewIcon');
+                previewImg.src = previewUrl;
+                previewImg.style.display = 'block';
+                document.getElementById('iconPlaceholder').style.display = 'none';
+                document.getElementById('uploadText').innerHTML = 
+                    '<i class="fa-solid fa-circle-check" style="color:var(--primary); font-size:2rem;"></i>';
+                closeCropModal();
+            }, 'image/png');
+        }
+
+        window.updatePreview = function() {
+            const name = document.getElementById('appName').value;
+            document.getElementById('previewName').innerText = name || "App Name";
+        }
+
+        // --- Submit ---
+        document.getElementById('buildForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const zipFile = document.getElementById('zipInput').files[0];
+            if(!finalIconBlob) return showToast('err_select_icon');
+            if(!zipFile) return showToast('err_select_zip');
+
+            const btn = document.getElementById('submitBtn');
+            const statusDiv = document.getElementById('statusContainer');
+            const statusTxt = document.getElementById('currentStatus');
+            const progressBar = document.getElementById('progressBar');
+            const resultArea = document.getElementById('resultArea');
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loader" style="width:20px; height:20px; border-width:2px;"></span>';
+            statusDiv.style.display = 'block';
+            statusTxt.innerText = translations[currentLang]['status_uploading'];
+            progressBar.style.width = '10%';
+            resultArea.innerHTML = '';
+
+            const formData = new FormData();
+            formData.append('appName', document.getElementById('appName').value);
+            formData.append('packageName', document.getElementById('packageName').value);
+            formData.append('icon', finalIconBlob, 'icon.png');
+            formData.append('projectZip', zipFile);
+
+            try {
+                let fakeProgress = 10;
+                const progressInterval = setInterval(() => {
+                    if(fakeProgress < 90) { fakeProgress += 5; progressBar.style.width = fakeProgress + '%'; }
+                }, 500);
+
+                const response = await fetch('/build-flutter', { method: 'POST', body: formData });
+                clearInterval(progressInterval);
+                const result = await response.json();
+
+                if (result.success) {
+                    progressBar.style.width = '100%';
+                    statusTxt.innerText = translations[currentLang]['status_success'];
+                    resultArea.innerHTML = `
+                        <div style="text-align:center; padding:10px;">
+                            <i class="fa-brands fa-telegram" style="font-size:3rem; color:#0088cc; margin-bottom:10px;"></i>
+                            <p>${translations[currentLang]['msg_success']}</p>
+                            <small style="color:#666">Build ID: ${result.build_id}</small>
+                        </div>
+                    `;
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                } else { throw new Error(result.error); }
+            } catch (error) {
+                console.error(error);
+                statusTxt.innerText = translations[currentLang]['status_error'];
+                statusTxt.style.color = "var(--danger)";
+                progressBar.style.background = "var(--danger)";
+                resultArea.innerText = "Error: " + error.message;
+                btn.disabled = false;
+                btn.innerHTML = translations[currentLang]['btn_start_build'];
+            }
+        });
+    </script>
 </body>
 </html>

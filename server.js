@@ -91,6 +91,10 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
         res.status(500).json({ success: false, error: error.message });
     }
 });
-
+// امسح app.listen القديم واستبدله بهذا:
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Aite Studio running on port ${PORT}`));
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
+
+module.exports = app;

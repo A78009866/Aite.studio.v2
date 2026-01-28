@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aite Studio | Flutter Builder</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00E676; /* الأخضر الفسفوري */
+            --bg: #121212;
+            --card: #1E1E1E;
+            --text: #ffffff;
+        }
+        body {
+            font-family: 'Cairo', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: var(--card);
+            padding: 2rem;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 0 20px rgba(0, 230, 118, 0.1);
+            border: 1px solid #333;
+        }
+        h1 {
+            color: var(--primary);
+            text-align: center;
+            margin-bottom: 2rem;
+            font-weight: 800;
+        }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            color: #ccc;
+        }
+        input[type="text"], input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            background: #2C2C2C;
+            border: 1px solid #444;
+            color: white;
+            border-radius: 8px;
+            font-family: 'Cairo', sans-serif;
+            box-sizing: border-box;
+        }
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .upload-box {
+            border: 2px dashed #444;
+            padding: 20px;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        .upload-box:hover {
+            border-color: var(--primary);
+            background: rgba(0, 230, 118, 0.05);
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background-color: var(--primary);
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 230, 118, 0.3);
+        }
+        #status {
+            margin-top: 20px;
+            text-align: center;
+            display: none;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: var(--primary);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Aite Studio <span style="font-size:0.5em; color:#fff">Flutter Engine</span></h1>
+    
+    <form id="buildForm">
+        <div class="form-group">
+            <label>اسم التطبيق (App Name)</label>
+            <input type="text" id="appName" placeholder="مثال: متجري" required>
+        </div>
+
+        <div class="form-group">
+            <label>معرف الحزمة (Package Name)</label>
+            <input type="text" id="packageName" placeholder="مثال: com.aite.shop" required>
+        </div>
+
+        <div class="form-group">
+            <label>أيقونة التطبيق (PNG)</label>
+            <div class="upload-box">
+                <input type="file" id="appIcon" accept="image/png" required>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>ملف المشروع (ZIP)</label>
+            <div class="upload-box">
+                <input type="file" id="projectZip" accept=".zip" required>
+            </div>
+            <small style="color:#666; display:block; margin-top:5px;">تأكد أن المجلد يحتوي على ملفات Flutter (android, lib, pubspec.yaml)</small>
+        </div>
+
+        <button type="submit" id="submitBtn">🚀 بدء البناء السحابي</button>
+    </form>
+
+    <div id="status">
+        <div class="spinner"></div>
+        <p id="statusText">جاري رفع الملفات...</p>
+    </div>
+</div>
+
+<script>
+    document.getElementById('buildForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const btn = document.getElementById('submitBtn');
+        const statusDiv = document.getElementById('status');
+        const statusText = document.getElementById('statusText');
+        
+        btn.style.display = 'none';
+        statusDiv.style.display = 'block';
+
+        const formData = new FormData();
+        formData.append('appName', document.getElementById('appName').value);
+        formData.append('packageName', document.getElementById('packageName').value);
+        formData.append('icon', document.getElementById('appIcon').files[0]);
+        formData.append('projectZip', document.getElementById('projectZip').files[0]);
+
+        try {
+            const response = await fetch('/build-flutter', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                statusText.innerHTML = "✅ تم الإرسال بنجاح!<br>سيصلك التطبيق عبر تليجرام عند اكتمال البناء.";
+                document.querySelector('.spinner').style.display = 'none';
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            statusText.textContent = "❌ حدث خطأ: " + error.message;
+            btn.style.display = 'block';
+        }
+    });
+</script>
+
+</body>
+</html>

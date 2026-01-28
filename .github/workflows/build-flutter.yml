@@ -18,7 +18,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y imagemagick
 
-      # استخدام Java 17 لأننا سنرفع نسخة Gradle للمستوى الحديث
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
@@ -29,7 +28,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.16.0' # نسخة حديثة ومستقرة جداً
+          flutter-version: '3.16.0'
 
       - name: Download & Extract Project
         run: |
@@ -43,11 +42,9 @@ jobs:
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
-          # 1. تغيير الـ Package ID واسم التطبيق
           find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
           find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.app_name }}"/' {} +
           
-          # 2. معالجة الأيقونة
           curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
           mkdir -p android/app/src/main/res/mipmap-mdpi
           mkdir -p android/app/src/main/res/mipmap-hdpi
@@ -60,18 +57,10 @@ jobs:
           convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
-          # 3. "تنظيف عميق" لملفات Gradle لفرض التوافقية
           if [ -d "android" ]; then
-            # تحديث نسخة Kotlin لتجنب تعارضها مع Gradle الحديث
             sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.8.22"/g' android/build.gradle
-            
-            # تحديث نسخة Gradle Plugin إلى 7.3.0 المتوافقة مع Java 17 و Flutter الحديث
             sed -i 's/com.android.tools.build:gradle:.*/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
-            
-            # حذف السطر القديم المسبب للخطأ
             sed -i '/apply from: ".*app_plugin_loader.gradle"/d' android/app/build.gradle
-            
-            # رفع إصدار SDK المطلوب ليتوافق مع المكتبات الحديثة
             sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle
             sed -i 's/targetSdkVersion .*/targetSdkVersion 34/g' android/app/build.gradle
             sed -i 's/minSdkVersion .*/minSdkVersion 21/g' android/app/build.gradle
@@ -90,7 +79,7 @@ jobs:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/build/app/outputs/flutter-apk/app-release.apk
           body: |
-             Aite Studio Build Completed
+            ✅ Aite Studio Build Completed
             App: ${{ github.event.client_payload.app_name }}
             Package: ${{ github.event.client_payload.package_name }}
         env:

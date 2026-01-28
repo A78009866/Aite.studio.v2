@@ -13,6 +13,12 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
+      # --- إصلاح الخطأ: تثبيت ImageMagick ---
+      - name: Install ImageMagick
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
@@ -23,41 +29,45 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.16.0'
 
       - name: Download & Extract Project
         run: |
-          mkdir -p user_project
+          mkdir -p temp_zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
-          unzip project.zip -d user_project
+          unzip project.zip -d temp_zip
           
-          # Detect Root (In case user zipped a folder)
-          if [ -d "user_project/android" ]; then
-            echo "PROJECT_ROOT=user_project" >> $GITHUB_ENV
-          else
-            ROOT_DIR=$(find user_project -maxdepth 2 -type d -name "android" | xargs dirname)
-            echo "PROJECT_ROOT=$ROOT_DIR" >> $GITHUB_ENV
-          fi
+          # البحث عن المجلد الذي يحتوي على pubspec.yaml لجعله الجذر
+          REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
+          echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
+          echo "Found project root at: $REAL_ROOT"
 
       - name: Inject Identity (Name, ID, Icon)
         run: |
+          # الانتقال لجذر المشروع المكتشف
           cd ${{ env.PROJECT_ROOT }}
           
-          # 1. Inject Package Name (Gradle)
+          # 1. تغيير الـ Package ID
           find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
           
-          # 2. Inject App Name (Manifest)
+          # 2. تغيير اسم التطبيق
           find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.app_name }}"/' {} +
           
-          # 3. Inject Icon
-          curl -L "${{ github.event.client_payload.icon_url }}" -o new_icon.png
+          # 3. معالجة الأيقونة باستخدام ImageMagick
+          curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
           
-          # Resize and replace icons
-          convert new_icon.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
-          convert new_icon.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
-          convert new_icon.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          convert new_icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          convert new_icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          # تأكد من وجود المجلدات قبل الحقن
+          mkdir -p android/app/src/main/res/mipmap-mdpi
+          mkdir -p android/app/src/main/res/mipmap-hdpi
+          mkdir -p android/app/src/main/res/mipmap-xhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
+
+          # توليد المقاسات (استخدام اللاحقة الجديدة لـ ImageMagick v7 إذا لزم الأمر أو التوافقية)
+          convert app_icon_raw.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          convert app_icon_raw.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          convert app_icon_raw.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
       - name: Build APK
         run: |
@@ -71,8 +81,8 @@ jobs:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/build/app/outputs/flutter-apk/app-release.apk
           body: |
-            **Aite Studio Build**
-            Name: ${{ github.event.client_payload.app_name }}
+            ✅ Aite Studio Build Completed
+            App: ${{ github.event.client_payload.app_name }}
             Package: ${{ github.event.client_payload.package_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -27,7 +27,6 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      # تم إضافة التخزين المؤقت (Cache) لتقليل وقت التحميل في المرات القادمة
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -72,21 +71,26 @@ jobs:
             sed -i '/apply from: ".*app_plugin_loader.gradle"/d' android/app/build.gradle
           fi
 
-      # التعديل السحري للحجم والسرعة: بناء فقط لمعمارية arm64-v8a مع الضغط
       - name: Build Optimized APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
           flutter pub get
           flutter build apk --release --target-platform android-arm64 --split-per-abi --obfuscate --split-debug-info=build/app/outputs/symbols
+          
+          # --- الجزء الجديد: إعادة تسمية الملف الناتج ---
+          ORIGINAL_PATH="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+          NEW_NAME="${{ github.event.client_payload.app_name }}.apk"
+          mv "$ORIGINAL_PATH" "build/app/outputs/flutter-apk/$NEW_NAME"
+          echo "FINAL_APK_PATH=build/app/outputs/flutter-apk/$NEW_NAME" >> $GITHUB_ENV
 
       - name: Upload Optimized APK
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}
-          files: ${{ env.PROJECT_ROOT }}/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          files: ${{ env.PROJECT_ROOT }}/${{ env.FINAL_APK_PATH }}
           body: |
-            ✅ Build Successful (Optimized)
-            Architecture: ARM64 (Modern Devices)
-            App: ${{ github.event.client_payload.app_name }}
+            ✅ تم بناء تطبيقك بنجاح
+            اسم الملف: ${{ github.event.client_payload.app_name }}.apk
+            المعمارية: ARM64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

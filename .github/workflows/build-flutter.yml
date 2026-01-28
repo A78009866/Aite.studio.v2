@@ -18,13 +18,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y imagemagick
 
+      # --- تعديل: استخدام Java 11 لضمان التوافق مع المشاريع القديمة ---
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '11' 
 
-      # تم تثبيت نسخة 3.13 لضمان أعلى توافقية مع المشاريع القديمة والجديدة
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -39,7 +39,7 @@ jobs:
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
-      - name: Inject Identity & Fix Gradle
+      - name: Inject Identity & Fix Environment
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
@@ -62,8 +62,15 @@ jobs:
           convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
-          # 4. إصلاح مشاكل Gradle (تجاوز خطأ app_plugin_loader)
+          # 4. إصلاح ملفات Gradle برمجياً لتجنب تعارض الإصدارات
+          if [ -f "android/build.gradle" ]; then
+            # رفع نسخة Gradle Plugin لضمان عملها مع Java 11/17
+            sed -i 's/com.android.tools.build:gradle:4.1.0/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
+            sed -i 's/com.android.tools.build:gradle:3.5.0/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
+          fi
+          
           if [ -f "android/app/build.gradle" ]; then
+            # حذف السطر المسبب للمشاكل في النسخ الحديثة
             sed -i '/apply from: ".*app_plugin_loader.gradle"/d' android/app/build.gradle
           fi
 
@@ -72,7 +79,7 @@ jobs:
           cd ${{ env.PROJECT_ROOT }}
           flutter clean
           flutter pub get
-          # بناء APK مع تعطيل tree-shake-icons لتجنب مشاكل الخطوط في بعض المشاريع
+          # استخدام فلاتر لبناء APK
           flutter build apk --release --no-tree-shake-icons
 
       - name: Upload to Release

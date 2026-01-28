@@ -18,18 +18,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y imagemagick
 
-      # --- تعديل: استخدام Java 11 لضمان التوافق مع المشاريع القديمة ---
+      # استخدام Java 17 لأننا سنرفع نسخة Gradle للمستوى الحديث
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
-          java-version: '11' 
+          java-version: '17'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.13.0'
+          flutter-version: '3.16.0' # نسخة حديثة ومستقرة جداً
 
       - name: Download & Extract Project
         run: |
@@ -39,17 +39,15 @@ jobs:
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
-      - name: Inject Identity & Fix Environment
+      - name: Inject Identity & Force Modern Gradle
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
-          # 1. تغيير الـ Package ID
+          # 1. تغيير الـ Package ID واسم التطبيق
           find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
-          
-          # 2. تغيير اسم التطبيق
           find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.app_name }}"/' {} +
           
-          # 3. معالجة الأيقونة
+          # 2. معالجة الأيقونة
           curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
           mkdir -p android/app/src/main/res/mipmap-mdpi
           mkdir -p android/app/src/main/res/mipmap-hdpi
@@ -62,16 +60,21 @@ jobs:
           convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
-          # 4. إصلاح ملفات Gradle برمجياً لتجنب تعارض الإصدارات
-          if [ -f "android/build.gradle" ]; then
-            # رفع نسخة Gradle Plugin لضمان عملها مع Java 11/17
-            sed -i 's/com.android.tools.build:gradle:4.1.0/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
-            sed -i 's/com.android.tools.build:gradle:3.5.0/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
-          fi
-          
-          if [ -f "android/app/build.gradle" ]; then
-            # حذف السطر المسبب للمشاكل في النسخ الحديثة
+          # 3. "تنظيف عميق" لملفات Gradle لفرض التوافقية
+          if [ -d "android" ]; then
+            # تحديث نسخة Kotlin لتجنب تعارضها مع Gradle الحديث
+            sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.8.22"/g' android/build.gradle
+            
+            # تحديث نسخة Gradle Plugin إلى 7.3.0 المتوافقة مع Java 17 و Flutter الحديث
+            sed -i 's/com.android.tools.build:gradle:.*/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
+            
+            # حذف السطر القديم المسبب للخطأ
             sed -i '/apply from: ".*app_plugin_loader.gradle"/d' android/app/build.gradle
+            
+            # رفع إصدار SDK المطلوب ليتوافق مع المكتبات الحديثة
+            sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle
+            sed -i 's/targetSdkVersion .*/targetSdkVersion 34/g' android/app/build.gradle
+            sed -i 's/minSdkVersion .*/minSdkVersion 21/g' android/app/build.gradle
           fi
 
       - name: Build APK
@@ -79,7 +82,6 @@ jobs:
           cd ${{ env.PROJECT_ROOT }}
           flutter clean
           flutter pub get
-          # استخدام فلاتر لبناء APK
           flutter build apk --release --no-tree-shake-icons
 
       - name: Upload to Release
@@ -88,8 +90,8 @@ jobs:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/build/app/outputs/flutter-apk/app-release.apk
           body: |
-            ✅ Aite Studio Build Completed
-            App Name: ${{ github.event.client_payload.app_name }}
+             Aite Studio Build Completed
+            App: ${{ github.event.client_payload.app_name }}
             Package: ${{ github.event.client_payload.package_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

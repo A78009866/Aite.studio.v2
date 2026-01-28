@@ -85,6 +85,83 @@
         .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #222; color: white; padding: 14px 28px; border-radius: 50px; opacity: 0; transition: 0.3s; z-index: 2000; border: 1px solid #333; }
         .toast.show { opacity: 1; bottom: 45px; }
 
+        /* New styles for Auth and My Apps */
+        .auth-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+        .auth-section #userInfo {
+            width: 100%;
+            justify-content: space-between;
+        }
+        .built-apps-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .app-card {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            transition: 0.3s;
+        }
+        .app-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+        }
+        .app-card img {
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
+            object-fit: cover;
+        }
+        .app-card-info {
+            flex-grow: 1;
+        }
+        .app-card-info h4 {
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+        }
+        .app-card-info p {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        .app-card-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .app-card-actions .btn {
+            padding: 8px 15px;
+            border-radius: 8px;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+            background: var(--primary);
+            color: var(--bg-dark);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .app-card-actions .btn:hover {
+            opacity: 0.9;
+        }
+        .app-card-actions .btn-status {
+            background: #333;
+            color: white;
+        }
+
         @media (max-width: 900px) { .main-container { flex-direction: column-reverse; align-items: center; } .config-panel { width: 100%; } }
     </style>
 </head>
@@ -103,18 +180,41 @@
         </div>
     </div>
 
+    <!-- Language Modal -->
+    <div id="langModal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 style="margin-bottom: 20px;" data-i18n="select_language">Select Language</h3>
+            <div class="modal-actions">
+                <button class="modal-btn btn-confirm" onclick="setLanguageAndCloseModal('ar')">العربية</button>
+                <button class="modal-btn btn-confirm" onclick="setLanguageAndCloseModal('en')">English</button>
+            </div>
+        </div>
+    </div>
+
     <nav class="navbar">
         <div class="brand">Aite<span class="dot">.</span>studio</div>
-        <button class="lang-btn" onclick="toggleLanguage()">EN / AR</button>
+        <button class="lang-btn" onclick="openLangModal()">EN / AR</button>
     </nav>
 
     <div class="main-container">
         
         <div class="config-panel">
+            <!-- Auth Section -->
+            <div class="auth-section">
+                <div id="userInfo" style="display:none; align-items:center; gap:10px; margin-bottom: 1rem;">
+                    <img id="userPhoto" src="" alt="User Photo" style="width:30px; height:30px; border-radius:50%;">
+                    <span id="userName" style="font-weight:bold;"></span>
+                    <button class="lang-btn" onclick="signOutUser()" style="margin-right: auto;" data-i18n="logout">Logout</button>
+                </div>
+                <button id="googleSignInBtn" class="build-btn" style="margin-bottom: 0; display:none;" onclick="signInWithGoogle()">
+                    <i class="fa-brands fa-google"></i> <span data-i18n="signin_google">Sign in with Google</span>
+                </button>
+            </div>
+
             <h2 data-i18n="welcome_title">Welcome Developer!</h2>
             <p class="subtitle" data-i18n="welcome_sub">Upload your Flutter project source code, and we'll build and sign the APK in the cloud.</p>
             
-            <form id="buildForm">
+            <form id="buildForm" style="display:none;">
                 <label data-i18n="label_app_name">App Name</label>
                 <input type="text" class="input-field" id="appName" placeholder="e.g. My Shop" oninput="updatePreview()" required>
                 
@@ -152,6 +252,16 @@
                 <div class="progress-track"><div id="progressBar" class="progress-fill"></div></div>
                 <div id="resultArea" style="margin-top: 15px; font-size: 0.9rem; line-height: 1.5; color: #ccc;"></div>
             </div>
+
+            <!-- My Apps Section -->
+            <div id="myAppsSection" class="config-panel" style="margin-top: 4rem; display:none;">
+                <h2 data-i18n="my_apps_title">My Built Applications</h2>
+                <p class="subtitle" data-i18n="my_apps_sub">Here you can find all the applications you've built.</p>
+                <div id="builtAppsList" class="built-apps-list">
+                    <!-- Built apps will be loaded here -->
+                    <p data-i18n="no_apps_yet" style="text-align: center; color: var(--text-muted);">No applications built yet.</p>
+                </div>
+            </div>
         </div>
 
         <div class="preview-panel">
@@ -175,6 +285,11 @@
 
     <div id="toast" class="toast"></div>
 
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
     <script>
         // --- Translations ---
@@ -193,14 +308,34 @@
                 crop_title: "ضبط الأيقونة",
                 confirm: "اعتماد",
                 cancel: "إلغاء",
-                status_label: "حالة البناء:",
+                status_label: "الحالة:",
                 status_uploading: "جاري رفع الملفات إلى السيرفر...",
                 status_success: "تم الاستلام بنجاح!",
                 status_error: "فشل الإرسال",
-                msg_success: "تم إرسال المهمة. سيصلك التطبيق عبر تليجرام فور الانتهاء.",
+                msg_success: "تم إرسال المهمة. سيتم إعلامك عند الانتهاء.",
                 err_select_icon: "يرجى اختيار وقص أيقونة التطبيق",
                 err_select_zip: "يرجى رفع ملف المشروع (ZIP)",
-                err_only_zip: "يرجى رفع ملف بصيغة ZIP فقط"
+                err_only_zip: "يرجى رفع ملف بصيغة ZIP فقط",
+                logout: "تسجيل الخروج",
+                signin_google: "تسجيل الدخول باستخدام جوجل",
+                select_language: "اختر اللغة",
+                my_apps_title: "تطبيقاتي المبنية",
+                my_apps_sub: "هنا يمكنك العثور على جميع التطبيقات التي قمت ببنائها.",
+                no_apps_yet: "لم يتم بناء أي تطبيقات بعد.",
+                status_checking: "جاري التحقق من حالة البناء...",
+                status_in_progress: "قيد التقدم...",
+                status_completed_success: "اكتمل بنجاح!",
+                status_completed_failure: "فشل البناء!",
+                download_apk: "تحميل APK",
+                check_status: "التحقق من الحالة",
+                err_login_required: "يرجى تسجيل الدخول للمتابعة.",
+                msg_login_success: "تم تسجيل الدخول بنجاح!",
+                msg_login_failure: "فشل تسجيل الدخول.",
+                msg_logout_success: "تم تسجيل الخروج بنجاح.",
+                msg_logout_failure: "فشل تسجيل الخروج.",
+                err_save_app: "فشل حفظ بيانات التطبيق.",
+                err_load_apps: "فشل تحميل التطبيقات.",
+                build_failed: "فشل البناء"
             },
             en: {
                 welcome_title: "Welcome Developer!",
@@ -216,18 +351,68 @@
                 crop_title: "Adjust Icon",
                 confirm: "Confirm",
                 cancel: "Cancel",
-                status_label: "Build Status:",
+                status_label: "Status:",
                 status_uploading: "Uploading files to server...",
                 status_success: "Received Successfully!",
                 status_error: "Upload Failed",
-                msg_success: "Task submitted. You will receive the APK via Telegram shortly.",
+                msg_success: "Task submitted. You will be notified upon completion.",
                 err_select_icon: "Please select and crop the app icon",
                 err_select_zip: "Please upload the project ZIP file",
-                err_only_zip: "Please upload ZIP files only"
+                err_only_zip: "Please upload ZIP files only",
+                logout: "Logout",
+                signin_google: "Sign in with Google",
+                select_language: "Select Language",
+                my_apps_title: "My Built Applications",
+                my_apps_sub: "Here you can find all the applications you've built.",
+                no_apps_yet: "No applications built yet.",
+                status_checking: "Checking build status...",
+                status_in_progress: "In Progress...",
+                status_completed_success: "Completed Successfully!",
+                status_completed_failure: "Build Failed!",
+                download_apk: "Download APK",
+                check_status: "Check Status",
+                err_login_required: "Please log in to proceed.",
+                msg_login_success: "Logged in successfully!",
+                msg_login_failure: "Login failed.",
+                msg_logout_success: "Logged out successfully.",
+                msg_logout_failure: "Logout failed.",
+                err_save_app: "Failed to save app data.",
+                err_load_apps: "Failed to load applications.",
+                build_failed: "Build Failed"
             }
         };
 
         let currentLang = 'ar';
+
+        // Firebase config and initialization
+        const firebaseConfig = {
+            apiKey: "AIzaSyAN-9qBeL51nwpctJw9rSQYzz1C7dDRf1E",
+            authDomain: "world-3212f.firebaseapp.com",
+            databaseURL: "https://world-3212f-default-rtdb.firebaseio.com",
+            projectId: "world-3212f",
+            storageBucket: "world-3212f.firebasestorage.app",
+            messagingSenderId: "421425146697",
+            appId: "1:421425146697:web:efa372fbd585e8888e4898",
+            measurementId: "G-163YR2VGK8"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const database = firebase.database();
+        let currentUser = null;
+
+        // UI elements
+        const googleSignInBtn = document.getElementById('googleSignInBtn');
+        const userInfoDiv = document.getElementById('userInfo');
+        const userNameSpan = document.getElementById('userName');
+        const userPhotoImg = document.getElementById('userPhoto');
+        const buildForm = document.getElementById('buildForm');
+        const myAppsSection = document.getElementById('myAppsSection');
+        const builtAppsList = document.getElementById('builtAppsList');
+        const langModal = document.getElementById('langModal');
+        const statusContainer = document.getElementById('statusContainer');
+
 
         window.addEventListener('load', () => {
             document.getElementById('loadingOverlay').style.display = 'none';
@@ -235,10 +420,188 @@
             setLanguage('ar'); // Default to Arabic
         });
 
-        function toggleLanguage() {
-            currentLang = currentLang === 'ar' ? 'en' : 'ar';
-            setLanguage(currentLang);
+        // Auth State Listener
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                currentUser = user;
+                userInfoDiv.style.display = 'flex';
+                userNameSpan.innerText = user.displayName || user.email;
+                userPhotoImg.src = user.photoURL || 'https://via.placeholder.com/30'; // Default placeholder
+                googleSignInBtn.style.display = 'none';
+                buildForm.style.display = 'block'; // Show build form when logged in
+                myAppsSection.style.display = 'block'; // Show my apps section
+                statusContainer.style.display = 'none'; // Hide status container on login
+                loadUserBuiltApps(user.uid);
+            } else {
+                currentUser = null;
+                userInfoDiv.style.display = 'none';
+                googleSignInBtn.style.display = 'block';
+                buildForm.style.display = 'none'; // Hide build form when logged out
+                myAppsSection.style.display = 'none'; // Hide my apps section
+                statusContainer.style.display = 'none'; // Hide status container on logout
+                builtAppsList.innerHTML = `<p data-i18n="no_apps_yet" style="text-align: center; color: var(--text-muted);">${translations[currentLang]['no_apps_yet']}</p>`;
+            }
+            setLanguage(currentLang); // Re-apply language after UI changes
+        });
+
+        // Google Sign-in
+        window.signInWithGoogle = async function() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            try {
+                await auth.signInWithPopup(provider);
+                showToast('msg_login_success');
+            } catch (error) {
+                console.error("Google Sign-In Error:", error);
+                showToast('msg_login_failure');
+            }
+        };
+
+        // Sign-out
+        window.signOutUser = async function() {
+            try {
+                await auth.signOut();
+                showToast('msg_logout_success');
+            } catch (error) {
+                console.error("Sign-Out Error:", error);
+                showToast('msg_logout_failure');
+            }
+        };
+
+        // Save built app details to Firebase Realtime Database
+        async function saveBuiltAppToFirebase(userId, appDetails) {
+            try {
+                const newAppRef = database.ref(`users/${userId}/builtApps`).push();
+                await newAppRef.set({
+                    ...appDetails,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP,
+                    status: 'in_progress' // Initial status
+                });
+                return newAppRef.key; // Return the key for future updates
+            } catch (error) {
+                console.error("Error saving app to Firebase:", error);
+                showToast('err_save_app');
+                return null;
+            }
         }
+
+        // Update built app status in Firebase
+        async function updateBuiltAppStatus(userId, appKey, status, downloadUrl = null, conclusion = null) {
+            try {
+                const updates = { status: status };
+                if (downloadUrl) updates.download_url = downloadUrl;
+                if (conclusion) updates.conclusion = conclusion;
+                await database.ref(`users/${userId}/builtApps/${appKey}`).update(updates);
+            } catch (error) {
+                console.error("Error updating app status in Firebase:", error);
+            }
+        }
+
+        // Load user's built applications
+        function loadUserBuiltApps(userId) {
+            builtAppsList.innerHTML = ''; // Clear previous list
+            database.ref(`users/${userId}/builtApps`).orderByChild('timestamp').on('value', (snapshot) => {
+                const apps = snapshot.val();
+                if (!apps) {
+                    builtAppsList.innerHTML = `<p data-i18n="no_apps_yet" style="text-align: center; color: var(--text-muted);">${translations[currentLang]['no_apps_yet']}</p>`;
+                    return;
+                }
+                builtAppsList.innerHTML = ''; // Clear again before rendering
+                Object.keys(apps).reverse().forEach(appKey => { // Display newest first
+                    const app = apps[appKey];
+                    const appCard = document.createElement('div');
+                    appCard.className = 'app-card';
+                    appCard.innerHTML = `
+                        <img src="${app.icon_url}" alt="${app.appName} Icon">
+                        <div class="app-card-info">
+                            <h4>${app.appName}</h4>
+                            <p>${app.packageName}</p>
+                            <p data-i18n="status_label">${translations[currentLang]['status_label']}: <span id="status-${appKey}">${translations[currentLang][`status_${app.status}`] || app.status}</span></p>
+                        </div>
+                        <div class="app-card-actions" id="actions-${appKey}">
+                            ${app.status === 'completed' && app.conclusion === 'success' ?
+                                `<a href="${app.download_url}" target="_blank" class="btn"><i class="fa-solid fa-download"></i> <span data-i18n="download_apk">${translations[currentLang]['download_apk']}</span></a>` :
+                                `<button class="btn btn-status" onclick="checkBuildStatusAndDisplayDownload('${app.request_id}', '${appKey}')"><i class="fa-solid fa-sync-alt"></i> <span data-i18n="check_status">${translations[currentLang]['check_status']}</span></button>`
+                            }
+                        </div>
+                    `;
+                    builtAppsList.appendChild(appCard);
+                    // If status is in_progress, start polling
+                    if (app.status === 'in_progress') {
+                        checkBuildStatusAndDisplayDownload(app.request_id, appKey, true); // Pass true to indicate it's from loading
+                    }
+                });
+                setLanguage(currentLang); // Re-apply language after rendering apps
+            }, (error) => {
+                console.error("Error loading built apps:", error);
+                showToast('err_load_apps');
+            });
+        }
+
+        // Polling function for build status
+        async function checkBuildStatusAndDisplayDownload(requestId, appKey, isInitialLoad = false) {
+            const statusSpan = document.getElementById(`status-${appKey}`);
+            const actionsDiv = document.getElementById(`actions-${appKey}`);
+            if (!statusSpan || !actionsDiv) return;
+
+            if (!isInitialLoad) { // Only show checking status if not initial load
+                statusSpan.innerText = translations[currentLang]['status_checking'];
+                statusSpan.style.color = '#FFC107'; // Yellow for checking
+            }
+
+            const pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/check-status?request_id=${requestId}`);
+                    const result = await response.json();
+
+                    if (result.status === 'completed') {
+                        clearInterval(pollInterval);
+                        if (result.conclusion === 'success') {
+                            statusSpan.innerText = translations[currentLang]['status_completed_success'];
+                            statusSpan.style.color = 'var(--primary)';
+                            actionsDiv.innerHTML = `<a href="${result.download_url}" target="_blank" class="btn"><i class="fa-solid fa-download"></i> <span data-i18n="download_apk">${translations[currentLang]['download_apk']}</span></a>`;
+                            updateBuiltAppStatus(currentUser.uid, appKey, 'completed', result.download_url, 'success');
+                        } else {
+                            statusSpan.innerText = translations[currentLang]['status_completed_failure'];
+                            statusSpan.style.color = 'var(--danger)';
+                            actionsDiv.innerHTML = `<button class="btn btn-status" disabled><i class="fa-solid fa-times-circle"></i> <span data-i18n="build_failed">${translations[currentLang]['build_failed']}</span></button>`;
+                            updateBuiltAppStatus(currentUser.uid, appKey, 'completed', null, 'failure');
+                        }
+                        setLanguage(currentLang); // Re-apply language
+                    } else if (result.status === 'in_progress') {
+                        statusSpan.innerText = translations[currentLang]['status_in_progress'];
+                        statusSpan.style.color = '#00B0FF'; // Blue for in progress
+                        actionsDiv.innerHTML = `<button class="btn btn-status" disabled><span class="loader" style="width:15px; height:15px; border-width:2px; border-bottom-color: #fff;"></span> <span data-i18n="status_in_progress">${translations[currentLang]['status_in_progress']}</span></button>`;
+                        setLanguage(currentLang); // Re-apply language
+                    } else if (result.status === 'error') {
+                        clearInterval(pollInterval);
+                        statusSpan.innerText = translations[currentLang]['status_error'];
+                        statusSpan.style.color = 'var(--danger)';
+                        actionsDiv.innerHTML = `<button class="btn btn-status" disabled><i class="fa-solid fa-exclamation-triangle"></i> <span data-i18n="status_error">${translations[currentLang]['status_error']}</span></button>`;
+                        updateBuiltAppStatus(currentUser.uid, appKey, 'error', null, 'error');
+                        setLanguage(currentLang); // Re-apply language
+                    }
+                } catch (error) {
+                    console.error("Error polling build status:", error);
+                    clearInterval(pollInterval);
+                    statusSpan.innerText = translations[currentLang]['status_error'];
+                    statusSpan.style.color = 'var(--danger)';
+                    actionsDiv.innerHTML = `<button class="btn btn-status" disabled><i class="fa-solid fa-exclamation-triangle"></i> <span data-i18n="status_error">${translations[currentLang]['status_error']}</span></button>`;
+                    updateBuiltAppStatus(currentUser.uid, appKey, 'error', null, 'error');
+                    setLanguage(currentLang); // Re-apply language
+                }
+            }, 5000); // Poll every 5 seconds
+        }
+
+        // Language Modal functions
+        window.openLangModal = function() {
+            langModal.style.display = 'flex';
+        };
+
+        window.setLanguageAndCloseModal = function(lang) {
+            currentLang = lang;
+            setLanguage(currentLang);
+            langModal.style.display = 'none';
+        };
 
         function setLanguage(lang) {
             document.documentElement.lang = lang;
@@ -348,6 +711,11 @@
         document.getElementById('buildForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            if (!currentUser) {
+                showToast('err_login_required');
+                return;
+            }
+
             const zipFile = document.getElementById('zipInput').files[0];
             if(!finalIconBlob) return showToast('err_select_icon');
             if(!zipFile) return showToast('err_select_zip');
@@ -377,7 +745,7 @@
                     if(fakeProgress < 90) { fakeProgress += 5; progressBar.style.width = fakeProgress + '%'; }
                 }, 500);
 
-                const response = await fetch('/build-flutter', { method: 'POST', body: formData });
+                const response = await fetch('/trigger-build', { method: 'POST', body: formData });
                 clearInterval(progressInterval);
                 const result = await response.json();
 
@@ -388,10 +756,26 @@
                         <div style="text-align:center; padding:10px;">
                             <i class="fa-brands fa-telegram" style="font-size:3rem; color:#0088cc; margin-bottom:10px;"></i>
                             <p>${translations[currentLang]['msg_success']}</p>
-                            <small style="color:#666">Build ID: ${result.build_id}</small>
+                            <small style="color:#666">Build ID: ${result.request_id}</small>
                         </div>
                     `;
                     btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+
+                    // Save app details to Firebase
+                    const appDetails = {
+                        appName: document.getElementById('appName').value,
+                        packageName: document.getElementById('packageName').value,
+                        icon_url: result.icon_url, // Get from server response
+                        zip_url: result.zip_url, // Get from server response
+                        request_id: result.request_id,
+                        user_id: currentUser.uid
+                    };
+                    const appKey = await saveBuiltAppToFirebase(currentUser.uid, appDetails);
+                    if (appKey) {
+                        // Start polling for this new app
+                        checkBuildStatusAndDisplayDownload(result.request_id, appKey);
+                    }
+
                 } else { throw new Error(result.error); }
             } catch (error) {
                 console.error(error);
@@ -400,7 +784,8 @@
                 progressBar.style.background = "var(--danger)";
                 resultArea.innerText = "Error: " + error.message;
                 btn.disabled = false;
-                btn.innerHTML = translations[currentLang]['btn_start_build'];
+                btn.innerHTML = `<i class="fa-solid fa-hammer"></i> <span data-i18n="btn_start_build">${translations[currentLang]['btn_start_build']}</span>`;
+                setLanguage(currentLang); // Re-apply language
             }
         });
     </script>

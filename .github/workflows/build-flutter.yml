@@ -1,4 +1,4 @@
-name: Aite Flutter Engine
+name: Aite Universal Flutter Engine
 
 on:
   repository_dispatch:
@@ -22,13 +22,14 @@ jobs:
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '17' # جافا 17 تدعم بناء كل الإصدارات تقريباً
 
+      # --- التعديل الذكي: استخدام أحدث نسخة مستقرة لدعم كافة المشاريع ---
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.16.0'
+          cache: true
 
       - name: Download & Extract Project
         run: |
@@ -38,39 +39,35 @@ jobs:
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
-      - name: Inject Identity & Force Modern Gradle
+      - name: Auto-Fix Project Dependencies
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
+          # 1. إجبار المشروع على قبول إصدار Dart الحالي إذا كان هناك تعارض بسيط
+          # يقوم بمسح قيود الإصدار في pubspec لتجنب خطأ "version solving failed"
+          sed -i 's/sdk: ">=.*/sdk: ">=2.12.0 <4.0.0"/g' pubspec.yaml
+
+          # 2. حقن الهوية (الاسم والباكج)
           find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
           find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.app_name }}"/' {} +
-          
-          curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
-          mkdir -p android/app/src/main/res/mipmap-mdpi
-          mkdir -p android/app/src/main/res/mipmap-hdpi
-          mkdir -p android/app/src/main/res/mipmap-xhdpi
-          mkdir -p android/app/src/main/res/mipmap-xxhdpi
-          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
-          convert app_icon_raw.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
-          convert app_icon_raw.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
-          convert app_icon_raw.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
-          if [ -d "android" ]; then
+          # 3. تحديث Gradle Plugin ليتوافق مع Java 17 (الحل السحري لمعظم أخطاء البناء)
+          if [ -f "android/build.gradle" ]; then
+            sed -i 's/com.android.tools.build:gradle:[0-9.]*/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
             sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.8.22"/g' android/build.gradle
-            sed -i 's/com.android.tools.build:gradle:.*/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
-            sed -i '/apply from: ".*app_plugin_loader.gradle"/d' android/app/build.gradle
-            sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle
-            sed -i 's/targetSdkVersion .*/targetSdkVersion 34/g' android/app/build.gradle
-            sed -i 's/minSdkVersion .*/minSdkVersion 21/g' android/app/build.gradle
+          fi
+
+          # 4. إصلاح مشاكل الـ SDK Versions القديمة
+          if [ -f "android/app/build.gradle" ]; then
+             sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle
+             sed -i 's/targetSdkVersion .*/targetSdkVersion 34/g' android/app/build.gradle
+             sed -i '/apply from: ".*app_plugin_loader.gradle"/d' android/app/build.gradle
           fi
 
       - name: Build APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
-          flutter clean
-          flutter pub get
+          flutter pub upgrade  # يقوم بتحديث المكتبات المتوافقة تلقائياً
           flutter build apk --release --no-tree-shake-icons
 
       - name: Upload to Release
@@ -79,7 +76,7 @@ jobs:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/build/app/outputs/flutter-apk/app-release.apk
           body: |
-            ✅ Aite Studio Build Completed
+            ✅ Build Successful (Universal Mode)
             App: ${{ github.event.client_payload.app_name }}
             Package: ${{ github.event.client_payload.package_name }}
         env:

@@ -9,45 +9,51 @@ const path = require('path');
 
 const app = express();
 app.use(cors());
-app.use(express.static('public')); // لخدمة ملف index.html
+app.use(express.static('public')); 
 app.use(express.json());
 
-// إعدادات Cloudinary
+// Cloudinary Configuration
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// إعداد Multer لاستقبال الملفات (تخزين مؤقت)
+// Multer for Temp Storage
 const upload = multer({ dest: '/tmp/' });
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// نقطة النهاية لبناء فلاتر
+// Build Endpoint
 app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'projectZip', maxCount: 1 }]), async (req, res) => {
     try {
         const { appName, packageName } = req.body;
+        
+        // Validation
+        if (!req.files || !req.files['icon'] || !req.files['projectZip']) {
+            throw new Error("Missing files");
+        }
+
         const iconFile = req.files['icon'][0];
         const zipFile = req.files['projectZip'][0];
 
-        console.log(`Received build request for: ${appName}`);
+        console.log(`Processing build for: ${appName}`);
 
-        // 1. رفع الأيقونة لـ Cloudinary
+        // 1. Upload Icon
         const iconUpload = await cloudinary.uploader.upload(iconFile.path, {
             folder: "aite_studio/icons"
         });
 
-        // 2. رفع ملف المشروع (ZIP) لـ Cloudinary كـ Raw File
+        // 2. Upload ZIP (Raw Resource)
         const zipUpload = await cloudinary.uploader.upload(zipFile.path, {
             resource_type: "raw",
             folder: "aite_studio/projects",
             public_id: `${packageName}_source_${Date.now()}`
         });
 
-        // 3. إرسال أمر البناء لـ GitHub Actions
+        // 3. Trigger GitHub Dispatch
         const githubPayload = {
             event_type: "build-flutter",
             client_payload: {
@@ -70,21 +76,21 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
             }
         );
 
-        // تنظيف الملفات المؤقتة
-        fs.unlinkSync(iconFile.path);
-        fs.unlinkSync(zipFile.path);
+        // Cleanup
+        if (fs.existsSync(iconFile.path)) fs.unlinkSync(iconFile.path);
+        if (fs.existsSync(zipFile.path)) fs.unlinkSync(zipFile.path);
 
         res.json({ 
             success: true, 
-            message: "تم استلام المشروع وبدء عملية المعالجة والبناء في السيرفرات السحابية.",
+            message: "Build triggered successfully",
             build_id: githubPayload.client_payload.request_id
         });
 
     } catch (error) {
-        console.error("Build Error:", error);
+        console.error("Server Error:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Aite Studio Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Aite Studio running on port ${PORT}`));

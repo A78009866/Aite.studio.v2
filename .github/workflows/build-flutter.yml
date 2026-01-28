@@ -1,0 +1,92 @@
+name: Aite Flutter Engine
+
+on:
+  repository_dispatch:
+    types: [build-flutter]
+
+jobs:
+  build:
+    name: Build Flutter App
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. إعداد المستودع والبيئة
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          flutter-version: '3.16.0' # أو النسخة التي تفضلها
+
+      # 2. تحميل كود المستخدم وتجهيزه
+      - name: Download & Extract Project
+        run: |
+          mkdir -p user_project
+          curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
+          unzip project.zip -d user_project
+          
+          # اكتشاف مسار الجذر للمشروع (لأن الـ Zip قد يحتوي على مجلد داخلي)
+          if [ -d "user_project/android" ]; then
+            echo "PROJECT_ROOT=user_project" >> $GITHUB_ENV
+          else
+            # في حال كان الملف مضغوطاً داخل مجلد
+            ROOT_DIR=$(find user_project -maxdepth 2 -type d -name "android" | xargs dirname)
+            echo "PROJECT_ROOT=$ROOT_DIR" >> $GITHUB_ENV
+          fi
+
+      # 3. عملية الحقن (The Injection Process)
+      - name: Inject Identity (Name, ID, Icon)
+        run: |
+          cd ${{ env.PROJECT_ROOT }}
+          
+          echo ">>> Injecting Package Name..."
+          # تعديل applicationId في build.gradle
+          find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
+          
+          echo ">>> Injecting App Name..."
+          # تعديل android:label في AndroidManifest.xml
+          find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.app_name }}"/' {} +
+          
+          echo ">>> Injecting Icon..."
+          # تحميل الأيقونة الجديدة
+          curl -L "${{ github.event.client_payload.icon_url }}" -o new_icon.png
+          
+          # استخدام ImageMagick لاستبدال الأيقونات بجميع المقاسات
+          # mipmap-mdpi (48x48)
+          convert new_icon.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          # mipmap-hdpi (72x72)
+          convert new_icon.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          # mipmap-xhdpi (96x96)
+          convert new_icon.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          # mipmap-xxhdpi (144x144)
+          convert new_icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          # mipmap-xxxhdpi (192x192)
+          convert new_icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+      # 4. بناء التطبيق
+      - name: Build APK
+        run: |
+          cd ${{ env.PROJECT_ROOT }}
+          flutter pub get
+          flutter build apk --release
+
+      # 5. الرفع والإشعار (يمكنك استخدام تليجرام هنا كما في الكود السابق)
+      - name: Upload APK to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: build-${{ github.event.client_payload.request_id }}
+          files: ${{ env.PROJECT_ROOT }}/build/app/outputs/flutter-apk/app-release.apk
+          body: |
+            ✅ **Aite Studio Build Completed**
+            - **App Name:** ${{ github.event.client_payload.app_name }}
+            - **Package:** ${{ github.event.client_payload.package_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -3,166 +3,149 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aite Studio | App Builder</title>
+    <title>Aite.studio | App Builder</title>
     
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
 
     <style>
-        :root {
-            --bg-dark: #0f0f13;
-            --bg-card: #1e1e24;
-            --primary: #00E676;
-            --primary-hover: #00c853;
-            --text-main: #ffffff;
-            --text-sec: #a0a0a0;
+        :root { 
+            --bg-dark: #0a0a0a; --bg-card: #141414; --primary: #00E676; 
+            --danger: #ff4444; --text-main: #ffffff; --text-muted: #888888; 
+            --border: #333333; --font-ar: 'Cairo', sans-serif; --font-en: 'Outfit', sans-serif; 
         }
 
-        body { font-family: 'Cairo', sans-serif; background-color: var(--bg-dark); color: var(--text-main); margin: 0; padding: 0; }
-        
-        /* واجهة اللغات */
-        body[lang="en"] { font-family: 'Poppins', sans-serif; direction: ltr; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: var(--font-ar); background-color: var(--bg-dark); 
+            color: var(--text-main); overflow-x: hidden; transition: 0.3s;
+        }
+        body.en-mode { font-family: var(--font-en); direction: ltr; }
 
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; min-height: 100vh; }
-
-        /* تسجيل الدخول */
-        #auth-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.9); z-index: 9999;
+        /* شاشة تسجيل الدخول */
+        #auth-screen {
+            position: fixed; inset: 0; background: var(--bg-dark);
             display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 10000; text-align: center;
         }
         .google-btn {
-            background: #fff; color: #333; padding: 12px 25px; border-radius: 30px;
-            border: none; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 10px;
-            font-size: 1rem; transition: 0.3s;
+            background: white; color: black; padding: 12px 25px; border-radius: 30px;
+            border: none; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 10px;
+            font-size: 1rem; margin-top: 20px; transition: 0.3s;
         }
-        .google-btn:hover { transform: scale(1.05); }
 
-        /* الرأس */
+        /* الهيكل الرئيسي (واجهتك الأصلية) */
+        .app-container { display: none; max-width: 500px; margin: 0 auto; min-height: 100vh; padding: 20px; }
+        
         header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-        .user-profile { display: flex; align-items: center; gap: 10px; background: var(--bg-card); padding: 5px 15px; border-radius: 50px; }
-        .user-img { width: 35px; height: 35px; border-radius: 50%; }
+        .user-pill { background: var(--bg-card); padding: 5px 15px; border-radius: 50px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); }
+        .user-pill img { width: 30px; height: 30px; border-radius: 50%; }
 
-        /* التبويبات */
-        .tabs { display: flex; gap: 15px; margin-bottom: 20px; background: var(--bg-card); padding: 5px; border-radius: 15px; }
-        .tab-btn { flex: 1; background: none; border: none; color: var(--text-sec); padding: 10px; cursor: pointer; border-radius: 10px; font-family: inherit; font-weight: bold; }
-        .tab-btn.active { background: var(--primary); color: #000; }
+        .tabs-nav { display: flex; gap: 10px; background: var(--bg-card); padding: 5px; border-radius: 15px; margin-bottom: 25px; }
+        .tab-btn { flex: 1; padding: 12px; border: none; background: none; color: var(--text-muted); cursor: pointer; border-radius: 10px; font-family: inherit; font-weight: 600; transition: 0.3s; }
+        .tab-btn.active { background: var(--primary); color: black; }
 
-        /* المحتوى */
-        .section { display: none; animation: fadeIn 0.4s; }
-        .section.active { display: block; }
+        .view-section { display: none; animation: slideUp 0.4s ease; }
+        .view-section.active { display: block; }
 
-        /* النماذج */
-        .input-group { margin-bottom: 15px; }
-        .input-group label { display: block; margin-bottom: 8px; color: var(--text-sec); font-size: 0.9rem; }
-        .input-group input { width: 100%; padding: 15px; background: var(--bg-card); border: 1px solid #333; color: #fff; border-radius: 12px; box-sizing: border-box; font-family: inherit; }
-        .input-group input:focus { border-color: var(--primary); outline: none; }
-
-        .btn-main { width: 100%; padding: 18px; background: var(--primary); color: #000; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 1.1rem; }
-        .btn-main:disabled { background: #333; color: #666; cursor: not-allowed; }
+        /* المدخلات */
+        .input-box { margin-bottom: 20px; }
+        .input-box label { display: block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-muted); }
+        .input-box input { width: 100%; padding: 15px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; color: white; font-family: inherit; }
+        .input-box input:focus { border-color: var(--primary); }
 
         /* شريط التقدم */
-        .progress-box { background: var(--bg-card); padding: 20px; border-radius: 15px; margin-top: 20px; display: none; border: 1px solid #333; }
-        .progress-bar-bg { width: 100%; height: 8px; background: #333; border-radius: 4px; overflow: hidden; margin: 15px 0; }
-        .progress-bar-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.5s; box-shadow: 0 0 10px var(--primary); }
-        .status-txt { text-align: center; color: var(--text-sec); font-size: 0.9rem; margin-top: 10px; }
+        .build-progress { background: var(--bg-card); padding: 20px; border-radius: 15px; border: 1px solid var(--border); margin-top: 20px; display: none; }
+        .bar-container { width: 100%; height: 8px; background: #222; border-radius: 10px; overflow: hidden; margin: 15px 0; }
+        .bar-fill { width: 0%; height: 100%; background: var(--primary); transition: 0.5s; box-shadow: 0 0 10px var(--primary); }
 
-        /* قائمة تطبيقاتي */
-        .app-item { background: var(--bg-card); padding: 15px; border-radius: 12px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
-        .app-info h4 { margin: 0 0 5px 0; font-size: 1rem; }
-        .app-info span { font-size: 0.8rem; color: var(--text-sec); }
-        .download-link { color: var(--primary); text-decoration: none; font-size: 1.2rem; }
+        /* قائمة التطبيقات */
+        .app-card { background: var(--bg-card); padding: 15px; border-radius: 15px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); }
+        .app-card h4 { font-size: 1rem; margin-bottom: 4px; }
+        .app-card p { font-size: 0.75rem; color: var(--text-muted); }
+        .dl-icon { width: 40px; height: 40px; background: #222; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--primary); text-decoration: none; }
 
-        /* نافذة اللغات */
-        .lang-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-index: 10000; display: none; justify-content: center; align-items: center; }
-        .lang-modal { background: var(--bg-card); padding: 30px; border-radius: 20px; width: 80%; max-width: 300px; text-align: center; border: 1px solid #333; }
-        .lang-option { display: block; width: 100%; padding: 15px; margin: 10px 0; background: #2a2a30; border-radius: 12px; color: white; text-decoration: none; cursor: pointer; transition: 0.2s; border: 1px solid transparent; }
-        .lang-option:hover { border-color: var(--primary); background: #333; }
-        .lang-btn-float { position: fixed; bottom: 20px; left: 20px; background: #333; color: white; width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; border: 1px solid #555; z-index: 999; }
+        /* نافذة اللغة (الجذابة) */
+        .lang-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); display: none; justify-content: center; align-items: center; z-index: 11000; }
+        .lang-content { background: var(--bg-card); padding: 30px; border-radius: 25px; width: 85%; max-width: 320px; text-align: center; border: 1px solid var(--border); }
+        .lang-opt { display: block; width: 100%; padding: 15px; margin: 10px 0; background: #1a1a1a; border-radius: 15px; color: white; cursor: pointer; transition: 0.2s; border: 1px solid transparent; }
+        .lang-opt:hover { border-color: var(--primary); background: #222; }
 
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .floating-lang { position: fixed; bottom: 25px; left: 25px; width: 45px; height: 45px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; z-index: 999; }
+
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
 
-    <div id="auth-overlay">
-        <h2 style="margin-bottom: 30px;">Aite Studio</h2>
-        <button class="google-btn" onclick="signInWithGoogle()">
-            <i class="fab fa-google"></i> <span data-i18n="signIn">تسجيل الدخول باستخدام Google</span>
+    <div id="auth-screen">
+        <h1 style="font-family: var(--font-en); font-weight: 700; letter-spacing: -1px;">Aite.studio</h1>
+        <p style="color: var(--text-muted);">Build your Flutter app in minutes</p>
+        <button class="google-btn" onclick="loginWithGoogle()">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" width="18">
+            <span data-i18n="loginBtn">Sign in with Google</span>
         </button>
     </div>
 
-    <div class="container" id="app-container" style="display: none;">
+    <div class="app-container" id="mainApp">
         <header>
-            <h3 data-i18n="appTitle">Aite Builder</h3>
-            <div class="user-profile">
-                <img id="user-avatar" class="user-img" src="">
-                <span id="user-name" style="font-size: 0.9rem;"></span>
-                <i class="fas fa-sign-out-alt" onclick="logout()" style="margin-right: 10px; cursor: pointer; color: #ff4444;"></i>
+            <h2 style="font-family: var(--font-en); font-weight: 700;">Aite.</h2>
+            <div class="user-pill">
+                <img id="uAvatar" src="">
+                <i class="fas fa-sign-out-alt" onclick="handleLogout()" style="cursor:pointer; color: var(--danger); font-size: 0.8rem;"></i>
             </div>
         </header>
 
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('create')" data-i18n="newBuild">بناء جديد</button>
-            <button class="tab-btn" onclick="switchTab('history')" data-i18n="myApps">تطبيقاتي</button>
+        <div class="tabs-nav">
+            <button class="tab-btn active" onclick="switchView('build')" data-i18n="tabBuild">Build</button>
+            <button class="tab-btn" onclick="switchView('history')" data-i18n="tabHistory">My Apps</button>
         </div>
 
-        <div id="create-section" class="section active">
-            <div class="input-group">
-                <label data-i18n="appName">اسم التطبيق</label>
-                <input type="text" id="appName" placeholder="My Store">
+        <div id="buildView" class="view-section active">
+            <div class="input-box">
+                <label data-i18n="labelAppName">App Name</label>
+                <input type="text" id="appName" placeholder="e.g. My App">
             </div>
-            <div class="input-group">
-                <label data-i18n="pkgName">اسم الحزمة (Package)</label>
-                <input type="text" id="pkgName" placeholder="com.my.app">
+            <div class="input-box">
+                <label data-i18n="labelPkg">Package ID</label>
+                <input type="text" id="pkgName" placeholder="com.company.app">
             </div>
-            <div class="input-group">
-                <label data-i18n="iconUrl">رابط الأيقونة</label>
-                <input type="text" id="iconUrl" placeholder="https://...">
-            </div>
-            <div class="input-group">
-                <label data-i18n="zipUrl">رابط ملف المشروع (Zip)</label>
+            <div class="input-box">
+                <label data-i18n="labelZip">Project ZIP URL</label>
                 <input type="text" id="zipUrl" placeholder="https://...">
             </div>
 
-            <button class="btn-main" onclick="startBuild()" id="buildBtn" data-i18n="startBuild">بناء التطبيق</button>
+            <button class="tab-btn active" style="width: 100%; border-radius: 12px; margin-top: 10px;" onclick="triggerProcess()" id="submitBtn">
+                <span data-i18n="btnStart">Start Build</span>
+            </button>
 
-            <div class="progress-box" id="progressBox">
-                <div style="display: flex; justify-content: space-between;">
-                    <span data-i18n="status">الحالة</span>
-                    <span id="progPercent" style="color: var(--primary);">0%</span>
+            <div class="build-progress" id="progressArea">
+                <div style="display:flex; justify-content:space-between; font-size: 0.8rem;">
+                    <span id="statusTxt" data-i18n="statusInit">Initializing...</span>
+                    <span id="statusPercent">0%</span>
                 </div>
-                <div class="progress-bar-bg">
-                    <div class="progress-bar-fill" id="progFill"></div>
-                </div>
-                <p class="status-txt" id="statusTxt" data-i18n="initializing">جاري تهيئة السيرفر...</p>
-                <a id="downloadBtn" href="#" target="_blank" class="btn-main" style="display: none; text-align: center; margin-top: 15px; text-decoration: none; background: #fff; color: #000;">
-                    <i class="fas fa-download"></i> <span data-i18n="download">تحميل APK</span>
+                <div class="bar-container"><div class="bar-fill" id="barFill"></div></div>
+                <a id="downloadBtn" href="#" target="_blank" class="tab-btn active" style="display:none; width:100%; text-align:center; text-decoration:none; margin-top:10px; background: white; color: black;">
+                    <i class="fas fa-download"></i> <span data-i18n="btnDownload">Download APK</span>
                 </a>
             </div>
         </div>
 
-        <div id="history-section" class="section">
+        <div id="historyView" class="view-section">
             <div id="appsList">
-                <p style="text-align: center; color: #666;" data-i18n="noApps">لا توجد تطبيقات سابقة</p>
+                <p style="text-align:center; color: var(--text-muted); margin-top: 50px;" data-i18n="emptyHistory">No builds yet</p>
             </div>
         </div>
     </div>
 
-    <div class="lang-btn-float" onclick="toggleLangModal()">
-        <i class="fas fa-language"></i>
-    </div>
-
-    <div class="lang-modal-overlay" id="langModal">
-        <div class="lang-modal">
-            <h3 style="margin-top: 0; color: white;" data-i18n="chooseLang">اختر اللغة</h3>
-            <div class="lang-option" onclick="setLanguage('ar')">
-                <i class="fas fa-check" id="check-ar" style="display:none; color: var(--primary);"></i> العربية
-            </div>
-            <div class="lang-option" onclick="setLanguage('en')">
-                <i class="fas fa-check" id="check-en" style="display:none; color: var(--primary);"></i> English
-            </div>
-            <button onclick="toggleLangModal()" style="margin-top: 15px; background: none; border: none; color: #666; cursor: pointer;">Cancel</button>
+    <div class="floating-lang" onclick="toggleLangModal()"><i class="fas fa-language"></i></div>
+    <div class="lang-modal" id="langModal">
+        <div class="lang-content">
+            <h3 style="margin-bottom:20px;">Choose Language</h3>
+            <div class="lang-opt" onclick="updateLang('ar')">العربية</div>
+            <div class="lang-opt" onclick="updateLang('en')">English</div>
+            <p onclick="toggleLangModal()" style="margin-top:20px; color: var(--text-muted); cursor:pointer;">Cancel</p>
         </div>
     </div>
 
@@ -171,7 +154,6 @@
         import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
         import { getDatabase, ref, push, set, onValue, update } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
 
-        // --- إعدادات Firebase الخاصة بك ---
         const firebaseConfig = {
             apiKey: "AIzaSyAN-9qBeL51nwpctJw9rSQYzz1C7dDRf1E",
             authDomain: "world-3212f.firebaseapp.com",
@@ -183,262 +165,153 @@
             measurementId: "G-163YR2VGK8"
         };
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getDatabase(app);
+        const fApp = initializeApp(firebaseConfig);
+        const auth = getAuth(fApp);
+        const db = getDatabase(fApp);
         const provider = new GoogleAuthProvider();
-        
-        let currentUser = null;
 
-        // --- منطق المصادقة ---
-        window.signInWithGoogle = () => {
-            signInWithPopup(auth, provider).catch((error) => alert(error.message));
-        };
+        let userData = null;
 
-        window.logout = () => {
-            signOut(auth);
-        };
+        // المصادقة
+        window.loginWithGoogle = () => signInWithPopup(auth, provider);
+        window.handleLogout = () => signOut(auth);
 
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                currentUser = user;
-                document.getElementById('auth-overlay').style.display = 'none';
-                document.getElementById('app-container').style.display = 'block';
-                document.getElementById('user-name').innerText = user.displayName;
-                document.getElementById('user-avatar').src = user.photoURL;
-                loadUserApps(user.uid);
+                userData = user;
+                document.getElementById('auth-screen').style.display = 'none';
+                document.getElementById('mainApp').style.display = 'block';
+                document.getElementById('uAvatar').src = user.photoURL;
+                loadHistory(user.uid);
             } else {
-                currentUser = null;
-                document.getElementById('auth-overlay').style.display = 'flex';
-                document.getElementById('app-container').style.display = 'none';
+                document.getElementById('auth-screen').style.display = 'flex';
+                document.getElementById('mainApp').style.display = 'none';
             }
         });
 
-        // --- منطق البناء ---
-        window.startBuild = async () => {
-            if (!currentUser) return;
+        // تشغيل البناء
+        window.triggerProcess = async () => {
+            const name = document.getElementById('appName').value;
+            const pkg = document.getElementById('pkgName').value;
+            const zip = document.getElementById('zipUrl').value;
+            const reqId = Date.now().toString();
 
-            const appName = document.getElementById('appName').value;
-            const pkgName = document.getElementById('pkgName').value;
-            const iconUrl = document.getElementById('iconUrl').value;
-            const zipUrl = document.getElementById('zipUrl').value;
-            
-            if (!appName || !zipUrl) {
-                alert(currentLang === 'ar' ? 'يرجى ملء جميع الحقول' : 'Please fill all fields');
-                return;
-            }
+            if(!name || !zip) return alert("Fill required fields");
 
-            const buildBtn = document.getElementById('buildBtn');
-            const progressBox = document.getElementById('progressBox');
-            
-            buildBtn.disabled = true;
-            progressBox.style.display = 'block';
-            simulateProgress();
+            document.getElementById('submitBtn').disabled = true;
+            document.getElementById('progressArea').style.display = 'block';
+            startGhostProgress();
 
-            const requestId = Date.now().toString(); // معرف فريد
+            // حفظ في Firebase
+            const buildRef = push(ref(db, `users/${userData.uid}/apps`));
+            await set(buildRef, { name, pkg, reqId, status: 'building', date: new Date().toISOString() });
 
-            // 1. حفظ في قاعدة البيانات (حالة: جاري العمل)
-            const newBuildRef = push(ref(db, 'users/' + currentUser.uid + '/apps'));
-            await set(newBuildRef, {
-                appName: appName,
-                pkgName: pkgName,
-                requestId: requestId,
-                date: new Date().toISOString(),
-                status: 'pending',
-                downloadUrl: ''
-            });
-
-            // 2. إرسال للسيرفر
             try {
-                const response = await fetch('/trigger-build', {
+                const res = await fetch('/trigger-build', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ app_name: appName, package_name: pkgName, icon_url: iconUrl, zip_url: zipUrl, request_id: requestId })
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ app_name: name, package_name: pkg, zip_url: zip, request_id: reqId })
                 });
-
-                const result = await response.json();
-                if (result.success) {
-                    trackBuild(requestId, newBuildRef);
-                } else {
-                    alert('Error: ' + result.error);
-                    buildBtn.disabled = false;
-                }
-            } catch (e) {
-                console.error(e);
-                buildBtn.disabled = false;
-            }
+                if((await res.json()).success) pollStatus(reqId, buildRef);
+            } catch(e) { alert("Server Error"); }
         };
 
-        // --- متابعة الحالة ---
-        function trackBuild(requestId, dbRef) {
-            const statusTxt = document.getElementById('statusTxt');
-            const interval = setInterval(async () => {
-                try {
-                    const res = await fetch(`/check-status?request_id=${requestId}`);
-                    const data = await res.json();
-
-                    if (data.status === 'completed' && data.conclusion === 'success') {
-                        clearInterval(interval);
-                        completeProgress(true);
-                        
-                        document.getElementById('downloadBtn').href = data.download_url;
-                        document.getElementById('downloadBtn').style.display = 'block';
-                        statusTxt.innerText = currentLang === 'ar' ? '✅ تم البناء بنجاح!' : '✅ Build Successful!';
-                        
-                        // تحديث قاعدة البيانات بالرابط
-                        update(dbRef, { status: 'success', downloadUrl: data.download_url });
-                        
-                    } else if (data.status === 'completed' && data.conclusion === 'failure') {
-                        clearInterval(interval);
-                        completeProgress(false);
-                        statusTxt.innerText = '❌ Failed';
-                        update(dbRef, { status: 'failed' });
-                    }
-                } catch (e) { console.log(e); }
+        function pollStatus(id, dbRef) {
+            const timer = setInterval(async () => {
+                const res = await fetch(`/check-status?request_id=${id}`);
+                const data = await res.json();
+                if(data.status === 'completed') {
+                    clearInterval(timer);
+                    const success = data.conclusion === 'success';
+                    updateUIComplete(success, data.download_url);
+                    update(dbRef, { status: success ? 'success' : 'failed', url: data.download_url || '' });
+                }
             }, 5000);
         }
 
-        // --- تحميل تطبيقات المستخدم ---
-        function loadUserApps(uid) {
-            const appsList = document.getElementById('appsList');
-            const appsRef = ref(db, 'users/' + uid + '/apps');
-            
-            onValue(appsRef, (snapshot) => {
-                appsList.innerHTML = '';
-                const data = snapshot.val();
-                if (data) {
+        function loadHistory(uid) {
+            onValue(ref(db, `users/${uid}/apps`), (snap) => {
+                const list = document.getElementById('appsList');
+                list.innerHTML = '';
+                const data = snap.val();
+                if(data) {
                     Object.values(data).reverse().forEach(app => {
-                        const div = document.createElement('div');
-                        div.className = 'app-item';
-                        
-                        let statusIcon = app.status === 'success' ? '<i class="fas fa-check-circle" style="color:var(--primary)"></i>' : 
-                                         app.status === 'pending' ? '<i class="fas fa-spinner fa-spin"></i>' : 
-                                         '<i class="fas fa-times-circle" style="color:red"></i>';
-
-                        let actionBtn = app.downloadUrl ? 
-                            `<a href="${app.downloadUrl}" class="download-link" target="_blank"><i class="fas fa-download"></i></a>` : '';
-
-                        div.innerHTML = `
-                            <div class="app-info">
-                                <h4>${app.appName} ${statusIcon}</h4>
-                                <span>${app.pkgName} • ${new Date(app.date).toLocaleDateString()}</span>
-                            </div>
-                            <div>${actionBtn}</div>
-                        `;
-                        appsList.appendChild(div);
+                        list.innerHTML += `
+                            <div class="app-card">
+                                <div>
+                                    <h4>${app.name}</h4>
+                                    <p>${app.status === 'success' ? '✅ Ready' : app.status === 'building' ? '⏳ In Progress' : '❌ Failed'}</p>
+                                </div>
+                                ${app.url ? `<a href="${app.url}" class="dl-icon"><i class="fas fa-download"></i></a>` : ''}
+                            </div>`;
                     });
-                } else {
-                    appsList.innerHTML = `<p style="text-align: center; color: #666;">${currentLang === 'ar' ? 'لا توجد تطبيقات' : 'No apps found'}</p>`;
                 }
             });
         }
     </script>
 
     <script>
-        // --- سكربت الواجهة واللغة ---
-        let currentLang = localStorage.getItem('lang') || 'ar';
-        const translations = {
+        // منطق الواجهة والترجمة
+        let curLang = localStorage.getItem('lang') || 'ar';
+        const dict = {
             ar: {
-                signIn: "تسجيل الدخول باستخدام Google",
-                appTitle: "منشئ التطبيقات",
-                newBuild: "بناء جديد",
-                myApps: "تطبيقاتي",
-                appName: "اسم التطبيق",
-                pkgName: "اسم الحزمة",
-                iconUrl: "رابط الأيقونة",
-                zipUrl: "رابط المشروع",
-                startBuild: "ابدأ البناء",
-                status: "الحالة",
-                initializing: "جاري التحضير...",
-                download: "تحميل APK",
-                noApps: "لا توجد تطبيقات سابقة",
-                chooseLang: "اختر اللغة"
+                loginBtn: "سجل باستخدام جوجل", tabBuild: "بناء", tabHistory: "تطبيقاتي",
+                labelAppName: "اسم التطبيق", labelPkg: "معرف الحزمة", labelZip: "رابط المشروع (ZIP)",
+                btnStart: "ابدأ عملية البناء", statusInit: "جاري التحضير...", btnDownload: "تحميل التطبيق",
+                emptyHistory: "لا توجد تطبيقات بعد"
             },
             en: {
-                signIn: "Sign in with Google",
-                appTitle: "App Builder",
-                newBuild: "New Build",
-                myApps: "My Apps",
-                appName: "App Name",
-                pkgName: "Package Name",
-                iconUrl: "Icon URL",
-                zipUrl: "Project URL",
-                startBuild: "Start Build",
-                status: "Status",
-                initializing: "Initializing...",
-                download: "Download APK",
-                noApps: "No previous apps",
-                chooseLang: "Choose Language"
+                loginBtn: "Sign in with Google", tabBuild: "Build", tabHistory: "My Apps",
+                labelAppName: "App Name", labelPkg: "Package ID", labelZip: "Project ZIP URL",
+                btnStart: "Start Build", statusInit: "Initializing...", btnDownload: "Download APK",
+                emptyHistory: "No builds yet"
             }
         };
 
-        function setLanguage(lang) {
-            currentLang = lang;
-            localStorage.setItem('lang', lang);
-            document.documentElement.lang = lang;
-            document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
-            document.body.lang = lang; // CSS styling
-            
+        function updateLang(l) {
+            curLang = l; localStorage.setItem('lang', l);
+            document.body.classList.toggle('en-mode', l === 'en');
+            document.dir = l === 'ar' ? 'rtl' : 'ltr';
             document.querySelectorAll('[data-i18n]').forEach(el => {
-                const key = el.getAttribute('data-i18n');
-                if(translations[lang][key]) el.innerText = translations[lang][key];
+                el.innerText = dict[l][el.getAttribute('data-i18n')];
             });
-
-            document.getElementById('check-ar').style.display = lang === 'ar' ? 'inline' : 'none';
-            document.getElementById('check-en').style.display = lang === 'en' ? 'inline' : 'none';
             toggleLangModal();
         }
 
         function toggleLangModal() {
-            const modal = document.getElementById('langModal');
-            modal.style.display = modal.style.display === 'flex' ? 'none' : 'flex';
+            const m = document.getElementById('langModal');
+            m.style.display = m.style.display === 'flex' ? 'none' : 'flex';
         }
 
-        function switchTab(tab) {
+        function switchView(v) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-            
-            if (tab === 'create') {
-                document.getElementById('create-section').classList.add('active');
-                document.querySelectorAll('.tab-btn')[0].classList.add('active');
-            } else {
-                document.getElementById('history-section').classList.add('active');
-                document.querySelectorAll('.tab-btn')[1].classList.add('active');
-            }
+            document.querySelectorAll('.view-section').forEach(s => s.classList.remove('active'));
+            document.getElementById(v + 'View').classList.add('active');
+            event.target.classList.add('active');
         }
 
-        // Progress Animation Logic
-        let progressInterval;
-        function simulateProgress() {
-            let width = 0;
-            const bar = document.getElementById('progFill');
-            const txt = document.getElementById('progPercent');
-            
-            clearInterval(progressInterval);
-            progressInterval = setInterval(() => {
-                if (width >= 90) clearInterval(progressInterval);
-                else {
-                    width += Math.random() * 3;
-                    bar.style.width = width + '%';
-                    txt.innerText = Math.floor(width) + '%';
-                }
-            }, 500);
+        function startGhostProgress() {
+            let w = 0;
+            const bar = document.getElementById('barFill');
+            const interval = setInterval(() => {
+                if(w >= 90) clearInterval(interval);
+                w += Math.random() * 2;
+                bar.style.width = w + '%';
+                document.getElementById('statusPercent').innerText = Math.floor(w) + '%';
+            }, 800);
         }
 
-        function completeProgress(success) {
-            clearInterval(progressInterval);
-            const bar = document.getElementById('progFill');
-            const txt = document.getElementById('progPercent');
+        function updateUIComplete(success, url) {
+            const bar = document.getElementById('barFill');
             bar.style.width = '100%';
-            txt.innerText = '100%';
-            bar.style.background = success ? '#00E676' : 'red';
-            document.getElementById('buildBtn').disabled = false;
+            document.getElementById('statusPercent').innerText = '100%';
+            bar.style.background = success ? 'var(--primary)' : 'var(--danger)';
+            if(success) document.getElementById('downloadBtn').style.display = 'block';
+            document.getElementById('downloadBtn').href = url;
+            document.getElementById('submitBtn').disabled = false;
         }
 
-        // تطبيق اللغة عند البدء
-        setLanguage(currentLang);
-        // إغلاق المودال عند البدء للتأكد
-        document.getElementById('langModal').style.display = 'none'; 
+        updateLang(curLang);
     </script>
 </body>
 </html>

@@ -24,11 +24,7 @@
             --font-en: 'Outfit', sans-serif;
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
             font-family: var(--font-ar);
@@ -42,391 +38,184 @@
 
         /* Loader */
         #loadingOverlay {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: var(--bg-dark);
-            z-index: 9999; /* أعلى طبقة */
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            transition: opacity 0.5s ease;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-dark); z-index: 9999;
+            display: flex; justify-content: center; align-items: center;
         }
 
         .loader {
-            width: 48px; height: 48px;
-            border: 5px solid #FFF;
-            border-bottom-color: var(--primary);
-            border-radius: 50%;
+            width: 48px; height: 48px; border: 5px solid #FFF;
+            border-bottom-color: var(--primary); border-radius: 50%;
             animation: rotation 1s linear infinite;
         }
-
         @keyframes rotation { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-        /* --- Navbar Styles --- */
+        /* Navbar */
         .navbar {
-            padding: 1.2rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--border);
-            width: 100%;
-            background: rgba(10, 10, 10, 0.9);
-            backdrop-filter: blur(10px);
-            position: sticky;
-            top: 0;
-            z-index: 100;
+            padding: 1.2rem 2rem; display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid var(--border); background: rgba(10, 10, 10, 0.9);
+            backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 100;
         }
-
-        .navbar .brand {
-            font-family: var(--font-en);
-            font-size: 1.8rem;
-            font-weight: 700;
-            text-decoration: none;
-            color: white;
-        }
-
+        .navbar .brand { font-family: var(--font-en); font-size: 1.8rem; font-weight: 700; text-decoration: none; color: white; }
         .brand .dot { color: var(--primary); }
+        .nav-actions { display: flex; align-items: center; gap: 20px; }
+        .user-profile { display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 5px 10px; border-radius: 30px; transition: 0.3s; }
+        .user-profile:hover { background: rgba(255, 255, 255, 0.05); }
+        .user-avatar { width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--primary); object-fit: cover; }
+        .user-name { font-weight: 600; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.95rem; }
+        .lang-btn { background: transparent; border: 1px solid var(--border); color: var(--text-main); padding: 6px 14px; border-radius: 8px; cursor: pointer; font-family: var(--font-en); transition: 0.3s; }
+        .lang-btn:hover { border-color: var(--primary); color: var(--primary); }
 
-        .nav-actions {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-        }
-
-        .user-profile {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            cursor: pointer;
-            padding: 5px 10px;
-            border-radius: 30px;
-            transition: background 0.3s;
-        }
-
-        .user-profile:hover {
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .user-avatar {
-            width: 38px;
-            height: 38px;
-            border-radius: 50%;
-            border: 2px solid var(--primary);
-            object-fit: cover;
-        }
-
-        .user-name {
-            font-weight: 600;
-            max-width: 120px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            font-size: 0.95rem;
-        }
-
-        .lang-btn {
-            background: transparent;
-            border: 1px solid var(--border);
-            color: var(--text-main);
-            padding: 6px 14px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-family: var(--font-en);
-            font-size: 0.85rem;
-            transition: 0.3s;
-        }
-
-        .lang-btn:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-        }
-
-        /* --- Login Overlay --- */
+        /* Login Overlay */
         #loginOverlay {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: var(--bg-dark);
-            z-index: 2000;
-            display: none; /* مخفي افتراضياً حتى يقرر السكربت إظهاره */
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-            text-align: center;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-dark); z-index: 2000;
+            display: none; justify-content: center; align-items: center; flex-direction: column; text-align: center;
         }
-
         .login-box {
-            background: var(--bg-card);
-            padding: 3rem;
-            border-radius: 20px;
-            border: 1px solid var(--border);
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-            width: 90%;
-            max-width: 400px;
+            background: var(--bg-card); padding: 3rem; border-radius: 20px; border: 1px solid var(--border);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5); width: 90%; max-width: 400px;
         }
-
-        .login-box h2 {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-        }
-
-        .login-box .subtitle {
-            margin-bottom: 2.5rem;
-        }
-
+        .login-box h2 { font-size: 3rem; margin-bottom: 1rem; }
         .google-btn {
-            background: #333;
-            color: white;
-            padding: 15px 25px;
-            border-radius: 12px;
-            border: none;
-            font-weight: 700;
-            font-size: 1.1rem;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 15px;
-            transition: 0.3s;
-            width: 100%;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            background: #333; color: white; padding: 15px 25px; border-radius: 12px; border: none;
+            font-weight: 700; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center;
+            justify-content: center; gap: 15px; width: 100%; transition: 0.3s;
         }
+        .google-btn:hover { background: #444; transform: translateY(-2px); }
 
-        .google-btn:hover {
-            background: #444;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
-        }
-
-        /* --- Main Layout --- */
-        #appContent {
-            flex: 1;
-            display: none; /* مخفي افتراضياً */
-            width: 100%;
-        }
-
+        /* Layout */
+        #appContent { flex: 1; display: none; width: 100%; }
         .main-container {
-            display: flex;
-            flex-wrap: wrap;
-            padding: 3rem 2rem;
-            gap: 4rem;
-            max-width: 1400px;
-            margin: 0 auto;
-            width: 100%;
-            justify-content: center;
-            align-items: flex-start;
+            display: flex; flex-wrap: wrap; padding: 3rem 2rem; gap: 4rem;
+            max-width: 1400px; margin: 0 auto; width: 100%; justify-content: center; align-items: flex-start;
         }
-
-        .config-panel {
-            flex: 1 1 500px;
-            min-width: 320px;
-            max-width: 600px;
-        }
-
+        .config-panel { flex: 1 1 500px; min-width: 320px; max-width: 600px; }
+        
+        /* Tabs & Form */
         h2 { font-size: 2.4rem; margin-bottom: 0.8rem; }
-        .subtitle { color: var(--text-muted); margin-bottom: 2.5rem; font-size: 1rem; line-height: 1.6; }
-
-        /* Tabs */
-        .nav-tabs {
-            display: flex;
-            gap: 30px;
-            margin-bottom: 2.5rem;
-            padding-bottom: 12px;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .tab-btn {
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            font-size: 1.2rem;
-            font-weight: 600;
-            cursor: pointer;
-            padding: 8px 0;
-            transition: 0.3s;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
+        .subtitle { color: var(--text-muted); margin-bottom: 2.5rem; line-height: 1.6; }
+        .nav-tabs { display: flex; gap: 30px; margin-bottom: 2.5rem; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+        .tab-btn { background: none; border: none; color: var(--text-muted); font-size: 1.2rem; font-weight: 600; cursor: pointer; padding: 8px 0; display: flex; align-items: center; gap: 10px; transition: 0.3s; }
         .tab-btn.active { color: var(--primary); border-bottom: 3px solid var(--primary); }
-        .tab-btn i { font-size: 1.3rem; }
-
-        /* Form */
-        label { display: block; margin-bottom: 0.7rem; color: var(--text-muted); font-weight: 600; }
 
         .input-field {
-            width: 100%; background: var(--bg-card); border: 1px solid var(--border);
-            padding: 16px 18px; border-radius: 14px; color: white; margin-bottom: 1.8rem;
-            font-size: 1rem; transition: 0.3s;
+            width: 100%; background: var(--bg-card); border: 1px solid var(--border); padding: 16px 18px;
+            border-radius: 14px; color: white; margin-bottom: 1.8rem; font-size: 1rem; transition: 0.3s;
         }
-        .input-field:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0, 230, 118, 0.15); outline: none; }
-
+        .input-field:focus { border-color: var(--primary); outline: none; }
+        
         .upload-box, .zip-upload-area {
             border: 2px dashed var(--border); border-radius: 16px; background: var(--bg-card);
-            cursor: pointer; text-align: center; transition: all 0.3s ease; margin-bottom: 1.8rem;
+            cursor: pointer; text-align: center; transition: 0.3s; margin-bottom: 1.8rem;
         }
         .upload-box { padding: 2rem; min-height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        .zip-upload-area { padding: 3rem 2rem; background: linear-gradient(145deg, #1a1a1a 0%, #141414 100%); box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4); }
-        .upload-box:hover, .zip-upload-area:hover { border-color: var(--primary); transform: translateY(-4px); box-shadow: 0 10px 30px rgba(0, 230, 118, 0.15); }
+        .zip-upload-area { padding: 3rem 2rem; background: linear-gradient(145deg, #1a1a1a 0%, #141414 100%); }
+        .upload-box:hover, .zip-upload-area:hover { border-color: var(--primary); transform: translateY(-4px); }
         .zip-icon { font-size: 4rem; color: #555; margin-bottom: 16px; transition: 0.3s; }
         .zip-upload-area:hover .zip-icon { color: var(--primary); transform: scale(1.15); }
-
-        .file-info {
-            display: none; margin-top: 16px; background: rgba(0, 230, 118, 0.15);
-            padding: 10px 20px; border-radius: 50px; color: var(--primary); font-weight: 600; gap: 10px;
-        }
+        .file-info { display: none; margin-top: 16px; background: rgba(0, 230, 118, 0.15); padding: 10px 20px; border-radius: 50px; color: var(--primary); font-weight: 600; gap: 10px; }
 
         .build-btn {
-            width: 100%; background: var(--primary); color: #000; padding: 18px;
-            border-radius: 14px; font-weight: 700; font-size: 1.15rem; border: none;
-            cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px;
-            transition: 0.3s; margin-top: 1rem;
+            width: 100%; background: var(--primary); color: #000; padding: 18px; border-radius: 14px;
+            font-weight: 700; font-size: 1.15rem; border: none; cursor: pointer; display: flex;
+            align-items: center; justify-content: center; gap: 12px; transition: 0.3s; margin-top: 1rem;
         }
         .build-btn:hover { transform: translateY(-3px); box-shadow: 0 10px 25px rgba(0, 230, 118, 0.3); }
         .build-btn:disabled { opacity: 0.6; cursor: not-allowed; background: #555; }
 
-        /* --- Phone Preview --- */
-        .preview-panel {
-            flex: 1 1 350px;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            padding-top: 20px;
-        }
-
-        .phone-frame {
-            width: 320px;
-            height: 650px;
-            background: #000;
-            border-radius: 45px;
-            border: 12px solid #1f1f1f;
-            position: relative;
-            overflow: hidden;
-            box-shadow: 0 40px 100px rgba(0, 0, 0, 0.8);
-            transition: transform 0.3s ease;
-        }
-
-        .status-bar {
-            width: 100%; height: 40px; padding: 0 25px; display: flex;
-            justify-content: space-between; align-items: center; font-size: 12px; color: white;
-            position: absolute; top: 0; z-index: 10; background: rgba(0,0,0,0.3);
-        }
-
-        .screen {
-            width: 100%; height: 100%; background: linear-gradient(145deg, #111 0%, #000 100%);
-            display: flex; flex-direction: column; align-items: center; justify-content: center; padding-top: 50px;
-        }
-
-        .app-icon-display { width: 90px; height: 90px; border-radius: 22px; object-fit: cover; box-shadow: 0 15px 30px rgba(0, 0, 0, 0.6); margin-bottom: 25px; }
-        .icon-placeholder {
-            width: 90px; height: 90px; border-radius: 22px; background: #222;
-            display: flex; align-items: center; justify-content: center; color: #444;
-            font-size: 2.5rem; border: 3px dashed #333; margin-bottom: 25px;
-        }
-        .app-name-display { font-size: 1.4rem; font-weight: 600; text-align: center; max-width: 85%; }
-
-        /* --- My Apps Grid --- */
-        .apps-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 24px;
-        }
-
-        .app-card {
-            background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
-            padding: 24px; transition: all 0.3s ease; position: relative; overflow: hidden;
-        }
-        .app-card:hover { border-color: var(--primary); transform: translateY(-6px); box-shadow: 0 15px 35px rgba(0, 230, 118, 0.15); }
-        .app-badge {
-            position: absolute; top: 16px; right: 16px; background: rgba(0, 230, 118, 0.15);
-            color: var(--primary); padding: 5px 12px; border-radius: 30px; font-size: 0.75rem; font-weight: 600;
-        }
-        .app-icon-small { width: 55px; height: 55px; border-radius: 12px; object-fit: cover; }
-
-        /* Empty State */
-        .empty-state {
-            text-align: center;
-            padding: 3rem;
-            color: #555;
-            display: none;
-            flex-direction: column;
-            align-items: center;
-        }
-        .empty-state i { font-size: 4rem; margin-bottom: 1rem; opacity: 0.5; }
-        .empty-state p { font-size: 1.2rem; }
-
-        /* Status & Modals */
+        /* Status & Progress */
         #statusContainer {
-            margin-top: 30px; padding: 28px; background: var(--bg-card);
-            border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+            margin-top: 30px; padding: 28px; background: var(--bg-card); border-radius: 16px;
+            border: 1px solid var(--border); display: none;
         }
         .progress-track { width: 100%; height: 10px; background: #222; border-radius: 10px; overflow: hidden; margin: 20px 0; }
         .progress-fill { width: 0%; height: 100%; background: var(--primary); transition: width 0.5s ease; }
 
+        /* Phone Preview */
+        .preview-panel { flex: 1 1 350px; display: flex; justify-content: center; padding-top: 20px; }
+        .phone-frame {
+            width: 320px; height: 650px; background: #000; border-radius: 45px; border: 12px solid #1f1f1f;
+            position: relative; overflow: hidden; box-shadow: 0 40px 100px rgba(0, 0, 0, 0.8);
+        }
+        .status-bar {
+            width: 100%; height: 40px; padding: 0 25px; display: flex; justify-content: space-between;
+            align-items: center; font-size: 12px; color: white; position: absolute; top: 0; z-index: 10;
+        }
+        .screen {
+            width: 100%; height: 100%; background: linear-gradient(145deg, #111 0%, #000 100%);
+            display: flex; flex-direction: column; align-items: center; justify-content: center; padding-top: 50px;
+        }
+        .app-icon-display { width: 90px; height: 90px; border-radius: 22px; object-fit: cover; box-shadow: 0 15px 30px rgba(0,0,0,0.6); margin-bottom: 25px; }
+        .icon-placeholder {
+            width: 90px; height: 90px; border-radius: 22px; background: #222; display: flex;
+            align-items: center; justify-content: center; color: #444; font-size: 2.5rem; border: 3px dashed #333; margin-bottom: 25px;
+        }
+        .app-name-display { font-size: 1.4rem; font-weight: 600; text-align: center; max-width: 85%; }
+
+        /* Apps Grid & Empty State */
+        .apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px; }
+        .app-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 24px;
+            transition: 0.3s; position: relative; overflow: hidden;
+        }
+        .app-card:hover { border-color: var(--primary); transform: translateY(-6px); }
+        .app-badge { position: absolute; top: 16px; right: 16px; background: rgba(0, 230, 118, 0.15); color: var(--primary); padding: 5px 12px; border-radius: 30px; font-size: 0.75rem; font-weight: 600; }
+        .app-icon-small { width: 55px; height: 55px; border-radius: 12px; object-fit: cover; }
+        
+        .empty-state { text-align: center; padding: 3rem; color: #555; display: none; flex-direction: column; align-items: center; }
+        .empty-state i { font-size: 4rem; margin-bottom: 1rem; opacity: 0.5; }
+
+        /* --- FIXED CROP MODAL --- */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px);
             z-index: 3000; display: none; justify-content: center; align-items: center;
         }
         .modal-content {
-            background: var(--bg-card); padding: 2.5rem; border-radius: 20px; border: 1px solid var(--border);
-            width: 90%; max-width: 420px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            background: var(--bg-card); padding: 2rem; border-radius: 20px; border: 1px solid var(--border);
+            width: 95%; max-width: 500px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.5);
         }
+        /* The Fix for Cropper */
+        .crop-container {
+            width: 100%;
+            max-height: 400px; /* Limits height */
+            margin: 20px 0;
+            background-color: #000;
+            overflow: hidden;
+            border-radius: 8px;
+            display: flex; justify-content: center; align-items: center;
+        }
+        #cropImage { max-width: 100%; display: block; }
+        
         .modal-actions { display: flex; gap: 16px; justify-content: center; margin-top: 24px; }
         .modal-btn { padding: 12px 28px; border-radius: 12px; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; flex: 1; }
         .btn-confirm { background: var(--primary); color: #000; }
         .btn-cancel { background: #333; color: white; }
 
         .toast {
-            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
-            background: #222; color: white; padding: 16px 32px; border-radius: 50px;
-            opacity: 0; transition: 0.3s; z-index: 2000; border: 1px solid #333; box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #222;
+            color: white; padding: 16px 32px; border-radius: 50px; opacity: 0; transition: 0.3s; z-index: 4000;
+            border: 1px solid #333; box-shadow: 0 10px 30px rgba(0,0,0,0.4);
         }
         .toast.show { opacity: 1; bottom: 50px; }
 
-        /* --- RESPONSIVE MEDIA QUERIES --- */
         @media (max-width: 950px) {
-            .main-container {
-                flex-direction: column;
-                align-items: center;
-                gap: 2rem;
-            }
-            .config-panel {
-                width: 100%;
-                max-width: 100%;
-                order: 1;
-            }
-            .preview-panel {
-                width: 100%;
-                order: 2;
-                margin-top: 1rem;
-            }
+            .main-container { flex-direction: column; align-items: center; gap: 2rem; }
+            .config-panel { width: 100%; order: 1; }
+            .preview-panel { width: 100%; order: 2; margin-top: 1rem; }
         }
-
         @media (max-width: 500px) {
             .navbar { padding: 1rem 1.2rem; }
-            .brand { font-size: 1.5rem; }
-            .user-name { display: none; }
-            .nav-actions { gap: 10px; }
-            
-            .phone-frame {
-                transform: scale(0.85);
-                margin-top: -20px;
-                margin-bottom: -20px;
-            }
-            
-            h2 { font-size: 1.8rem; }
-            .login-box { padding: 2rem; }
-            .login-box h2 { font-size: 2.5rem; }
+            .phone-frame { transform: scale(0.85); margin: -20px 0; }
         }
     </style>
 </head>
 
 <body>
-
     <div id="loadingOverlay"><span class="loader"></span></div>
 
-    <div id="loginOverlay" style="display:none;">
+    <div id="loginOverlay">
         <div class="login-box">
             <h2 class="brand">Aite<span class="dot">.</span>studio</h2>
             <p class="subtitle" data-i18n="login_desc">Please sign in to manage your apps</p>
@@ -469,17 +258,12 @@
         </div>
     </nav>
 
-    <div id="appContent" style="display:none;">
+    <div id="appContent">
         <div class="main-container">
-            
             <div class="config-panel">
                 <div class="nav-tabs">
-                    <button class="tab-btn active" onclick="switchTab('new')" id="tabNew">
-                        <i class="fa-solid fa-plus-circle"></i> <span data-i18n="tab_new">تطبيق جديد</span>
-                    </button>
-                    <button class="tab-btn" onclick="switchTab('list')" id="tabList">
-                        <i class="fa-solid fa-apps"></i> <span data-i18n="tab_list">تطبيقاتي</span>
-                    </button>
+                    <button class="tab-btn active" onclick="switchTab('new')" id="tabNew"><i class="fa-solid fa-plus-circle"></i> <span data-i18n="tab_new">تطبيق جديد</span></button>
+                    <button class="tab-btn" onclick="switchTab('list')" id="tabList"><i class="fa-solid fa-apps"></i> <span data-i18n="tab_list">تطبيقاتي</span></button>
                 </div>
 
                 <div id="viewNewApp">
@@ -489,10 +273,8 @@
                     <form id="buildForm">
                         <label data-i18n="label_app_name">اسم التطبيق</label>
                         <input type="text" class="input-field" id="appName" placeholder="مثال: متجري" oninput="updatePreview()" required>
-
                         <label data-i18n="label_pkg_name">معرف الحزمة (Package ID)</label>
                         <input type="text" class="input-field" id="packageName" placeholder="مثال: com.aite.shop" required>
-
                         <label data-i18n="label_icon">أيقونة التطبيق (PNG)</label>
                         <div class="upload-box" onclick="document.getElementById('iconInput').click()">
                             <div id="uploadText">
@@ -501,7 +283,6 @@
                             </div>
                             <input type="file" id="iconInput" accept="image/*" style="display:none">
                         </div>
-
                         <label data-i18n="label_zip">ملف المشروع المضغوط (ZIP)</label>
                         <div class="zip-upload-area" id="zipDropZone" onclick="document.getElementById('zipInput').click()">
                             <i class="fa-regular fa-file-zipper zip-icon"></i>
@@ -510,13 +291,12 @@
                             <div id="fileInfo" class="file-info"><i class="fa-solid fa-file-zipper"></i> <span id="fileName">project.zip</span></div>
                             <input type="file" id="zipInput" accept=".zip" style="display:none">
                         </div>
-
                         <button type="submit" class="build-btn" id="submitBtn">
                             <i class="fa-solid fa-rocket"></i> <span data-i18n="btn_start_build">بدء البناء السحابي</span>
                         </button>
                     </form>
 
-                    <div id="statusContainer" style="display:none;">
+                    <div id="statusContainer">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                             <span style="color:#888;" data-i18n="status_label">حالة البناء:</span>
                             <span id="currentStatus" style="color:var(--primary); font-weight:bold;">...</span>
@@ -548,104 +328,41 @@
                     </div>
                 </div>
             </div>
-
         </div>
     </div>
 
     <footer style="text-align:center; padding:2rem; color:#444; font-size:0.9rem; border-top:1px solid var(--border); margin-top: auto;">
         &copy; 2026 Aite.studio - Flutter Cloud Builder
     </footer>
-
     <div id="toast" class="toast"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
     <script>
-        // --- Translations ---
         const translations = {
             ar: {
-                welcome_title: "مرحباً أيها المطور!",
-                welcome_sub: "قم برفع كود مشروع فلاتر الخاص بك، وسنقوم ببنائه وتوقيعه سحابياً.",
-                label_app_name: "اسم التطبيق",
-                label_pkg_name: "معرف الحزمة (Package ID)",
-                label_icon: "أيقونة التطبيق (PNG)",
-                label_zip: "ملف المشروع المضغوط (ZIP)",
-                click_upload_icon: "اضغط لاختيار الأيقونة",
-                upload_zip_title: "ارفع كود فلاتر هنا",
-                upload_zip_desc: "يجب أن يحتوي المجلد على android/ و lib/",
-                btn_start_build: "بدء البناء السحابي",
-                crop_title: "ضبط الأيقونة",
-                confirm: "اعتماد",
-                cancel: "إلغاء",
-                status_label: "حالة البناء:",
-                status_uploading: "جاري رفع الملفات إلى السيرفر...",
-                status_success: "تم الاستلام بنجاح!",
-                status_error: "فشل الإرسال",
-                msg_success: "تم إرسال المهمة. سيصلك التطبيق عبر تليجرام فور الانتهاء.",
-                err_select_icon: "يرجى اختيار وقص أيقونة التطبيق",
-                err_select_zip: "يرجى رفع ملف المشروع (ZIP)",
-                err_only_zip: "يرجى رفع ملف بصيغة ZIP فقط",
-                login_desc: "يرجى تسجيل الدخول لإدارة تطبيقاتك",
-                signin_google: "تسجيل الدخول عبر Google",
-                tab_new: "تطبيق جديد",
-                tab_list: "تطبيقاتي",
-                created_at: "تم الإنشاء:",
-                logout_title: "تسجيل الخروج",
-                logout_desc: "هل أنت متأكد من تسجيل الخروج؟",
-                btn_yes: "نعم",
-                btn_no: "لا",
-                no_apps: "لا توجد تطبيقات بعد."
+                welcome_title: "مرحباً أيها المطور!", welcome_sub: "قم برفع كود مشروع فلاتر الخاص بك، وسنقوم ببنائه وتوقيعه سحابياً.",
+                label_app_name: "اسم التطبيق", label_pkg_name: "معرف الحزمة (Package ID)", label_icon: "أيقونة التطبيق (PNG)",
+                label_zip: "ملف المشروع المضغوط (ZIP)", click_upload_icon: "اضغط لاختيار الأيقونة", upload_zip_title: "ارفع كود فلاتر هنا",
+                upload_zip_desc: "يجب أن يحتوي المجلد على android/ و lib/", btn_start_build: "بدء البناء السحابي",
+                crop_title: "ضبط الأيقونة", confirm: "اعتماد", cancel: "إلغاء", status_label: "حالة البناء:",
+                status_uploading: "جاري رفع الملفات إلى السيرفر...", login_desc: "يرجى تسجيل الدخول لإدارة تطبيقاتك",
+                signin_google: "تسجيل الدخول عبر Google", tab_new: "تطبيق جديد", tab_list: "تطبيقاتي",
+                logout_title: "تسجيل الخروج", logout_desc: "هل أنت متأكد من تسجيل الخروج؟", btn_yes: "نعم", btn_no: "لا",
+                no_apps: "لا توجد تطبيقات بعد.", err_select_icon: "يرجى اختيار وقص الأيقونة", err_select_zip: "يرجى رفع ملف ZIP"
             },
             en: {
-                welcome_title: "Welcome Developer!",
-                welcome_sub: "Upload your Flutter project source code, and we'll build and sign the APK in the cloud.",
-                label_app_name: "App Name",
-                label_pkg_name: "Package ID",
-                label_icon: "App Icon (PNG)",
-                label_zip: "Project Source (ZIP)",
-                click_upload_icon: "Click to select icon",
-                upload_zip_title: "Upload Flutter Code",
-                upload_zip_desc: "Folder must contain android/ and lib/",
-                btn_start_build: "Start Cloud Build",
-                crop_title: "Adjust Icon",
-                confirm: "Confirm",
-                cancel: "Cancel",
-                status_label: "Build Status:",
-                status_uploading: "Uploading files to server...",
-                status_success: "Received Successfully!",
-                status_error: "Upload Failed",
-                msg_success: "Task submitted. You will receive the APK via Telegram shortly.",
-                err_select_icon: "Please select and crop the app icon",
-                err_select_zip: "Please upload the project ZIP file",
-                err_only_zip: "Please upload ZIP files only",
-                login_desc: "Please sign in to manage your apps",
-                signin_google: "Sign in with Google",
-                tab_new: "New App",
-                tab_list: "My Apps",
-                created_at: "Created:",
-                logout_title: "Logout",
-                logout_desc: "Are you sure you want to log out?",
-                btn_yes: "Yes",
-                btn_no: "No",
-                no_apps: "No applications yet."
+                welcome_title: "Welcome Developer!", welcome_sub: "Upload your Flutter code, we'll build and sign it.",
+                label_app_name: "App Name", label_pkg_name: "Package ID", label_icon: "App Icon (PNG)",
+                label_zip: "Project Source (ZIP)", click_upload_icon: "Click to select icon", upload_zip_title: "Upload Flutter Code",
+                upload_zip_desc: "Folder must contain android/ and lib/", btn_start_build: "Start Cloud Build",
+                crop_title: "Adjust Icon", confirm: "Confirm", cancel: "Cancel", status_label: "Build Status:",
+                status_uploading: "Uploading files...", login_desc: "Please sign in to manage your apps",
+                signin_google: "Sign in with Google", tab_new: "New App", tab_list: "My Apps",
+                logout_title: "Logout", logout_desc: "Are you sure?", btn_yes: "Yes", btn_no: "No",
+                no_apps: "No applications yet.", err_select_icon: "Please select icon", err_select_zip: "Please upload ZIP"
             }
         };
 
-        function openLogoutModal() {
-            document.getElementById('logoutModal').style.display = 'flex';
-        }
-
-        function closeLogoutModal() {
-            document.getElementById('logoutModal').style.display = 'none';
-        }
-
-        function confirmLogout() {
-            // نظهر اللودر عند الخروج لنمنع الوميض
-            document.getElementById('loadingOverlay').style.display = 'flex';
-            auth.signOut();
-            closeLogoutModal();
-        }
-
-        // --- Firebase Config ---
         const firebaseConfig = {
             apiKey: "AIzaSyAN-9qBeL51nwpctJw9rSQYzz1C7dDRf1E",
             authDomain: "world-3212f.firebaseapp.com",
@@ -653,387 +370,247 @@
             projectId: "world-3212f",
             storageBucket: "world-3212f.firebasestorage.app",
             messagingSenderId: "421425146697",
-            appId: "1:421425146697:web:efa372fbd585e8888e4898",
-            measurementId: "G-163YR2VGK8"
+            appId: "1:421425146697:web:efa372fbd585e8888e4898"
         };
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
         const db = firebase.database();
-
         let currentUser = null;
 
-        // --- Auth Logic (FIXED GLITCH) ---
-        function signInWithGoogle() {
-            const provider = new firebase.auth.GoogleAuthProvider();
-            auth.signInWithPopup(provider).catch(error => {
-                showToast("Login Failed: " + error.message);
-                console.error(error);
-            });
-        }
-
-        // نستمع لحالة المستخدم، ولا نخفي شاشة التحميل إلا عند استلام رد مؤكد
+        function signInWithGoogle() { auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e => console.error(e)); }
+        
+        // --- AUTH & GLITCH FIX ---
         auth.onAuthStateChanged(user => {
-            const loadingOverlay = document.getElementById('loadingOverlay');
-            
+            const loader = document.getElementById('loadingOverlay');
             if (user) {
-                // حالة: مسجل دخول
                 currentUser = user;
                 document.getElementById('loginOverlay').style.display = 'none';
                 document.getElementById('appContent').style.display = 'block';
                 document.getElementById('userProfile').style.display = 'flex';
-                document.getElementById('userAvatar').src = user.photoURL || 'https://via.placeholder.com/42';
-                document.getElementById('userName').innerText = user.displayName || user.email;
-                loadMyApps();
+                document.getElementById('userAvatar').src = user.photoURL;
+                document.getElementById('userName').innerText = user.displayName;
                 document.querySelector('.preview-panel').style.display = 'flex';
+                loadMyApps();
             } else {
-                // حالة: غير مسجل (زائر)
                 currentUser = null;
-                document.getElementById('loginOverlay').style.display = 'flex'; // أظهر التسجيل
+                document.getElementById('loginOverlay').style.display = 'flex';
                 document.getElementById('appContent').style.display = 'none';
                 document.getElementById('userProfile').style.display = 'none';
-                document.getElementById('userAvatar').src = '';
-                document.getElementById('userName').innerText = '';
                 document.querySelector('.preview-panel').style.display = 'none';
             }
-
-            // الآن فقط نخفي اللودر، لضمان أن الواجهة الصحيحة قد تم تفعيلها
-            if(loadingOverlay) loadingOverlay.style.display = 'none';
+            if(loader) loader.style.display = 'none';
         });
 
-        // --- Tabs ---
+        function openLogoutModal() { document.getElementById('logoutModal').style.display = 'flex'; }
+        function closeLogoutModal() { document.getElementById('logoutModal').style.display = 'none'; }
+        function confirmLogout() { document.getElementById('loadingOverlay').style.display='flex'; auth.signOut(); closeLogoutModal(); }
+
+        // --- TABS & UI ---
         function switchTab(tab) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            const previewPanel = document.querySelector('.preview-panel');
-
             if (tab === 'new') {
                 document.getElementById('tabNew').classList.add('active');
                 document.getElementById('viewNewApp').style.display = 'block';
                 document.getElementById('myAppsContainer').style.display = 'none';
-                previewPanel.style.display = 'flex'; 
+                document.querySelector('.preview-panel').style.display = 'flex';
             } else {
                 document.getElementById('tabList').classList.add('active');
                 document.getElementById('viewNewApp').style.display = 'none';
                 document.getElementById('myAppsContainer').style.display = 'block';
-                previewPanel.style.display = 'none';
+                document.querySelector('.preview-panel').style.display = 'none';
             }
         }
 
-        function loadMyApps() {
-            if (!currentUser) return;
-            const appsRef = db.ref('users/' + currentUser.uid + '/apps');
-            appsRef.on('value', (snapshot) => {
-                const data = snapshot.val();
-                const grid = document.getElementById('appsGrid');
-                const noAppsMsg = document.getElementById('noAppsMsg');
-                
-                grid.innerHTML = '';
-                
-                if (data) {
-                    noAppsMsg.style.display = 'none';
-                    Object.values(data).forEach(app => {
-                        const card = document.createElement('div');
-                        card.className = 'app-card';
-                        card.innerHTML = `
-                        <span class="app-badge"><i class="fa-solid fa-check"></i> Built</span>
-                        <div style="display:flex; gap:15px; align-items:center;">
-                            <img src="${app.iconUrl}" class="app-icon-small">
-                            <div>
-                                <h4>${app.appName}</h4>
-                                <span style="font-size:0.8rem; color:#666;">${app.packageName}</span>
-                            </div>
-                        </div>
-                        <hr style="border:0; border-top:1px solid #333; margin:15px 0;">
-                        <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:#888;">
-                            <span><i class="fa-regular fa-clock"></i> ${new Date(app.timestamp).toLocaleDateString()}</span>
-                            <span>#${app.buildId.slice(-6)}</span>
-                        </div>
-                    `;
-                        grid.appendChild(card);
-                    });
-                } else {
-                    noAppsMsg.style.display = 'flex';
-                }
-            });
-        }
-
         let currentLang = 'ar';
-
-        window.addEventListener('load', () => {
-            // حذفنا كود إخفاء اللودر من هنا، وأصبح داخل auth.onAuthStateChanged
-            updatePhoneTime();
-            setLanguage('ar');
-        });
-
         function toggleLanguage() {
             currentLang = currentLang === 'ar' ? 'en' : 'ar';
-            setLanguage(currentLang);
-        }
-
-        function setLanguage(lang) {
-            document.documentElement.lang = lang;
-            document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
-            document.body.style.fontFamily = lang === 'ar' ? "var(--font-ar)" : "var(--font-en)";
-
+            document.documentElement.lang = currentLang;
+            document.documentElement.dir = currentLang === 'ar' ? 'rtl' : 'ltr';
+            document.body.style.fontFamily = currentLang === 'ar' ? "var(--font-ar)" : "var(--font-en)";
             document.querySelectorAll('[data-i18n]').forEach(el => {
                 const key = el.getAttribute('data-i18n');
-                if (translations[lang][key]) el.innerText = translations[lang][key];
+                if (translations[currentLang][key]) el.innerText = translations[currentLang][key];
             });
-
-            document.getElementById('appName').placeholder = lang === 'ar' ? "مثال: متجري" : "e.g. My Shop";
-            document.getElementById('packageName').placeholder = lang === 'ar' ? "مثال: com.aite.shop" : "e.g. com.aite.shop";
+            document.getElementById('appName').placeholder = currentLang === 'ar' ? "مثال: متجري" : "e.g. My Shop";
         }
-
+        window.addEventListener('load', () => { toggleLanguage(); updatePhoneTime(); });
         function updatePhoneTime() {
             const now = new Date();
-            document.getElementById('phoneTime').innerText =
-                now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+            document.getElementById('phoneTime').innerText = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
             setTimeout(updatePhoneTime, 1000);
         }
-
-        function showToast(msgKey) {
+        function updatePreview() {
+            document.getElementById('previewName').innerText = document.getElementById('appName').value || "App Name";
+        }
+        function showToast(key) {
             const t = document.getElementById('toast');
-            t.innerText = translations[currentLang][msgKey] || msgKey;
+            t.innerText = translations[currentLang][key] || key;
             t.classList.add('show');
             setTimeout(() => t.classList.remove('show'), 4000);
         }
 
-        // --- Drag & Drop ZIP ---
-        const dropZone = document.getElementById('zipDropZone');
-        const zipInput = document.getElementById('zipInput');
-        const fileInfo = document.getElementById('fileInfo');
-        const fileNameSpan = document.getElementById('fileName');
-
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eName => {
-            dropZone.addEventListener(eName, e => { e.preventDefault(); e.stopPropagation(); }, false);
-        });
-
-        ['dragenter', 'dragover'].forEach(eName => dropZone.addEventListener(eName, () => dropZone.classList.add('highlight'), false));
-        ['dragleave', 'drop'].forEach(eName => dropZone.addEventListener(eName, () => dropZone.classList.remove('highlight'), false));
-
-        dropZone.addEventListener('drop', handleDrop, false);
-        function handleDrop(e) { handleFiles(e.dataTransfer.files); }
-        zipInput.addEventListener('change', function () { handleFiles(this.files); });
-
-        function handleFiles(files) {
-            if (files.length > 0) {
-                const file = files[0];
-                if (file.name.endsWith('.zip')) {
-                    fileNameSpan.innerText = file.name + ` (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
-                    fileInfo.style.display = 'flex';
-                    zipInput.files = files;
-                } else {
-                    showToast('err_only_zip');
-                }
-            }
-        }
-
-        // --- Cropper ---
-        let cropper = null;
-        let finalIconBlob = null;
-
-        document.getElementById('iconInput').addEventListener('change', function (e) {
+        // --- CROPPER (FIXED) ---
+        let cropper = null; let finalIconBlob = null;
+        document.getElementById('iconInput').addEventListener('change', function(e) {
             const file = e.target.files[0];
-            if (file) {
+            if(file) {
                 const reader = new FileReader();
-                reader.onload = function (evt) {
-                    document.getElementById('cropImage').src = evt.target.result;
+                reader.onload = function(evt) {
+                    const img = document.getElementById('cropImage');
+                    img.src = evt.target.result;
                     document.getElementById('cropModal').style.display = 'flex';
-                    if (cropper) cropper.destroy();
-                    cropper = new Cropper(document.getElementById('cropImage'), { aspectRatio: 1, viewMode: 1 });
+                    if(cropper) cropper.destroy();
+                    cropper = new Cropper(img, { aspectRatio: 1, viewMode: 1, autoCropArea: 1 });
                 };
                 reader.readAsDataURL(file);
             }
             e.target.value = '';
         });
-
-        window.closeCropModal = function () {
-            document.getElementById('cropModal').style.display = 'none';
-            if (cropper) { cropper.destroy(); cropper = null; }
-        }
-
-        window.performCrop = function () {
-            if (!cropper) return;
-            cropper.getCroppedCanvas({ width: 512, height: 512 }).toBlob((blob) => {
+        function closeCropModal() { document.getElementById('cropModal').style.display='none'; if(cropper) cropper.destroy(); }
+        function performCrop() {
+            if(!cropper) return;
+            cropper.getCroppedCanvas({width:512, height:512}).toBlob(blob => {
                 finalIconBlob = blob;
-                const previewUrl = URL.createObjectURL(blob);
-                const previewImg = document.getElementById('previewIcon');
-                previewImg.src = previewUrl;
-                previewImg.style.display = 'block';
+                document.getElementById('previewIcon').src = URL.createObjectURL(blob);
+                document.getElementById('previewIcon').style.display = 'block';
                 document.getElementById('iconPlaceholder').style.display = 'none';
-                document.getElementById('uploadText').innerHTML =
-                    '<i class="fa-solid fa-circle-check" style="color:var(--primary); font-size:2rem;"></i>';
+                document.getElementById('uploadText').innerHTML = '<i class="fa-solid fa-check" style="color:var(--primary);font-size:2rem;"></i>';
                 closeCropModal();
-            }, 'image/png');
+            });
         }
 
-        window.updatePreview = function () {
-            const name = document.getElementById('appName').value;
-            document.getElementById('previewName').innerText = name || "App Name";
-        }
+        // --- SUBMIT & POLLING ---
+        let pollingInterval = null; let buildStartTime = 0;
+        document.getElementById('buildForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const zip = document.getElementById('zipInput').files[0];
+            if(!finalIconBlob) return showToast('err_select_icon');
+            if(!zip) return showToast('err_select_zip');
 
-        // --- Submit ---
-// --- المتغيرات لإدارة حالة البناء ---
-let isBuilding = false;
-let pollingInterval = null;
-let buildStartTime = 0;
+            const btn = document.getElementById('submitBtn');
+            const statusDiv = document.getElementById('statusContainer');
+            const statusTxt = document.getElementById('currentStatus');
+            const progressBar = document.getElementById('progressBar');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loader" style="width:20px;height:20px;border-width:2px;"></span>';
+            statusDiv.style.display = 'block';
+            statusTxt.innerText = translations[currentLang]['status_uploading'];
+            progressBar.style.width = '5%';
+            document.getElementById('resultArea').innerHTML = '';
 
-document.getElementById('buildForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
+            const fd = new FormData();
+            fd.append('appName', document.getElementById('appName').value);
+            fd.append('packageName', document.getElementById('packageName').value);
+            fd.append('icon', finalIconBlob, 'icon.png');
+            fd.append('projectZip', zip);
 
-    const zipFile = document.getElementById('zipInput').files[0];
-    if (!finalIconBlob) return showToast('err_select_icon');
-    if (!zipFile) return showToast('err_select_zip');
-
-    const btn = document.getElementById('submitBtn');
-    const statusDiv = document.getElementById('statusContainer');
-    const statusTxt = document.getElementById('currentStatus');
-    const progressBar = document.getElementById('progressBar');
-    const resultArea = document.getElementById('resultArea');
-
-    // 1. بدء العملية
-    btn.disabled = true;
-    btn.innerHTML = '<span class="loader" style="width:20px; height:20px; border-width:2px;"></span>';
-    statusDiv.style.display = 'block';
-    statusTxt.innerText = translations[currentLang]['status_uploading'];
-    progressBar.style.width = '5%';
-    progressBar.style.background = "var(--primary)";
-    resultArea.innerHTML = '';
-    
-    const formData = new FormData();
-    formData.append('appName', document.getElementById('appName').value);
-    formData.append('packageName', document.getElementById('packageName').value);
-    formData.append('icon', finalIconBlob, 'icon.png');
-    formData.append('projectZip', zipFile);
-
-    try {
-        // 2. إرسال الملفات للسيرفر
-        const response = await fetch('/build-flutter', { method: 'POST', body: formData });
-        const result = await response.json();
-
-        if (result.success) {
-            // 3. بدء عملية التتبع (Polling)
-            startPolling(result.build_id, result.safe_app_name);
-        } else { 
-            throw new Error(result.error); 
-        }
-
-    } catch (error) {
-        handleBuildError(error.message);
-    }
-});
-
-function startPolling(buildId, safeAppName) {
-    const statusTxt = document.getElementById('currentStatus');
-    const progressBar = document.getElementById('progressBar');
-    
-    buildStartTime = Date.now();
-    isBuilding = true;
-    
-    // رسائل توضيحية تتغير مع الوقت
-    const messages = [
-        { time: 0, msg: "جاري تهيئة البيئة السحابية..." },
-        { time: 30, msg: "تثبيت Flutter SDK والمكاتب..." },
-        { time: 90, msg: "جاري بناء ملف APK (يستغرق 3-5 دقائق)..." },
-        { time: 200, msg: "تحسين حجم التطبيق وضغطه..." },
-        { time: 300, msg: "جاري توقيع التطبيق ورفعه..." }
-    ];
-
-    // تحديث الشريط والنصوص
-    pollingInterval = setInterval(async () => {
-        const elapsedSec = Math.floor((Date.now() - buildStartTime) / 1000);
-        
-        // تحديث الرسالة بناءً على الوقت المنقضي
-        const currentMsgObj = messages.slice().reverse().find(m => elapsedSec >= m.time);
-        if(currentMsgObj) statusTxt.innerText = currentMsgObj.msg;
-
-        // تحديث شريط التقدم ببطء (وهمي ذكي حتى 95%)
-        let progress = Math.min(10 + (elapsedSec / 4), 95);
-        progressBar.style.width = progress + '%';
-
-        // التحقق من السيرفر كل 10 ثواني
-        if (elapsedSec % 10 === 0) {
             try {
-                const checkRes = await fetch(`/check-status/${buildId}?appName=${safeAppName}`);
-                const checkData = await checkRes.json();
+                const res = await fetch('/build-flutter', { method: 'POST', body: fd });
+                const data = await res.json();
+                if(data.success) {
+                    startPolling(data.build_id, data.safe_app_name);
+                } else { throw new Error(data.error); }
+            } catch(err) {
+                handleBuildError(err.message);
+            }
+        });
 
-                if (checkData.completed) {
-                    finishBuild(checkData.download_url, buildId);
+        function startPolling(buildId, safeAppName) {
+            const statusTxt = document.getElementById('currentStatus');
+            const progressBar = document.getElementById('progressBar');
+            buildStartTime = Date.now();
+            const messages = [
+                { time: 0, msg: "جاري تهيئة البيئة السحابية..." },
+                { time: 30, msg: "تثبيت Flutter SDK والمكاتب..." },
+                { time: 90, msg: "جاري بناء ملف APK (يستغرق 3-5 دقائق)..." },
+                { time: 200, msg: "تحسين حجم التطبيق وضغطه..." },
+                { time: 300, msg: "جاري توقيع التطبيق ورفعه..." }
+            ];
+
+            pollingInterval = setInterval(async () => {
+                const elapsed = Math.floor((Date.now() - buildStartTime) / 1000);
+                const msgObj = messages.slice().reverse().find(m => elapsed >= m.time);
+                if(msgObj) statusTxt.innerText = msgObj.msg;
+                
+                let progress = Math.min(10 + (elapsed / 4), 95);
+                progressBar.style.width = progress + '%';
+
+                if(elapsed % 10 === 0) {
+                    try {
+                        const check = await fetch(`/check-status/${buildId}?appName=${safeAppName}`);
+                        const res = await check.json();
+                        if(res.completed) finishBuild(res.download_url, buildId);
+                    } catch(e) { console.log("Polling..."); }
                 }
-            } catch (err) {
-                console.error("Polling error", err);
-                // لا نوقف البناء بسبب خطأ اتصال عابر
+                if(elapsed > 600) handleBuildError("Timeout");
+            }, 1000);
+        }
+
+        function finishBuild(url, id) {
+            clearInterval(pollingInterval);
+            document.getElementById('progressBar').style.width = '100%';
+            document.getElementById('currentStatus').innerText = "تم البناء بنجاح!";
+            document.getElementById('submitBtn').innerHTML = '<i class="fa-solid fa-check"></i> تم';
+            document.getElementById('submitBtn').disabled = false;
+            
+            document.getElementById('resultArea').innerHTML = `
+                <div style="text-align:center; padding:20px;">
+                    <i class="fa-solid fa-file-arrow-down" style="font-size:3rem; color:var(--primary); margin-bottom:15px;"></i>
+                    <h3>تطبيقك جاهز!</h3>
+                    <a href="${url}" class="build-btn" style="text-decoration:none;"><i class="fa-solid fa-download"></i> تحميل APK</a>
+                </div>`;
+            window.location.href = url;
+
+            if(currentUser) {
+                db.ref('users/' + currentUser.uid + '/apps').push({
+                    appName: document.getElementById('appName').value,
+                    packageName: document.getElementById('packageName').value,
+                    downloadUrl: url,
+                    buildId: id,
+                    timestamp: Date.now(),
+                    iconUrl: document.getElementById('previewIcon').src
+                });
             }
         }
-        
-        // إيقاف اجباري بعد 10 دقائق (Timeout)
-        if (elapsedSec > 600) {
-            handleBuildError("انتهت مهلة البناء. يرجى المحاولة لاحقاً أو التحقق من الكود.");
+
+        function handleBuildError(msg) {
+            clearInterval(pollingInterval);
+            document.getElementById('currentStatus').innerText = "فشل البناء";
+            document.getElementById('progressBar').style.background = "var(--danger)";
+            document.getElementById('resultArea').innerHTML = `<div style="color:var(--danger); padding:10px;">${msg}</div>`;
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').innerHTML = 'إعادة المحاولة';
         }
 
-    }, 1000);
-}
-
-function finishBuild(downloadUrl, buildId) {
-    clearInterval(pollingInterval);
-    isBuilding = false;
-
-    const statusTxt = document.getElementById('currentStatus');
-    const progressBar = document.getElementById('progressBar');
-    const resultArea = document.getElementById('resultArea');
-    const btn = document.getElementById('submitBtn');
-
-    progressBar.style.width = '100%';
-    statusTxt.innerText = "تم البناء بنجاح! جاري التنزيل...";
-    
-    // إنشاء زر التحميل والرابط
-    resultArea.innerHTML = `
-        <div style="text-align:center; padding:20px; animation: fadeIn 0.5s;">
-            <i class="fa-solid fa-file-arrow-down" style="font-size:3rem; color:var(--primary); margin-bottom:15px;"></i>
-            <h3>تطبيقك جاهز!</h3>
-            <p style="color:#888; font-size:0.9rem; word-break: break-all;">${downloadUrl}</p>
-            <a href="${downloadUrl}" class="build-btn" style="margin-top:15px; text-decoration:none;">
-                <i class="fa-solid fa-download"></i> تحميل APK
-            </a>
-            <small style="display:block; margin-top:10px; color:#555;">Build ID: ${buildId}</small>
-        </div>
-    `;
-
-    // تنزيل تلقائي
-    window.location.href = downloadUrl;
-
-    // إعادة تفعيل الزر الرئيسي
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fa-solid fa-check"></i> تم البناء';
-    
-    // حفظ في Firebase (اختياري)
-    if (currentUser) {
-        db.ref('users/' + currentUser.uid + '/apps').push({
-            appName: document.getElementById('appName').value,
-            packageName: document.getElementById('packageName').value,
-            downloadUrl: downloadUrl,
-            buildId: buildId,
-            timestamp: Date.now()
-        });
-    }
-}
-
-function handleBuildError(msg) {
-    if(pollingInterval) clearInterval(pollingInterval);
-    isBuilding = false;
-
-    const statusTxt = document.getElementById('currentStatus');
-    const progressBar = document.getElementById('progressBar');
-    const resultArea = document.getElementById('resultArea');
-    const btn = document.getElementById('submitBtn');
-
-    statusTxt.innerText = "فشل البناء";
-    statusTxt.style.color = "var(--danger)";
-    progressBar.style.background = "var(--danger)";
-    resultArea.innerHTML = `<div style="color:var(--danger); padding:10px; background:rgba(255,68,68,0.1); border-radius:8px;">${msg}</div>`;
-    
-    btn.disabled = false;
-    btn.innerHTML = `<i class="fa-solid fa-rocket"></i> إعادة المحاولة`;
-}
+        // --- LOAD APPS ---
+        function loadMyApps() {
+            if(!currentUser) return;
+            db.ref('users/' + currentUser.uid + '/apps').on('value', snap => {
+                const grid = document.getElementById('appsGrid');
+                grid.innerHTML = '';
+                const data = snap.val();
+                if(data) {
+                    document.getElementById('noAppsMsg').style.display = 'none';
+                    Object.values(data).forEach(app => {
+                        const card = document.createElement('div');
+                        card.className = 'app-card';
+                        card.innerHTML = `
+                            <span class="app-badge"><i class="fa-solid fa-check"></i> Built</span>
+                            <div style="display:flex; gap:15px; align-items:center;">
+                                <img src="${app.iconUrl || ''}" class="app-icon-small">
+                                <div><h4>${app.appName}</h4><span style="font-size:0.8rem; color:#666;">${app.packageName}</span></div>
+                            </div>
+                            <hr style="border:0; border-top:1px solid #333; margin:15px 0;">
+                            <a href="${app.downloadUrl}" target="_blank" style="color:var(--primary); text-decoration:none; font-size:0.9rem;">
+                                <i class="fa-solid fa-download"></i> تحميل
+                            </a>
+                        `;
+                        grid.appendChild(card);
+                    });
+                } else { document.getElementById('noAppsMsg').style.display = 'flex'; }
+            });
+        }
     </script>
 </body>
 </html>

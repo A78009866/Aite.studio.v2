@@ -16,14 +16,13 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Setup Environment
+      - name: Setup Java & Flutter
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      
+      - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           flutter-version: ${{ github.event.client_payload.flutter_version }}
@@ -37,78 +36,77 @@ jobs:
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
-      - name: Smart Auto-Repair Engine
+      - name: Nuclear Repair Engine (Fix XML & V2)
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
-          # ========================================================
-          # 1. إصلاح pubspec.yaml (Dependencies Hell Fix)
-          # ========================================================
-          # إزالة إعدادات الأيقونات القديمة التي تسبب توقف البناء
+          # 1. تنظيف Pubspec تماماً
           sed -i '/flutter_icons:/d; /flutter_launcher_icons:/d; /image_path:/d; /adaptive_icon/d' pubspec.yaml
-          
-          # إضافة تجاوزات (Overrides) بذكاء لإجبار المكتبات على العمل معاً
-          # استخدام 'any' هو الحل السحري لتجاهل تضارب الإصدارات
           echo -e "\ndependency_overrides:\n  path: any\n  cupertino_icons: any\n  flutter_inappwebview: any\n  permission_handler: any" >> pubspec.yaml
 
-
-          # ========================================================
-          # 2. إصلاح AndroidManifest.xml (XML Structure Fix)
-          # ========================================================
-          MANIFEST_PATH=$(find android/app/src/main -name "AndroidManifest.xml")
-          if [ -f "$MANIFEST_PATH" ]; then
-             # التحديث الآمن: نبحث عن android:name=".MainActivity" ونضيف البيانات الوصفية بعدها مباشرة
-             # هذا يضمن أننا داخل وسم <activity> ودون كسر هيكل الملف
-             sed -i 's/android:name=".MainActivity"/android:name=".MainActivity">\n            <meta-data android:name="flutterEmbedding" android:value="2" \//' "$MANIFEST_PATH"
-             
-             # تحديث اسم التطبيق
-             sed -i 's/android:label="[^"]*"/android:label="${{ github.event.client_payload.display_name }}"/g' "$MANIFEST_PATH"
-          fi
-
-
-          # ========================================================
-          # 3. ترقية MainActivity (V1 -> V2 Migration)
-          # ========================================================
-          # نقوم بتحديث الـ Import فقط للحفاظ على أي كود مخصص كتبه المستخدم
-          MAIN_ACTIVITY_PATH=$(find android/app/src/main -name "MainActivity.*")
-          if [ -f "$MAIN_ACTIVITY_PATH" ]; then
-             sed -i 's/io.flutter.app.FlutterActivity/io.flutter.embedding.android.FlutterActivity/g' "$MAIN_ACTIVITY_PATH"
-          fi
-
-
-          # ========================================================
-          # 4. اللمسات الأخيرة (Gradle & Icons)
-          # ========================================================
-          # تحديث اسم الحزمة
-          find android -name "build.gradle" -exec sed -i 's/applicationId "[^"]*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
+          # 2. إعادة إنشاء AndroidManifest.xml نظيف 100% لتجنب Parsing Error
+          # سنقوم بكتابة ملف جديد تماماً يضمن التوافق مع V2 واسم الحزمة الصحيح
+          PKG="${{ github.event.client_payload.package_name }}"
+          APP_NAME="${{ github.event.client_payload.display_name }}"
           
-          # توليد الأيقونة لتجنب الخطأ
+          cat <<EOF > android/app/src/main/AndroidManifest.xml
+          <manifest xmlns:android="http://schemas.microsoft.com/apk/res/android" package="$PKG">
+              <application android:label="$APP_NAME" android:name="\${applicationName}" android:icon="@mipmap/ic_launcher">
+                  <activity android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTop"
+                      android:theme="@style/LaunchTheme"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+                      android:hardwareAccelerated="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <meta-data android:name="flutterEmbedding" android:value="2" />
+              </application>
+          </manifest>
+          EOF
+
+          # 3. إعادة إنشاء MainActivity ليكون متوافقاً مع V2 100%
+          # سنبحث عن المسار الصحيح (سواء كان java أو kotlin)
+          MAIN_ACT_DIR=$(find android/app/src/main -type d -name "kotlin" -o -name "java" | head -n 1)
+          PKG_PATH=$(echo $PKG | tr '.' '/')
+          FINAL_PATH="$MAIN_ACT_DIR/$PKG_PATH"
+          mkdir -p "$FINAL_PATH"
+          
+          # حذف الملفات القديمة لمنع التعارض
+          rm -f $(find android/app/src/main -name "MainActivity.*")
+          
+          # إنشاء MainActivity.kt جديد ونظيف
+          cat <<EOF > "$FINAL_PATH/MainActivity.kt"
+          package $PKG
+          import io.flutter.embedding.android.FlutterActivity
+          class MainActivity: FlutterActivity() { }
+          EOF
+
+          # 4. تحديث Gradle
+          find android -name "build.gradle" -exec sed -i "s/applicationId \".*\"/applicationId \"$PKG\"/g" {} +
+          
+          # 5. الأيقونات
           sudo apt-get update && sudo apt-get install -y imagemagick
           curl -L "${{ github.event.client_payload.icon_url }}" -o icon.png
           mkdir -p android/app/src/main/res/mipmap-xxxhdpi
           convert icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
-          # إصلاح Gradle القديم
-          if [ -f "android/build.gradle" ]; then
-            sed -i 's/com.android.tools.build:gradle:[0-9.]*/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
-          fi
-
-      - name: Build Final APK
+      - name: Final Build
         run: |
           cd ${{ env.PROJECT_ROOT }}
           rm -f pubspec.lock
           flutter pub get
-          # استخدام --no-pub لتوفير الوقت وتجنب إعادة التحقق
-          flutter build apk --release --target-platform android-arm64 --split-per-abi --no-pub
+          flutter build apk --release --target-platform android-arm64 --split-per-abi
 
       - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/build/app/outputs/flutter-apk/*.apk
-          body: |
-            ✅ Build Successful (Smart Engine)
-            App: ${{ github.event.client_payload.display_name }}
-            Flutter: ${{ github.event.client_payload.flutter_version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

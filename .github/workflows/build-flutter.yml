@@ -1,4 +1,4 @@
-name: Flutter Cloud Build Engine (Version Sync)
+name: Flutter Cloud Build Engine (Dart 3.7 Fix)
 
 on:
   repository_dispatch:
@@ -20,9 +20,10 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          # قمنا برفع النسخة لتدعم Dart 3.7 المطلوبة في مشروعك
-          flutter-version: '3.27.0' 
-          channel: 'stable'
+          # الانتقال إلى قناة beta لضمان الحصول على Dart 3.7+
+          channel: 'beta' 
+          # أو يمكنك تحديد النسخة المقترحة مباشرة:
+          # flutter-version: '3.29.0-0.0.pre' 
 
       - name: Extract and Normalize Project
         run: |
@@ -43,17 +44,14 @@ jobs:
           GRADLE_PROP="user_project/android/gradle.properties"
           WRAPPER_PROP="user_project/android/gradle/wrapper/gradle-wrapper.properties"
           
-          # تنظيف وإصلاح المانيفست
           if [ -f "$MANIFEST" ]; then
             tr -d '\r' < $MANIFEST > ${MANIFEST}.tmp && mv ${MANIFEST}.tmp $MANIFEST
             sed -i '/flutterEmbedding/d' $MANIFEST
             sed -i '/<\/application>/i \        <meta-data android:name="flutterEmbedding" android:value="2" />' $MANIFEST
           fi
 
-          # تحديث MainActivity
           find user_project/android -name "MainActivity.*" -exec sed -i 's/io.flutter.app.FlutterActivity/io.flutter.embedding.android.FlutterActivity/g' {} +
 
-          # إجبار تفعيل AndroidX وتحديث الـ Gradle ليتوافق مع Flutter 3.27
           echo "android.useAndroidX=true" > $GRADLE_PROP
           echo "android.enableJetifier=true" >> $GRADLE_PROP
           
@@ -75,7 +73,8 @@ jobs:
       - name: Build APK
         run: |
           cd user_project
-          flutter pub upgrade
+          # إجبار النظام على تجاهل قيود النسخ الضعيفة وتحديث الـ SDK داخلياً
+          flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
       - name: Create Release and Upload

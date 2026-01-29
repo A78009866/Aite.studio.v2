@@ -1,87 +1,87 @@
-name: Flutter Cloud Build Engine (Dart 3.7 Fix)
+name: Aite Optimized Flutter Engine
 
 on:
   repository_dispatch:
     types: [build-flutter]
 
+permissions:
+  contents: write
+
 jobs:
   build:
+    name: Build Minimalist APK
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
 
-      - name: Set up Java
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Install ImageMagick
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+      - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Set up Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          # الانتقال إلى قناة beta لضمان الحصول على Dart 3.7+
-          channel: 'beta' 
-          # أو يمكنك تحديد النسخة المقترحة مباشرة:
-          # flutter-version: '3.29.0-0.0.pre' 
+          channel: 'stable'
+          flutter-version: '3.19.0'
+          cache: true
 
-      - name: Extract and Normalize Project
+      - name: Download & Extract Project
         run: |
+          mkdir -p temp_zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
-          unzip -q project.zip -d user_project
-          cd user_project
-          PUBSPEC_PATH=$(find . -name "pubspec.yaml" -print -quit)
-          if [ -n "$PUBSPEC_PATH" ]; then
-            PROJECT_DIR=$(dirname "$PUBSPEC_PATH")
-            if [ "$PROJECT_DIR" != "." ]; then
-              cp -r "$PROJECT_DIR"/* . || true
-            fi
-          fi
-
-      - name: Surgical Android Fix
+          unzip project.zip -d temp_zip
+          REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
+          echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
+      - name: Auto-Repair & Inject
         run: |
-          MANIFEST="user_project/android/app/src/main/AndroidManifest.xml"
-          GRADLE_PROP="user_project/android/gradle.properties"
-          WRAPPER_PROP="user_project/android/gradle/wrapper/gradle-wrapper.properties"
+          cd ${{ env.PROJECT_ROOT }}
+          # استخدام display_name (الاسم المقروء) لاسم التطبيق في الـ Manifest
+          find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' {} +
+          # استخدام package_name للـ ID
+          find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
+          sed -i 's/sdk: ">=.*/sdk: ">=2.12.0 <4.0.0"/g' pubspec.yaml
           
-          if [ -f "$MANIFEST" ]; then
-            tr -d '\r' < $MANIFEST > ${MANIFEST}.tmp && mv ${MANIFEST}.tmp $MANIFEST
-            sed -i '/flutterEmbedding/d' $MANIFEST
-            sed -i '/<\/application>/i \        <meta-data android:name="flutterEmbedding" android:value="2" />' $MANIFEST
+          curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
+          mkdir -p android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi
+          convert app_icon_raw.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          convert app_icon_raw.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          convert app_icon_raw.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
+            sed -i 's/gradle-.*-all.zip/gradle-7.5-all.zip/g' android/gradle/wrapper/gradle-wrapper.properties
           fi
-
-          find user_project/android -name "MainActivity.*" -exec sed -i 's/io.flutter.app.FlutterActivity/io.flutter.embedding.android.FlutterActivity/g' {} +
-
-          echo "android.useAndroidX=true" > $GRADLE_PROP
-          echo "android.enableJetifier=true" >> $GRADLE_PROP
-          
-          if [ -f "$WRAPPER_PROP" ]; then
-             sed -i 's/gradle-.*-all.zip/gradle-7.5-all.zip/g' $WRAPPER_PROP
+          if [ -f "android/build.gradle" ]; then
+            sed -i 's/com.android.tools.build:gradle:[0-9.]*/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
+            sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.8.22"/g' android/build.gradle
           fi
-
-          MAIN_GRADLE="user_project/android/build.gradle"
-          if [ -f "$MAIN_GRADLE" ]; then
-            sed -i "s/com.android.tools.build:gradle:[0-9.]*/com.android.tools.build:gradle:7.3.0/g" $MAIN_GRADLE
-            sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.9.10"/g' $MAIN_GRADLE
-          fi
-
-      - name: Fix UI and Dependencies
+      - name: Build Optimized APK
         run: |
-          find user_project/lib -name "*.dart" -exec sed -i 's/headline4/headlineMedium/g' {} +
-          find user_project/lib -name "*.dart" -exec sed -i 's/headline6/titleLarge/g' {} +
-
-      - name: Build APK
-        run: |
-          cd user_project
-          # إجبار النظام على تجاهل قيود النسخ الضعيفة وتحديث الـ SDK داخلياً
+          cd ${{ env.PROJECT_ROOT }}
           flutter pub get
-          flutter build apk --release --no-tree-shake-icons
-
-      - name: Create Release and Upload
+          flutter build apk --release --target-platform android-arm64 --split-per-abi --obfuscate --split-debug-info=build/app/outputs/symbols
+          
+          # إعادة التسمية باستخدام app_name (الآمن بدون مسافات)
+          ORIGINAL_PATH="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+          NEW_NAME="${{ github.event.client_payload.app_name }}.apk"
+          mv "$ORIGINAL_PATH" "build/app/outputs/flutter-apk/$NEW_NAME"
+          echo "FINAL_APK_PATH=build/app/outputs/flutter-apk/$NEW_NAME" >> $GITHUB_ENV
+      - name: Upload Optimized APK
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}
-          files: user_project/build/app/outputs/flutter-apk/app-release.apk
-          name: "Success Build - ${{ github.event.client_payload.app_name }}"
+          files: ${{ env.PROJECT_ROOT }}/${{ env.FINAL_APK_PATH }}
+          body: |
+            ✅ Build Complete
+            App: ${{ github.event.client_payload.display_name }}
+            Package: ${{ github.event.client_payload.package_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

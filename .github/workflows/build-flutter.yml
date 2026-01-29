@@ -36,24 +36,57 @@ jobs:
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
-      - name: Precise Hybrid Repair Engine
+      - name: Ultimate Gradle & Kotlin Fixer
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
           PKG="${{ github.event.client_payload.package_name }}"
           APP_NAME="${{ github.event.client_payload.display_name }}"
-          MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
 
-          # 1. تنظيف Pubspec وضمان التجاوزات
+          # 1. تنظيف pubspec.yaml
           sed -i '/flutter_icons:/d; /flutter_launcher_icons:/d; /image_path:/d; /adaptive_icon/d' pubspec.yaml
           echo -e "\ndependency_overrides:\n  path: any\n  cupertino_icons: any\n  flutter_inappwebview: any\n  permission_handler: any\n  shared_preferences_android: any" >> pubspec.yaml
 
-          # 2. إصلاح AndroidManifest (V2 Check)
-          if grep -q "flutterEmbedding" "$MANIFEST_PATH" 2>/dev/null; then
-            echo "✅ Valid Manifest found. Updating labels..."
-            sed -i "s/android:label=\"[^\"]*\"/android:label=\"$APP_NAME\"/g" "$MANIFEST_PATH"
-          else
-            echo "⚠️ Manifest missing or old. Recreating..."
+          # 2. استبدال ملف build.gradle الرئيسي (الروت) بملف نظيف 100% لتجنب أخطاء السنتاكس
+          # هذا الملف هو جوهر الاستقرار، يدعم Kotlin 1.9.10 و Gradle 8
+          cat <<EOF > android/build.gradle
+          buildscript {
+              ext.kotlin_version = '1.9.10'
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:7.3.0'
+                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version"
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.buildDir = '../build'
+          subprojects {
+              project.buildDir = "\${rootProject.buildDir}/\${project.name}"
+          }
+          subprojects {
+              project.evaluationDependsOn(':app')
+          }
+          tasks.register("clean", Delete) {
+              delete rootProject.buildDir
+          }
+          EOF
+
+          # 3. تحديث Gradle Wrapper للنسخة 7.5 (أكثر توافقاً مع 7.3.0)
+          if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
+            sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-7.5-all.zip|g' android/gradle/wrapper/gradle-wrapper.properties
+          fi
+
+          # 4. إصلاح AndroidManifest و MainActivity لضمان V2 Embedding
+          MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
+          if ! grep -q "flutterEmbedding" "$MANIFEST_PATH" 2>/dev/null; then
             mkdir -p android/app/src/main
             cat <<EOF > "$MANIFEST_PATH"
           <manifest xmlns:android="http://schemas.microsoft.com/apk/res/android" package="$PKG">
@@ -75,30 +108,18 @@ jobs:
               </application>
           </manifest>
           EOF
+          else
+            sed -i "s/android:label=\"[^\"]*\"/android:label=\"$APP_NAME\"/g" "$MANIFEST_PATH"
           fi
 
-          # 3. إصلاح Kotlin (تصحيح خطأ تكرار الرقم 1.9.10)
-          echo "🚀 Applying Clean Kotlin Version..."
-          # حذف أي تعريف قديم لـ kotlin_version وكتابته من جديد بنظافة
-          find android -name "build.gradle" -exec sed -i '/ext.kotlin_version/d' {} +
-          find android -name "build.gradle" -exec sed -i '/buildscript {/a \    ext.kotlin_version = "1.9.10"' {} +
-          
-          # استبدال الـ plugin بمسار نظيف تماماً
-          find android -name "build.gradle" -exec sed -i "s|org.jetbrains.kotlin:kotlin-gradle-plugin:.*|org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version|g" {} +
-
-          # 4. ترقية Gradle Wrapper
-          if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
-            sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.0-all.zip|g' android/gradle/wrapper/gradle-wrapper.properties
-          fi
-
-          # 5. ترقية MainActivity
+          # 5. ترقية MainActivity ومسار الحزمة (Package)
           MAIN_FILE=$(find android/app/src/main -name "MainActivity.*" | head -n 1)
           if [ -f "$MAIN_FILE" ]; then
             sed -i 's/io.flutter.app.FlutterActivity/io.flutter.embedding.android.FlutterActivity/g' "$MAIN_FILE"
           fi
-
-          # 6. الأيقونات و Package Name
           find android -name "build.gradle" -exec sed -i "s/applicationId \".*\"/applicationId \"$PKG\"/g" {} +
+
+          # 6. معالجة الأيقونات
           sudo apt-get update && sudo apt-get install -y imagemagick
           curl -L "${{ github.event.client_payload.icon_url }}" -o icon.png
           mkdir -p android/app/src/main/res/mipmap-xxxhdpi

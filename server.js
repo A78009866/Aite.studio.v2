@@ -19,19 +19,25 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Multer for Temp Storage
 const upload = multer({ dest: '/tmp/' });
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Build Endpoint
+// دالة مساعدة لتنظيف اسم الملف ليكون صالحاً للروابط
+function sanitizeFilename(name) {
+    return name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+}
+
+// 1. Build Endpoint
 app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'projectZip', maxCount: 1 }]), async (req, res) => {
     try {
         const { appName, packageName } = req.body;
+        
+        // تنظيف اسم الملف لاستخدامه في الرابط والـ APK
+        const safeAppName = sanitizeFilename(appName); 
 
-        // Validation
         if (!req.files || !req.files['icon'] || !req.files['projectZip']) {
             throw new Error("Missing files");
         }
@@ -39,29 +45,28 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
         const iconFile = req.files['icon'][0];
         const zipFile = req.files['projectZip'][0];
 
-        console.log(`Processing build for: ${appName}`);
+        // Upload Icon
+        const iconUpload = await cloudinary.uploader.upload(iconFile.path, { folder: "aite_studio/icons" });
 
-        // 1. Upload Icon
-        const iconUpload = await cloudinary.uploader.upload(iconFile.path, {
-            folder: "aite_studio/icons"
-        });
-
-        // 2. Upload ZIP (Raw Resource)
+        // Upload ZIP
         const zipUpload = await cloudinary.uploader.upload(zipFile.path, {
             resource_type: "raw",
             folder: "aite_studio/projects",
             public_id: `${packageName}_source_${Date.now()}`
         });
 
-        // 3. Trigger GitHub Dispatch
+        const requestId = Date.now().toString();
+
+        // Trigger GitHub Dispatch
         const githubPayload = {
             event_type: "build-flutter",
             client_payload: {
-                app_name: appName,
+                app_name: safeAppName, // نرسل الاسم الآمن للملف
+                display_name: appName, // الاسم الذي سيظهر داخل التطبيق (Label)
                 package_name: packageName,
                 icon_url: iconUpload.secure_url,
                 zip_url: zipUpload.secure_url,
-                request_id: Date.now().toString()
+                request_id: requestId
             }
         };
 
@@ -82,10 +87,9 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
 
         res.json({
             success: true,
-            message: "Build triggered successfully",
-            build_id: githubPayload.client_payload.request_id,
-            icon_url: iconUpload.secure_url,
-            zip_url: zipUpload.secure_url
+            message: "Build initiated",
+            build_id: requestId,
+            safe_app_name: safeAppName // نرسل الاسم الآمن للفرونت إند ليستخدمه في التحقق
         });
 
     } catch (error) {
@@ -93,7 +97,45 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
         res.status(500).json({ success: false, error: error.message });
     }
 });
-// امسح app.listen القديم واستبدله بهذا:
+
+// 2. Status Check Endpoint (جديد)
+app.get('/check-status/:buildId', async (req, res) => {
+    try {
+        const { buildId } = req.params;
+        const { appName } = req.query; // نستقبل اسم التطبيق الآمن
+
+        // نتحقق مما إذا كان GitHub قد أصدر Release بهذا التاج
+        const releaseUrl = `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/tags/build-${buildId}`;
+        
+        try {
+            const response = await axios.get(releaseUrl, {
+                headers: { 'Authorization': `token ${process.env.GITHUB_TOKEN}` }
+            });
+
+            // إذا وصلنا هنا، يعني أن الـ Release موجود
+            // نقوم بصياغة الرابط الدقيق كما طلبت
+            // Format: https://github.com/OWNER/REPO/releases/download/build-ID/AppName.apk
+            const downloadUrl = `https://github.com/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/download/build-${buildId}/${appName}.apk`;
+
+            res.json({ 
+                completed: true, 
+                download_url: downloadUrl 
+            });
+
+        } catch (ghError) {
+            if (ghError.response && ghError.response.status === 404) {
+                // 404 يعني أن الـ Release لم يتم إنشاؤه بعد (ما زال قيد البناء)
+                res.json({ completed: false });
+            } else {
+                throw ghError;
+            }
+        }
+    } catch (error) {
+        console.error("Status Check Error:", error.message);
+        res.status(500).json({ error: "Failed to check status" });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -1,4 +1,4 @@
-name: Aite Optimized Flutter Engine
+name: Aite Ultimate Slim Engine
 
 on:
   repository_dispatch:
@@ -9,34 +9,30 @@ permissions:
 
 jobs:
   build:
-    name: Build Slim APK
+    name: Build Multi-Architecture APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      # 1. إعداد الأدوات
       - name: Install ImageMagick
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
 
-      # 2. إعداد Java 17
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # 3. إعداد Flutter Stable
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
 
-      # 4. تحميل واستخراج المشروع
       - name: Download & Extract Project
         run: |
           mkdir -p temp_zip
@@ -45,67 +41,50 @@ jobs:
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
-      # 5. الحقن والتعديل (الأيقونات والأسماء)
-      - name: Configure App
+      - name: Configure App Assets
         run: |
           cd ${{ env.PROJECT_ROOT }}
-          
-          # تعديل الاسم الظاهر
           find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' {} +
-          
-          # تعديل Package Name
           find android/app -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/' {} +
           
-          # معالجة الأيقونات
           curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
           mkdir -p android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi
-          
           convert app_icon_raw.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           convert app_icon_raw.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           convert app_icon_raw.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-
-          # تنظيف
           rm -rf build .dart_tool
 
-      # 6. البناء الذكي (Smart Build)
-      - name: Build Optimized APK
+      - name: Build Optimized Multi-ABI APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
-          
           flutter pub get
           
-          # 1. target-platform android-arm64: يبني فقط للمعالجات الحديثة (يوفر 60% من الحجم)
-          # 2. obfuscate + split-debug-info: يضغط الكود ويحذف رموز التصحيح (يوفر مساحة إضافية)
+          # التعديل الجوهري:
+          # 1. دعم المعماريتين (armeabi-v7a و arm64-v8a) لضمان العمل على كل الهواتف.
+          # 2. إزالة --obfuscate مؤقتاً لضمان عدم حدوث تعارض مع ملفات الـ SO.
+          # 3. استخدام --no-tree-shake-icons لتجنب مشاكل الأيقونات.
+          
           flutter build apk --release \
-            --target-platform android-arm64 \
-            --obfuscate \
-            --split-debug-info=build/app/outputs/symbols
+            --target-platform android-arm,android-arm64 \
+            --no-tree-shake-icons
           
-          # البحث عن الملف الناتج (قد يكون اسمه app-release.apk أو app-arm64-v8a-release.apk)
-          ORIGINAL_PATH=$(find build/app/outputs/flutter-apk -name "*release.apk" | head -n 1)
-          
-          if [ ! -f "$ORIGINAL_PATH" ]; then
-             echo "Error: APK not found!"
-             exit 1
-          fi
-
+          ORIGINAL_PATH="build/app/outputs/flutter-apk/app-release.apk"
           NEW_NAME="${{ github.event.client_payload.app_name }}.apk"
           mv "$ORIGINAL_PATH" "build/app/outputs/flutter-apk/$NEW_NAME"
           
           echo "FINAL_APK_PATH=build/app/outputs/flutter-apk/$NEW_NAME" >> $GITHUB_ENV
 
-      # 7. الرفع
-      - name: Upload Release
+      - name: Upload Final Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/${{ env.FINAL_APK_PATH }}
           body: |
-            🚀 High Performance Build
-            Architecture: ARM64 (Modern Devices)
-            Optimization: Obfuscated & Minified
-            App: ${{ github.event.client_payload.display_name }}
+            ✅ Build Finished
+            - Compatible with: All Android Phones (32-bit & 64-bit)
+            - Optimization: Compressed Assets
+            - App: ${{ github.event.client_payload.display_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

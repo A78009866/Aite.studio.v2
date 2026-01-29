@@ -106,7 +106,7 @@
         .upload-icon { font-size: 2.5rem; color: #555; margin-bottom: 15px; transition: 0.3s; }
         .upload-card:hover .upload-icon { color: var(--primary); transform: scale(1.1); }
 
-        /* --- File Preview Card (New Style) --- */
+        /* --- File Preview Card --- */
         .file-preview-card {
             background: rgba(255,255,255,0.03); border: 1px solid var(--border);
             border-radius: 14px; padding: 15px; display: none; align-items: center; gap: 15px;
@@ -129,7 +129,7 @@
         .file-remove-btn:hover { transform: scale(1.2); }
 
 
-        /* --- Phone Preview (Updated) --- */
+        /* --- Phone Preview --- */
         .preview-panel { flex: 1 1 350px; display: flex; justify-content: center; padding-top: 20px; perspective: 1000px; }
         .phone-mockup {
             width: 320px; height: 650px; background: #000; border-radius: 45px;
@@ -144,7 +144,6 @@
             position: relative;
         }
 
-        /* Phone Status Bar */
         .phone-status-bar {
             position: absolute; top: 15px; left: 0; width: 100%; padding: 0 25px;
             display: flex; justify-content: space-between; align-items: center;
@@ -161,7 +160,7 @@
         }
         .app-name-preview { font-size: 1.4rem; font-weight: 600; color: white; text-align: center; }
 
-        /* --- Glass Modals (New) --- */
+        /* --- Glass Modals --- */
         .glass-modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);
@@ -192,7 +191,6 @@
         }
         .action-btn:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(0, 230, 118, 0.3); }
 
-        /* Progress & Apps List */
         #statusContainer { margin-top: 25px; display: none; }
         .progress-container { width: 100%; background: #222; height: 8px; border-radius: 10px; overflow: hidden; margin: 15px 0; }
         .progress-bar { width: 0%; height: 100%; background: var(--primary); transition: width 0.4s ease; }
@@ -203,16 +201,18 @@
         }
         .app-item:hover { border-color: var(--primary); transform: translateX(5px); }
 
-        /* Animations */
         @keyframes popIn { to { transform: scale(1); } }
         @keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
         @keyframes slideIn { from{opacity:0; transform:translateX(-20px);} to{opacity:1; transform:translateX(0);} }
         .loader { width: 50px; height: 50px; border: 4px solid #333; border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { 100% {transform: rotate(360deg);} }
 
+        /* تعديلات الموبايل: جعل المعاينة في الأسفل */
         @media (max-width: 900px) {
             .main-container { flex-direction: column; align-items: center; gap: 2rem; padding: 1rem; }
-            .preview-panel { order: -1; width: 100%; transform: scale(0.9); margin-bottom: 0; }
+            /* order: 1 لجعل الهاتف يظهر في الأسفل */
+            .preview-panel { order: 1; width: 100%; transform: scale(0.9); margin-bottom: 0; margin-top: 20px; }
+            .config-panel { width: 100%; }
         }
     </style>
 </head>
@@ -313,6 +313,7 @@
 
                         <div class="input-group">
                             <label class="input-label" id="t_zip">ملف المشروع (ZIP)</label>
+                            
                             <div class="upload-card" id="zipUploadCard" onclick="document.getElementById('zipInput').click()">
                                 <div id="zipUploadContent">
                                     <i class="fa-solid fa-file-zipper upload-icon"></i>
@@ -426,7 +427,7 @@
                 crop_title: "ضبط الأيقونة",
                 confirm: "تأكيد",
                 cancel: "إلغاء",
-                welcome: "مرحباً المطور! 🚀",
+                welcome: "اهلا بك ايها المطور!", // تم التعديل
                 sub: "منصة البناء السحابي لتطبيقات فلاتر.",
                 app_name: "اسم التطبيق",
                 pkg_name: "معرف الحزمة",
@@ -452,7 +453,7 @@
                 crop_title: "Adjust Icon",
                 confirm: "Confirm",
                 cancel: "Cancel",
-                welcome: "Welcome Developer! 🚀",
+                welcome: "Welcome Developer!", // تم التعديل
                 sub: "Cloud build platform for Flutter apps.",
                 app_name: "App Name",
                 pkg_name: "Package Name",
@@ -559,28 +560,24 @@
             });
         }
 
-        // --- LOGIC FOR ZIP FILE PREVIEW (UPDATED) ---
+        // --- LOGIC FOR ZIP FILE PREVIEW ---
         const zipInput = document.getElementById('zipInput');
         
         zipInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
             if(file) {
-                // 1. تحقق صارم من الامتداد (Flutter Projects are often zipped)
                 const fileName = file.name.toLowerCase();
                 if(!fileName.endsWith('.zip')) {
                     alert(currentLang === 'ar' ? "عذراً، يسمح فقط بملفات ZIP لمشاريع فلاتر" : "Sorry, only ZIP files are allowed for Flutter projects.");
-                    this.value = ''; // Reset input
+                    this.value = '';
                     return;
                 }
 
-                // 2. تحديث واجهة العرض (الكارت الاحترافي)
                 document.getElementById('zipUploadCard').style.display = 'none';
                 const previewCard = document.getElementById('zipFilePreview');
                 previewCard.style.display = 'flex';
                 
                 document.getElementById('zipFileNameDisplay').innerText = file.name;
-                
-                // حساب الحجم بالميغابايت
                 const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
                 document.getElementById('zipFileSizeDisplay').innerText = `${sizeInMB} MB`;
             }

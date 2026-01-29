@@ -25,7 +25,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: ${{ github.event.client_payload.flutter_version }}
+          flutter-version: '3.24.3' # استخدام نسخة ثابتة حديثة
           cache: true
 
       - name: Download & Extract Project
@@ -43,15 +43,17 @@ jobs:
           PKG="${{ github.event.client_payload.package_name }}"
           APP_NAME="${{ github.event.client_payload.display_name }}"
 
-          # 1. تنظيف pubspec وتوسيع دعم SDK
+          # 1. تنظيف وإصلاح pubspec.yaml
+          # حذف السطور القديمة المتعلقة بالأيقونات لتجنب تضارب الاعتماديات
           sed -i '/flutter_icons:/d; /flutter_launcher_icons:/d; /image_path:/d; /adaptive_icon/d' pubspec.yaml
           
-          # أهم سطر: تعديل نسخة Dart SDK المطلوبة لتتوافق مع Flutter الحديث
-          sed -i 's/sdk: .*/sdk: ">=2.18.0 <4.0.0"/' pubspec.yaml
+          # تصحيح نطاق Dart SDK بشكل يضمن قبوله من المحرك
+          sed -i 's/sdk: .*/sdk: ">=3.0.0 <4.0.0"/' pubspec.yaml
           
-          echo -e "\ndependency_overrides:\n  path: any\n  cupertino_icons: any\n  flutter_inappwebview: any\n  permission_handler: any\n  shared_preferences_android: any" >> pubspec.yaml
+          # إضافة تخطي للنسخ المتعارضة
+          echo -e "\ndependency_overrides:\n  path: any\n  cupertino_icons: any\n  flutter_inappwebview: any\n  permission_handler: any\n  shared_preferences: any\n  shared_preferences_android: any" >> pubspec.yaml
 
-          # 2. إعادة بناء ملف build.gradle الرئيسي (Root)
+          # 2. إعادة بناء ملفات Gradle (Root)
           cat <<EOF > android/build.gradle
           buildscript {
               ext.kotlin_version = '1.9.10'
@@ -72,19 +74,14 @@ jobs:
           tasks.register("clean", Delete) { delete rootProject.buildDir }
           EOF
 
-          # 3. إعادة بناء ملف android/app/build.gradle
+          # 3. إعادة بناء android/app/build.gradle
           cat <<EOF > android/app/build.gradle
           def localProperties = new Properties()
           def localPropertiesFile = rootProject.file('local.properties')
           if (localPropertiesFile.exists()) {
               localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
           }
-
           def flutterRoot = localProperties.getProperty('flutter.sdk')
-          if (flutterRoot == null) {
-              throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
-          }
-
           apply plugin: 'com.android.application'
           apply plugin: 'kotlin-android'
           apply from: "\$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
@@ -92,11 +89,6 @@ jobs:
           android {
               compileSdkVersion 35
               namespace "$PKG"
-
-              sourceSets {
-                  main.java.srcDirs += 'src/main/kotlin'
-              }
-
               defaultConfig {
                   applicationId "$PKG"
                   minSdkVersion 21
@@ -104,7 +96,6 @@ jobs:
                   versionCode 1
                   versionName "1.0.0"
               }
-
               buildTypes {
                   release {
                       signingConfig signingConfigs.debug
@@ -113,52 +104,17 @@ jobs:
                   }
               }
           }
-
-          flutter {
-              source '../..'
-          }
-
           dependencies {
               implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:\$kotlin_version"
           }
           EOF
 
           # 4. تحديث Gradle Wrapper
-          if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
+          if [ -d "android/gradle/wrapper" ]; then
             sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-7.5-all.zip|g' android/gradle/wrapper/gradle-wrapper.properties
           fi
 
-          # 5. إصلاح AndroidManifest و MainActivity
-          MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
-          mkdir -p android/app/src/main
-          cat <<EOF > "$MANIFEST_PATH"
-          <manifest xmlns:android="http://schemas.microsoft.com/apk/res/android" package="$PKG">
-              <application android:label="$APP_NAME" android:name="\${applicationName}" android:icon="@mipmap/ic_launcher">
-                  <activity android:name=".MainActivity"
-                      android:exported="true"
-                      android:launchMode="singleTop"
-                      android:theme="@style/LaunchTheme"
-                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-                      android:hardwareAccelerated="true"
-                      android:windowSoftInputMode="adjustResize">
-                      <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
-                      </intent-filter>
-                  </activity>
-                  <meta-data android:name="flutterEmbedding" android:value="2" />
-              </application>
-          </manifest>
-          EOF
-
-          MAIN_ACT_DIR=$(find android/app/src/main -type d -name "kotlin" -o -name "java" | head -n 1)
-          PKG_PATH=$(echo $PKG | tr '.' '/')
-          mkdir -p "$MAIN_ACT_DIR/$PKG_PATH"
-          rm -f $(find android/app/src/main -name "MainActivity.*")
-          echo -e "package $PKG\nimport io.flutter.embedding.android.FlutterActivity\nclass MainActivity: FlutterActivity() {}" > "$MAIN_ACT_DIR/$PKG_PATH/MainActivity.kt"
-
-          # 6. الأيقونات
+          # 5. الأيقونات (ImageMagick)
           sudo apt-get update && sudo apt-get install -y imagemagick
           curl -L "${{ github.event.client_payload.icon_url }}" -o icon.png
           mkdir -p android/app/src/main/res/mipmap-xxxhdpi
@@ -167,12 +123,10 @@ jobs:
       - name: Build Final APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
+          # مسح القفل القديم وإعادة بناء الاعتماديات
           rm -f pubspec.lock
-          
-          # تحديث الحزم لتتوافق مع النسخة الجديدة
-          flutter pub upgrade --major-versions
+          flutter pub upgrade
           flutter pub get
-          
           flutter build apk --release --target-platform android-arm64 --split-per-abi
 
       - name: Upload Release

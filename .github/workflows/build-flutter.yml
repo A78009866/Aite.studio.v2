@@ -36,20 +36,26 @@ jobs:
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
-      - name: Nuclear Repair Engine (Fix XML & V2)
+      - name: Smart Hybrid Repair Engine
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
-          # 1. تنظيف Pubspec تماماً
-          sed -i '/flutter_icons:/d; /flutter_launcher_icons:/d; /image_path:/d; /adaptive_icon/d' pubspec.yaml
-          echo -e "\ndependency_overrides:\n  path: any\n  cupertino_icons: any\n  flutter_inappwebview: any\n  permission_handler: any" >> pubspec.yaml
-
-          # 2. إعادة إنشاء AndroidManifest.xml نظيف 100% لتجنب Parsing Error
-          # سنقوم بكتابة ملف جديد تماماً يضمن التوافق مع V2 واسم الحزمة الصحيح
+          # متغيرات المشروع
           PKG="${{ github.event.client_payload.package_name }}"
           APP_NAME="${{ github.event.client_payload.display_name }}"
-          
-          cat <<EOF > android/app/src/main/AndroidManifest.xml
+          MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
+
+          # 1. تنظيف Pubspec (دائماً مطلوب لضمان المكتبات)
+          sed -i '/flutter_icons:/d; /flutter_launcher_icons:/d; /image_path:/d; /adaptive_icon/d' pubspec.yaml
+          echo -e "\ndependency_overrides:\n  path: any\n  cupertino_icons: any\n  flutter_inappwebview: any\n  permission_handler: any\n  shared_preferences_android: any" >> pubspec.yaml
+
+          # 2. فحص AndroidManifest: إذا كان قديماً (V1) أو معطوباً، أعد بناؤه
+          if grep -q "flutterEmbedding" "$MANIFEST_PATH" && grep -q "android:name=\".MainActivity\"" "$MANIFEST_PATH"; then
+            echo "✅ AndroidManifest looks valid. Updating labels only..."
+            sed -i "s/android:label=\"[^\"]*\"/android:label=\"$APP_NAME\"/g" "$MANIFEST_PATH"
+          else
+            echo "⚠️ AndroidManifest is old or invalid. Reconstructing..."
+            cat <<EOF > "$MANIFEST_PATH"
           <manifest xmlns:android="http://schemas.microsoft.com/apk/res/android" package="$PKG">
               <application android:label="$APP_NAME" android:name="\${applicationName}" android:icon="@mipmap/ic_launcher">
                   <activity android:name=".MainActivity"
@@ -69,34 +75,31 @@ jobs:
               </application>
           </manifest>
           EOF
+          fi
 
-          # 3. إعادة إنشاء MainActivity ليكون متوافقاً مع V2 100%
-          # سنبحث عن المسار الصحيح (سواء كان java أو kotlin)
-          MAIN_ACT_DIR=$(find android/app/src/main -type d -name "kotlin" -o -name "java" | head -n 1)
-          PKG_PATH=$(echo $PKG | tr '.' '/')
-          FINAL_PATH="$MAIN_ACT_DIR/$PKG_PATH"
-          mkdir -p "$FINAL_PATH"
-          
-          # حذف الملفات القديمة لمنع التعارض
-          rm -f $(find android/app/src/main -name "MainActivity.*")
-          
-          # إنشاء MainActivity.kt جديد ونظيف
-          cat <<EOF > "$FINAL_PATH/MainActivity.kt"
-          package $PKG
-          import io.flutter.embedding.android.FlutterActivity
-          class MainActivity: FlutterActivity() { }
-          EOF
+          # 3. فحص Kotlin: ترقية النسخة دائماً لضمان توافق المكتبات الحديثة (مثل shared_prefs)
+          echo "🚀 Tuning Kotlin & Gradle versions..."
+          find android -name "build.gradle" -exec sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.9.10"/g' {} +
+          find android -name "build.gradle" -exec sed -i 's/org.jetbrains.kotlin:kotlin-gradle-plugin:[0-9.]*/org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.10/g' {} +
+          if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
+            sed -i 's/gradle-[0-9.]*-all.zip/gradle-8.0-all.zip/g' android/gradle/wrapper/gradle-wrapper.properties
+          fi
 
-          # 4. تحديث Gradle
+          # 4. فحص MainActivity: إذا كان يستخدم V1 Import، قم بتبديله أو إعادة إنشائه
+          MAIN_FILE=$(find android/app/src/main -name "MainActivity.*" | head -n 1)
+          if grep -q "io.flutter.app.FlutterActivity" "$MAIN_FILE"; then
+            echo "⚠️ MainActivity using old embedding. Migrating..."
+            sed -i 's/io.flutter.app.FlutterActivity/io.flutter.embedding.android.FlutterActivity/g' "$MAIN_FILE"
+          fi
+
+          # 5. الأيقونات وتحديث Package Name
           find android -name "build.gradle" -exec sed -i "s/applicationId \".*\"/applicationId \"$PKG\"/g" {} +
-          
-          # 5. الأيقونات
           sudo apt-get update && sudo apt-get install -y imagemagick
           curl -L "${{ github.event.client_payload.icon_url }}" -o icon.png
           mkdir -p android/app/src/main/res/mipmap-xxxhdpi
           convert icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
-      - name: Final Build
+      - name: Build Final APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
           rm -f pubspec.lock
@@ -108,5 +111,9 @@ jobs:
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/build/app/outputs/flutter-apk/*.apk
+          body: |
+            ✅ Build Finished
+            Project: ${{ github.event.client_payload.display_name }}
+            Package: ${{ github.event.client_payload.package_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

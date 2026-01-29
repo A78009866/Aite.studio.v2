@@ -4,12 +4,10 @@ const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 const axios = require('axios');
 const cors = require('cors');
-const fs = require('fs');
 const path = require('path');
 
 const app = express();
 
-// إعدادات مهمة لـ Vercel
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -20,49 +18,64 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// استخدام الذاكرة المؤقتة بدلاً من القرص لأن Vercel لا يسمح بالكتابة الدائمة
+// استخدام الذاكرة (مهم لـ Vercel)
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// دالة مساعدة
 function sanitizeFilename(name) {
     return name.trim().replace(/[^a-z0-9]/gi, '_').toLowerCase();
 }
 
-// 1. نقطة البناء
+// --- دالة مساعدة للرفع المباشر (Stream Upload) ---
+const uploadToCloudinary = (buffer, folder, resourceType, publicId = null) => {
+    return new Promise((resolve, reject) => {
+        const options = { folder: folder, resource_type: resourceType };
+        if (publicId) options.public_id = publicId;
+
+        const stream = cloudinary.uploader.upload_stream(options, (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+        });
+        stream.end(buffer);
+    });
+};
+
+// 1. نقطة البناء (تم إصلاح مشكلة ZIP هنا)
 app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'projectZip', maxCount: 1 }]), async (req, res) => {
     try {
         const { appName, packageName } = req.body;
         const safeAppName = sanitizeFilename(appName);
 
         if (!req.files || !req.files['icon'] || !req.files['projectZip']) {
-            return res.status(400).json({ error: "يرجى رفع جميع الملفات" });
+            return res.status(400).json({ error: "Missing files" });
         }
 
-        // تحويل Buffer إلى Base64 للرفع المباشر (لأننا نستخدم memoryStorage)
-        const iconB64 = `data:${req.files['icon'][0].mimetype};base64,${req.files['icon'][0].buffer.toString('base64')}`;
-        
-        // رفع الأيقونة
-        const iconUpload = await cloudinary.uploader.upload(iconB64, {
-            folder: "aite_studio/icons"
-        });
+        console.log(`Starting build for ${appName}...`);
 
-        // رفع ملف ZIP (يحتاج معالجة خاصة مع الذاكرة، لكن سنستخدم طريقة temp file مؤقتة مدعومة في Vercel /tmp)
-        const zipPath = `/tmp/${Date.now()}.zip`;
-        fs.writeFileSync(zipPath, req.files['projectZip'][0].buffer);
-        
-        const zipUpload = await cloudinary.uploader.upload(zipPath, {
-            resource_type: "raw",
-            folder: "aite_studio/projects",
-            public_id: `${packageName}_source_${Date.now()}`
-        });
+        // 1. رفع الأيقونة
+        const iconResult = await uploadToCloudinary(
+            req.files['icon'][0].buffer,
+            "aite_studio/icons",
+            "image"
+        );
+
+        // 2. رفع ملف ZIP (الإصلاح: استخدام uploadToCloudinary بدلاً من الملفات المحلية)
+        // هذا يضمن أن الملف وصل كاملاً إلى Cloudinary
+        const zipResult = await uploadToCloudinary(
+            req.files['projectZip'][0].buffer,
+            "aite_studio/projects",
+            "raw", // مهم جداً للملفات المضغوطة
+            `${packageName}_source_${Date.now()}`
+        );
+
+        console.log("Uploads complete. ZIP URL:", zipResult.secure_url);
 
         const requestId = Date.now().toString();
 
-        // GitHub Dispatch
+        // 3. إرسال إلى GitHub
         await axios.post(
             `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/dispatches`,
             {
@@ -71,8 +84,8 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
                     app_name: safeAppName,
                     display_name: appName,
                     package_name: packageName,
-                    icon_url: iconUpload.secure_url,
-                    zip_url: zipUpload.secure_url,
+                    icon_url: iconResult.secure_url,
+                    zip_url: zipResult.secure_url, // الرابط الآن مضمون
                     request_id: requestId
                 }
             },
@@ -84,14 +97,11 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
             }
         );
 
-        // تنظيف
-        if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-
         res.json({
             success: true,
             build_id: requestId,
             safe_app_name: safeAppName,
-            icon_url: iconUpload.secure_url,
+            icon_url: iconResult.secure_url,
             app_name: appName,
             package_name: packageName
         });
@@ -102,13 +112,12 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
     }
 });
 
-// 2. نقطة التحقق (Check Status)
+// 2. التحقق من الحالة
 app.get('/check-status/:buildId', async (req, res) => {
     try {
         const { buildId } = req.params;
         const { appName } = req.query;
 
-        // التحقق من التاج في GitHub
         const releaseUrl = `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/tags/build-${buildId}`;
         
         try {
@@ -116,28 +125,23 @@ app.get('/check-status/:buildId', async (req, res) => {
                 headers: { 'Authorization': `token ${process.env.GITHUB_TOKEN}` }
             });
 
-            // إذا وجدنا التاج، نعيد الرابط
             const downloadUrl = `https://github.com/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/download/build-${buildId}/${appName}.apk`;
-            
             res.json({ completed: true, download_url: downloadUrl });
 
         } catch (ghError) {
             if (ghError.response && ghError.response.status === 404) {
                 res.json({ completed: false });
             } else {
-                throw ghError;
+                res.json({ completed: false });
             }
         }
     } catch (error) {
-        console.error("Check Status Error:", error.message);
         res.status(500).json({ error: "Check failed" });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-// تصدير التطبيق ليعمل مع Vercel
 module.exports = app;
-
 if (require.main === module) {
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }

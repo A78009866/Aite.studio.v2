@@ -36,59 +36,99 @@ jobs:
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
-      - name: Ultimate Gradle & Kotlin Fixer
+      - name: Total Android Refactoring (SDK 35 & Gradle Fix)
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
           PKG="${{ github.event.client_payload.package_name }}"
           APP_NAME="${{ github.event.client_payload.display_name }}"
 
-          # 1. تنظيف pubspec.yaml
+          # 1. تنظيف pubspec
           sed -i '/flutter_icons:/d; /flutter_launcher_icons:/d; /image_path:/d; /adaptive_icon/d' pubspec.yaml
           echo -e "\ndependency_overrides:\n  path: any\n  cupertino_icons: any\n  flutter_inappwebview: any\n  permission_handler: any\n  shared_preferences_android: any" >> pubspec.yaml
 
-          # 2. استبدال ملف build.gradle الرئيسي (الروت) بملف نظيف 100% لتجنب أخطاء السنتاكس
-          # هذا الملف هو جوهر الاستقرار، يدعم Kotlin 1.9.10 و Gradle 8
+          # 2. إعادة بناء ملف build.gradle الرئيسي (Root)
           cat <<EOF > android/build.gradle
           buildscript {
               ext.kotlin_version = '1.9.10'
-              repositories {
-                  google()
-                  mavenCentral()
-              }
+              repositories { google(); mavenCentral() }
               dependencies {
                   classpath 'com.android.tools.build:gradle:7.3.0'
                   classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version"
               }
           }
           allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
+              repositories { google(); mavenCentral() }
           }
           rootProject.buildDir = '../build'
           subprojects {
               project.buildDir = "\${rootProject.buildDir}/\${project.name}"
-          }
-          subprojects {
               project.evaluationDependsOn(':app')
           }
-          tasks.register("clean", Delete) {
-              delete rootProject.buildDir
+          tasks.register("clean", Delete) { delete rootProject.buildDir }
+          EOF
+
+          # 3. إعادة بناء ملف android/app/build.gradle (المسؤول عن خطأ SDK 35)
+          # سنستخدم هنا هيكلاً ثابتاً يضمن تعريف 'flutter' و 'compileSdkVersion'
+          cat <<EOF > android/app/build.gradle
+          def localProperties = new Properties()
+          def localPropertiesFile = rootProject.file('local.properties')
+          if (localPropertiesFile.exists()) {
+              localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
+          }
+
+          def flutterRoot = localProperties.getProperty('flutter.sdk')
+          if (flutterRoot == null) {
+              throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
+          }
+
+          apply plugin: 'com.android.application'
+          apply plugin: 'kotlin-android'
+          apply from: "\$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+
+          android {
+              compileSdkVersion 35
+              namespace "$PKG"
+
+              sourceSets {
+                  main.java.srcDirs += 'src/main/kotlin'
+              }
+
+              defaultConfig {
+                  applicationId "$PKG"
+                  minSdkVersion 21
+                  targetSdkVersion 35
+                  versionCode 1
+                  versionName "1.0.0"
+              }
+
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.debug
+                      shrinkResources false
+                      minifyEnabled false
+                  }
+              }
+          }
+
+          flutter {
+              source '../..'
+          }
+
+          dependencies {
+              implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:\$kotlin_version"
           }
           EOF
 
-          # 3. تحديث Gradle Wrapper للنسخة 7.5 (أكثر توافقاً مع 7.3.0)
+          # 4. تحديث Gradle Wrapper (7.5 متوافق مع SDK 35 و AGP 7.3)
           if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
             sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-7.5-all.zip|g' android/gradle/wrapper/gradle-wrapper.properties
           fi
 
-          # 4. إصلاح AndroidManifest و MainActivity لضمان V2 Embedding
+          # 5. إصلاح AndroidManifest و MainActivity
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
-          if ! grep -q "flutterEmbedding" "$MANIFEST_PATH" 2>/dev/null; then
-            mkdir -p android/app/src/main
-            cat <<EOF > "$MANIFEST_PATH"
+          mkdir -p android/app/src/main
+          cat <<EOF > "$MANIFEST_PATH"
           <manifest xmlns:android="http://schemas.microsoft.com/apk/res/android" package="$PKG">
               <application android:label="$APP_NAME" android:name="\${applicationName}" android:icon="@mipmap/ic_launcher">
                   <activity android:name=".MainActivity"
@@ -108,18 +148,14 @@ jobs:
               </application>
           </manifest>
           EOF
-          else
-            sed -i "s/android:label=\"[^\"]*\"/android:label=\"$APP_NAME\"/g" "$MANIFEST_PATH"
-          fi
 
-          # 5. ترقية MainActivity ومسار الحزمة (Package)
-          MAIN_FILE=$(find android/app/src/main -name "MainActivity.*" | head -n 1)
-          if [ -f "$MAIN_FILE" ]; then
-            sed -i 's/io.flutter.app.FlutterActivity/io.flutter.embedding.android.FlutterActivity/g' "$MAIN_FILE"
-          fi
-          find android -name "build.gradle" -exec sed -i "s/applicationId \".*\"/applicationId \"$PKG\"/g" {} +
+          MAIN_ACT_DIR=$(find android/app/src/main -type d -name "kotlin" -o -name "java" | head -n 1)
+          PKG_PATH=$(echo $PKG | tr '.' '/')
+          mkdir -p "$MAIN_ACT_DIR/$PKG_PATH"
+          rm -f $(find android/app/src/main -name "MainActivity.*")
+          echo -e "package $PKG\nimport io.flutter.embedding.android.FlutterActivity\nclass MainActivity: FlutterActivity() {}" > "$MAIN_ACT_DIR/$PKG_PATH/MainActivity.kt"
 
-          # 6. معالجة الأيقونات
+          # 6. الأيقونات
           sudo apt-get update && sudo apt-get install -y imagemagick
           curl -L "${{ github.event.client_payload.icon_url }}" -o icon.png
           mkdir -p android/app/src/main/res/mipmap-xxxhdpi

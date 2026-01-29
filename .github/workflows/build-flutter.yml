@@ -43,8 +43,12 @@ jobs:
           PKG="${{ github.event.client_payload.package_name }}"
           APP_NAME="${{ github.event.client_payload.display_name }}"
 
-          # 1. تنظيف pubspec
+          # 1. تنظيف pubspec وتوسيع دعم SDK
           sed -i '/flutter_icons:/d; /flutter_launcher_icons:/d; /image_path:/d; /adaptive_icon/d' pubspec.yaml
+          
+          # أهم سطر: تعديل نسخة Dart SDK المطلوبة لتتوافق مع Flutter الحديث
+          sed -i 's/sdk: .*/sdk: ">=2.18.0 <4.0.0"/' pubspec.yaml
+          
           echo -e "\ndependency_overrides:\n  path: any\n  cupertino_icons: any\n  flutter_inappwebview: any\n  permission_handler: any\n  shared_preferences_android: any" >> pubspec.yaml
 
           # 2. إعادة بناء ملف build.gradle الرئيسي (Root)
@@ -68,8 +72,7 @@ jobs:
           tasks.register("clean", Delete) { delete rootProject.buildDir }
           EOF
 
-          # 3. إعادة بناء ملف android/app/build.gradle (المسؤول عن خطأ SDK 35)
-          # سنستخدم هنا هيكلاً ثابتاً يضمن تعريف 'flutter' و 'compileSdkVersion'
+          # 3. إعادة بناء ملف android/app/build.gradle
           cat <<EOF > android/app/build.gradle
           def localProperties = new Properties()
           def localPropertiesFile = rootProject.file('local.properties')
@@ -120,7 +123,7 @@ jobs:
           }
           EOF
 
-          # 4. تحديث Gradle Wrapper (7.5 متوافق مع SDK 35 و AGP 7.3)
+          # 4. تحديث Gradle Wrapper
           if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
             sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-7.5-all.zip|g' android/gradle/wrapper/gradle-wrapper.properties
           fi
@@ -165,7 +168,11 @@ jobs:
         run: |
           cd ${{ env.PROJECT_ROOT }}
           rm -f pubspec.lock
+          
+          # تحديث الحزم لتتوافق مع النسخة الجديدة
+          flutter pub upgrade --major-versions
           flutter pub get
+          
           flutter build apk --release --target-platform android-arm64 --split-per-abi
 
       - name: Upload Release

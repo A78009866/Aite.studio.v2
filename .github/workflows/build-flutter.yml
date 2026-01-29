@@ -13,122 +13,73 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Setup Java & Flutter
+      # 2️⃣ Java
+      - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
-      
-      - uses: subosito/flutter-action@v2
+
+      # 3️⃣ Flutter (نسخة مستقرة عالية التوافق)
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
-          flutter-version: '3.24.3' # استخدام نسخة ثابتة حديثة
+          flutter-version: '3.22.3'
+          channel: stable
           cache: true
 
+      - name: Flutter Info
+        run: |
+          flutter --version
+          flutter doctor -v
+
+      # 4️⃣ تحميل المشروع وفك الضغط
       - name: Download & Extract Project
         run: |
           mkdir -p temp_zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
-          unzip project.zip -d temp_zip
-          REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
-          echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
+          unzip -q project.zip -d temp_zip
 
-      - name: Total Android Refactoring (SDK 35 & Gradle Fix)
+          PROJECT_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} \; | head -n 1)
+          echo "PROJECT_ROOT=$PROJECT_ROOT" >> $GITHUB_ENV
+
+      # 5️⃣ فحص Dart SDK (تشخيص فقط)
+      - name: Detect Dart SDK
         run: |
           cd ${{ env.PROJECT_ROOT }}
-          
-          PKG="${{ github.event.client_payload.package_name }}"
-          APP_NAME="${{ github.event.client_payload.display_name }}"
+          echo "Detected SDK constraint:"
+          grep "sdk:" pubspec.yaml || true
 
-          # 1. تنظيف وإصلاح pubspec.yaml
-          # حذف السطور القديمة المتعلقة بالأيقونات لتجنب تضارب الاعتماديات
-          sed -i '/flutter_icons:/d; /flutter_launcher_icons:/d; /image_path:/d; /adaptive_icon/d' pubspec.yaml
-          
-          # تصحيح نطاق Dart SDK بشكل يضمن قبوله من المحرك
-          sed -i 's/sdk: .*/sdk: ">=3.0.0 <4.0.0"/' pubspec.yaml
-          
-          # إضافة تخطي للنسخ المتعارضة
-          echo -e "\ndependency_overrides:\n  path: any\n  cupertino_icons: any\n  flutter_inappwebview: any\n  permission_handler: any\n  shared_preferences: any\n  shared_preferences_android: any" >> pubspec.yaml
+      # 6️⃣ Android Patch آمن (إن وُجد)
+      - name: Android Safe Patch
+        run: |
+          cd ${{ env.PROJECT_ROOT }}
 
-          # 2. إعادة بناء ملفات Gradle (Root)
-          cat <<EOF > android/build.gradle
-          buildscript {
-              ext.kotlin_version = '1.9.10'
-              repositories { google(); mavenCentral() }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:7.3.0'
-                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version"
-              }
-          }
-          allprojects {
-              repositories { google(); mavenCentral() }
-          }
-          rootProject.buildDir = '../build'
-          subprojects {
-              project.buildDir = "\${rootProject.buildDir}/\${project.name}"
-              project.evaluationDependsOn(':app')
-          }
-          tasks.register("clean", Delete) { delete rootProject.buildDir }
-          EOF
+          if [ -f "android/app/build.gradle" ]; then
+            echo "Patching Android SDK versions (safe mode)"
 
-          # 3. إعادة بناء android/app/build.gradle
-          cat <<EOF > android/app/build.gradle
-          def localProperties = new Properties()
-          def localPropertiesFile = rootProject.file('local.properties')
-          if (localPropertiesFile.exists()) {
-              localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
-          }
-          def flutterRoot = localProperties.getProperty('flutter.sdk')
-          apply plugin: 'com.android.application'
-          apply plugin: 'kotlin-android'
-          apply from: "\$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
-
-          android {
-              compileSdkVersion 35
-              namespace "$PKG"
-              defaultConfig {
-                  applicationId "$PKG"
-                  minSdkVersion 21
-                  targetSdkVersion 35
-                  versionCode 1
-                  versionName "1.0.0"
-              }
-              buildTypes {
-                  release {
-                      signingConfig signingConfigs.debug
-                      shrinkResources false
-                      minifyEnabled false
-                  }
-              }
-          }
-          dependencies {
-              implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:\$kotlin_version"
-          }
-          EOF
-
-          # 4. تحديث Gradle Wrapper
-          if [ -d "android/gradle/wrapper" ]; then
-            sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-7.5-all.zip|g' android/gradle/wrapper/gradle-wrapper.properties
+            sed -i 's/compileSdkVersion.*/compileSdkVersion 33/' android/app/build.gradle || true
+            sed -i 's/targetSdkVersion.*/targetSdkVersion 33/' android/app/build.gradle || true
           fi
 
-          # 5. الأيقونات (ImageMagick)
-          sudo apt-get update && sudo apt-get install -y imagemagick
-          curl -L "${{ github.event.client_payload.icon_url }}" -o icon.png
-          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
-          convert icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
+            sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-7.6-all.zip|g' \
+              android/gradle/wrapper/gradle-wrapper.properties
+          fi
 
-      - name: Build Final APK
+      # 7️⃣ Build APK (نظيف)
+      - name: Build APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
-          # مسح القفل القديم وإعادة بناء الاعتماديات
-          rm -f pubspec.lock
-          flutter pub upgrade
+          flutter clean
           flutter pub get
-          flutter build apk --release --target-platform android-arm64 --split-per-abi
+          flutter build apk --release
 
+      # 8️⃣ رفع APK
       - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:

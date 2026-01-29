@@ -11,18 +11,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ========================================================
-// 1. إعدادات الموقع
-// ========================================================
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
-
-// ========================================================
-// 2. إعدادات السيرفر والمنطق
-// ========================================================
 
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -32,42 +25,19 @@ cloudinary.config({
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// دالة تحديد الإصدار (تم تعديلها لتجبر استخدام نسخة حديثة)
 function detectFlutterVersion(zipBuffer) {
-    try {
-        const zip = new AdmZip(zipBuffer);
-        const zipEntries = zip.getEntries();
-        let pubspecContent = null;
-
-        for (const entry of zipEntries) {
-            if (entry.entryName.endsWith('pubspec.yaml') && !entry.entryName.includes('__MACOSX')) {
-                pubspecContent = entry.getData().toString('utf8');
-                break;
-            }
-        }
-
-        // هنا التغيير: نفضل دائماً النسخة الحديثة 3.24.3 لضمان عمل المكتبات الجديدة
-        // معظم المشاريع القديمة تعمل على الجديدة، لكن العكس غير صحيح
-        if (pubspecContent) {
-            console.log("Pubspec found, defaulting to latest stable Flutter.");
-        }
-    } catch (e) {
-        console.error("Warning: Version detection failed:", e.message);
-    }
-    return '3.24.3'; // استخدام أحدث إصدار مستقر لحل مشاكل dependencies
+    // نثبت النسخة 3.24.3 لأنها تدعم Dart 3.5 وتتوافق مع معظم الحزم الحديثة
+    return '3.24.3';
 }
 
 app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'projectZip', maxCount: 1 }]), async (req, res) => {
     try {
         if (!req.files || !req.files['icon'] || !req.files['projectZip']) {
-            return res.status(400).json({ error: "Missing icon or projectZip file" });
+            return res.status(400).json({ error: "Missing files" });
         }
 
         const { appName, packageName } = req.body;
-        console.log(`Received build request for: ${appName}`);
-
         const detectedFlutterVersion = detectFlutterVersion(req.files['projectZip'][0].buffer);
-        console.log(`Selected Flutter Version: ${detectedFlutterVersion}`);
 
         const uploadToCloudinary = (buffer, folder, resourceType, publicId = null) => {
             return new Promise((resolve, reject) => {
@@ -111,7 +81,6 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
         res.json({ success: true, build_id: requestId, detected_version: detectedFlutterVersion });
 
     } catch (error) {
-        console.error("Server Error:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -121,7 +90,6 @@ app.get('/check-status/:buildId', async (req, res) => {
         const { buildId } = req.params;
         const { appName } = req.query;
         const releaseUrl = `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/tags/build-${buildId}`;
-        
         try {
             await axios.get(releaseUrl, { headers: { 'Authorization': `token ${process.env.GITHUB_TOKEN}` } });
             const downloadUrl = `https://github.com/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/download/build-${buildId}/${appName}.apk`;

@@ -37,7 +37,6 @@ function detectFlutterVersion(zipBuffer) {
         const zipEntries = zip.getEntries();
         let pubspecContent = null;
 
-        // البحث عن ملف pubspec.yaml داخل ملف الـ ZIP (قد يكون داخل مجلد فرعي)
         for (const entry of zipEntries) {
             if (entry.entryName.endsWith('pubspec.yaml') && !entry.entryName.includes('__MACOSX')) {
                 pubspecContent = entry.getData().toString('utf8');
@@ -46,32 +45,22 @@ function detectFlutterVersion(zipBuffer) {
         }
 
         if (pubspecContent) {
-            // البحث عن Dart SDK Constraints
-            // مثال: sdk: '>=3.5.0 <4.0.0'
             const sdkMatch = pubspecContent.match(/sdk:\s*['"]?>=?([\d.]+)/);
             if (sdkMatch && sdkMatch[1]) {
                 const dartVersion = parseFloat(sdkMatch[1]);
                 console.log(`Detected Dart SDK requirement: ${dartVersion}`);
 
-                // خريطة تقريبية بين Dart SDK و Flutter Version
-                // Dart 3.5+ يحتاج Flutter 3.24+
+                // تحديث القيم لضمان عدم الوقوع في فخ Dart 3.0.0
                 if (dartVersion >= 3.5) return '3.24.0';
-                // Dart 3.4+ يحتاج Flutter 3.22+
-                if (dartVersion >= 3.4) return '3.22.0';
-                // Dart 3.3+ يحتاج Flutter 3.19+
-                if (dartVersion >= 3.3) return '3.19.0';
-                // Dart 3.0+ يحتاج Flutter 3.10+
-                if (dartVersion >= 3.0) return '3.10.0';
-                // Dart 2.12+ (Null Safety)
-                if (dartVersion >= 2.12) return '3.0.0';
+                if (dartVersion >= 3.3) return '3.22.0';
+                if (dartVersion >= 3.0) return '3.16.0'; // رفعنا الإصدار من 3.10 إلى 3.16 لضمان Dart > 3.1
+                if (dartVersion >= 2.12) return '3.7.0';
             }
         }
     } catch (e) {
-        console.warn("Failed to detect version from ZIP, using stable:", e.message);
+        console.warn("Failed to detect version, using stable:", e.message);
     }
-    
-    // القيمة الافتراضية الآمنة إذا فشل الكشف
-    return 'stable';
+    return '3.24.0'; // جعلنا الإصدار الافتراضي حديثاً بدلاً من stable لزيادة الاستقرار
 }
 
 // --- دالة مساعدة للرفع المباشر ---

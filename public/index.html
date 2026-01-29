@@ -45,10 +45,11 @@
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
             background: var(--bg-dark);
-            z-index: 9999;
+            z-index: 9999; /* أعلى طبقة */
             display: flex;
             justify-content: center;
             align-items: center;
+            transition: opacity 0.5s ease;
         }
 
         .loader {
@@ -65,7 +66,7 @@
         .navbar {
             padding: 1.2rem 2rem;
             display: flex;
-            justify-content: space-between; /* Space between Brand and Actions */
+            justify-content: space-between;
             align-items: center;
             border-bottom: 1px solid var(--border);
             width: 100%;
@@ -146,7 +147,7 @@
             top: 0; left: 0; width: 100%; height: 100%;
             background: var(--bg-dark);
             z-index: 2000;
-            display: flex;
+            display: none; /* مخفي افتراضياً حتى يقرر السكربت إظهاره */
             justify-content: center;
             align-items: center;
             flex-direction: column;
@@ -199,24 +200,24 @@
         /* --- Main Layout --- */
         #appContent {
             flex: 1;
-            display: none;
+            display: none; /* مخفي افتراضياً */
             width: 100%;
         }
 
         .main-container {
             display: flex;
-            flex-wrap: wrap; /* Allows stacking on mobile */
+            flex-wrap: wrap;
             padding: 3rem 2rem;
             gap: 4rem;
             max-width: 1400px;
             margin: 0 auto;
             width: 100%;
             justify-content: center;
-            align-items: flex-start; /* Important for unequal heights */
+            align-items: flex-start;
         }
 
         .config-panel {
-            flex: 1 1 500px; /* Grow, Shrink, Basis */
+            flex: 1 1 500px;
             min-width: 320px;
             max-width: 600px;
         }
@@ -347,7 +348,7 @@
             text-align: center;
             padding: 3rem;
             color: #555;
-            display: none; /* Controlled by JS */
+            display: none;
             flex-direction: column;
             align-items: center;
         }
@@ -386,18 +387,18 @@
         /* --- RESPONSIVE MEDIA QUERIES --- */
         @media (max-width: 950px) {
             .main-container {
-                flex-direction: column; /* Stack vertically on tablets/phones */
+                flex-direction: column;
                 align-items: center;
                 gap: 2rem;
             }
             .config-panel {
                 width: 100%;
                 max-width: 100%;
-                order: 1; /* Form first */
+                order: 1;
             }
             .preview-panel {
                 width: 100%;
-                order: 2; /* Preview second */
+                order: 2;
                 margin-top: 1rem;
             }
         }
@@ -405,11 +406,10 @@
         @media (max-width: 500px) {
             .navbar { padding: 1rem 1.2rem; }
             .brand { font-size: 1.5rem; }
-            .user-name { display: none; } /* Hide name on small mobile */
+            .user-name { display: none; }
             .nav-actions { gap: 10px; }
             
             .phone-frame {
-                /* Scale down phone for small screens */
                 transform: scale(0.85);
                 margin-top: -20px;
                 margin-bottom: -20px;
@@ -528,7 +528,6 @@
 
                 <div id="myAppsContainer" style="display:none;">
                     <div id="appsGrid" class="apps-grid"></div>
-                    
                     <div id="noAppsMsg" class="empty-state">
                         <i class="fa-solid fa-box-open"></i>
                         <p data-i18n="no_apps">لا توجد تطبيقات بعد.</p>
@@ -640,6 +639,8 @@
         }
 
         function confirmLogout() {
+            // نظهر اللودر عند الخروج لنمنع الوميض
+            document.getElementById('loadingOverlay').style.display = 'flex';
             auth.signOut();
             closeLogoutModal();
         }
@@ -661,7 +662,7 @@
 
         let currentUser = null;
 
-        // --- Auth Logic ---
+        // --- Auth Logic (FIXED GLITCH) ---
         function signInWithGoogle() {
             const provider = new firebase.auth.GoogleAuthProvider();
             auth.signInWithPopup(provider).catch(error => {
@@ -670,8 +671,12 @@
             });
         }
 
+        // نستمع لحالة المستخدم، ولا نخفي شاشة التحميل إلا عند استلام رد مؤكد
         auth.onAuthStateChanged(user => {
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            
             if (user) {
+                // حالة: مسجل دخول
                 currentUser = user;
                 document.getElementById('loginOverlay').style.display = 'none';
                 document.getElementById('appContent').style.display = 'block';
@@ -681,14 +686,18 @@
                 loadMyApps();
                 document.querySelector('.preview-panel').style.display = 'flex';
             } else {
+                // حالة: غير مسجل (زائر)
                 currentUser = null;
-                document.getElementById('loginOverlay').style.display = 'flex';
+                document.getElementById('loginOverlay').style.display = 'flex'; // أظهر التسجيل
                 document.getElementById('appContent').style.display = 'none';
                 document.getElementById('userProfile').style.display = 'none';
                 document.getElementById('userAvatar').src = '';
                 document.getElementById('userName').innerText = '';
                 document.querySelector('.preview-panel').style.display = 'none';
             }
+
+            // الآن فقط نخفي اللودر، لضمان أن الواجهة الصحيحة قد تم تفعيلها
+            if(loadingOverlay) loadingOverlay.style.display = 'none';
         });
 
         // --- Tabs ---
@@ -750,7 +759,7 @@
         let currentLang = 'ar';
 
         window.addEventListener('load', () => {
-            document.getElementById('loadingOverlay').style.display = 'none';
+            // حذفنا كود إخفاء اللودر من هنا، وأصبح داخل auth.onAuthStateChanged
             updatePhoneTime();
             setLanguage('ar');
         });
@@ -765,13 +774,11 @@
             document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
             document.body.style.fontFamily = lang === 'ar' ? "var(--font-ar)" : "var(--font-en)";
 
-            // Update Text
             document.querySelectorAll('[data-i18n]').forEach(el => {
                 const key = el.getAttribute('data-i18n');
                 if (translations[lang][key]) el.innerText = translations[lang][key];
             });
 
-            // Update Placeholders
             document.getElementById('appName').placeholder = lang === 'ar' ? "مثال: متجري" : "e.g. My Shop";
             document.getElementById('packageName').placeholder = lang === 'ar' ? "مثال: com.aite.shop" : "e.g. com.aite.shop";
         }

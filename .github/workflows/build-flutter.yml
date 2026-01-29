@@ -31,7 +31,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          # استخدام الإصدار المرسل من السيرفر (Server) ديناميكياً
+          # استخدام الإصدار المرسل من السيرفر
           flutter-version: ${{ github.event.client_payload.flutter_version }}
           cache: true
 
@@ -40,7 +40,7 @@ jobs:
           mkdir -p temp_zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
           unzip project.zip -d temp_zip
-          # البحث الذكي عن جذر المشروع (أين يقع pubspec.yaml)
+          # البحث عن جذر المشروع
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
@@ -48,17 +48,33 @@ jobs:
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
-          # حقن اسم التطبيق في Manifest
+          # -------------------------------------------------------
+          # 🛠️ قسم الإصلاح الذكي للتبعيات (Dependency Fixer)
+          # -------------------------------------------------------
+          
+          # 1. إزالة مكتبة الأيقونات لأننا نقوم بتوليدها يدوياً وتسبب مشاكل تعارض
+          sed -i '/flutter_launcher_icons/d' pubspec.yaml
+          
+          # 2. حل مشكلة تعارض Path بإضافة تجاوز (Override)
+          # نتحقق إذا كان dependency_overrides موجوداً أم لا
+          if grep -q "dependency_overrides:" pubspec.yaml; then
+            echo "  path: ^1.8.0" >> pubspec.yaml
+          else
+            echo "dependency_overrides:" >> pubspec.yaml
+            echo "  path: ^1.8.0" >> pubspec.yaml
+          fi
+
+          # -------------------------------------------------------
+          # 💉 قسم الحقن (Injection)
+          # -------------------------------------------------------
+
+          # حقن اسم التطبيق
           find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' {} +
           
-          # حقن اسم الحزمة (Package ID) في build.gradle
+          # حقن اسم الحزمة (Package ID)
           find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
           
-          # ملاحظة: تم إزالة سطر فرض إصدار SDK في pubspec.yaml لأنه يسبب تضارباً
-          # مع الإصدار الديناميكي الذي حددناه في الخطوة السابقة.
-          # نعتمد الآن على ملف المستخدم الأصلي + إصدار فلاتر المختار.
-
-          # تحميل ومعالجة الأيقونة
+          # معالجة الأيقونات (ImageMagick)
           curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
           mkdir -p android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi
           convert app_icon_raw.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
@@ -67,7 +83,7 @@ jobs:
           convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
-          # إصلاحات Gradle القديمة
+          # إصلاحات Gradle
           if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
             sed -i 's/gradle-.*-all.zip/gradle-7.5-all.zip/g' android/gradle/wrapper/gradle-wrapper.properties
           fi
@@ -79,7 +95,12 @@ jobs:
       - name: Build Optimized APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
+          
+          # تنظيف التبعيات القديمة ومحاولة التحديث
+          rm -f pubspec.lock
           flutter pub get
+          
+          # بناء التطبيق
           flutter build apk --release --target-platform android-arm64 --split-per-abi --obfuscate --split-debug-info=build/app/outputs/symbols
           
           # إعادة التسمية

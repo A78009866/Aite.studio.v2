@@ -1,89 +1,91 @@
-name: Aite Optimized Flutter Engine
+name: Flutter Cloud Build Engine
 
 on:
   repository_dispatch:
     types: [build-flutter]
 
-permissions:
-  contents: write
-
 jobs:
   build:
-    name: Build Minimalist APK
     runs-on: ubuntu-latest
-
     steps:
-      # 1️⃣ Checkout
-      - name: Checkout Repo
-        uses: actions/checkout@v4
+      # 1. تهيئة البيئة
+      - name: Checkout Repository
+        uses: actions/checkout@v3
 
-      # 2️⃣ Java
-      - name: Setup Java
+      - name: Set up Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # 3️⃣ Flutter (نسخة مستقرة عالية التوافق)
-      - name: Setup Flutter
+      - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.3'
-          channel: stable
-          cache: true
+          flutter-version: ${{ github.event.client_payload.flutter_version }}
+          channel: 'stable'
 
-      - name: Flutter Info
+      # 2. تحميل ملفات المستخدم
+      - name: Download Project Zip
         run: |
-          flutter --version
-          flutter doctor -v
-
-      # 4️⃣ تحميل المشروع وفك الضغط
-      - name: Download & Extract Project
-        run: |
-          mkdir -p temp_zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
-          unzip -q project.zip -d temp_zip
-
-          PROJECT_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} \; | head -n 1)
-          echo "PROJECT_ROOT=$PROJECT_ROOT" >> $GITHUB_ENV
-
-      # 5️⃣ فحص Dart SDK (تشخيص فقط)
-      - name: Detect Dart SDK
-        run: |
-          cd ${{ env.PROJECT_ROOT }}
-          echo "Detected SDK constraint:"
-          grep "sdk:" pubspec.yaml || true
-
-      # 6️⃣ Android Patch آمن (إن وُجد)
-      - name: Android Safe Patch
-        run: |
-          cd ${{ env.PROJECT_ROOT }}
-
-          if [ -f "android/app/build.gradle" ]; then
-            echo "Patching Android SDK versions (safe mode)"
-
-            sed -i 's/compileSdkVersion.*/compileSdkVersion 33/' android/app/build.gradle || true
-            sed -i 's/targetSdkVersion.*/targetSdkVersion 33/' android/app/build.gradle || true
+          unzip project.zip -d user_project
+          # الدخول إلى المجلد الصحيح (في حال كان الملف مضغوطاً داخل مجلد)
+          cd user_project
+          if [ -d "$(ls -D | head -1)" ]; then
+            mv $(ls -D | head -1)/* .
           fi
 
-          if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
-            sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-7.6-all.zip|g' \
-              android/gradle/wrapper/gradle-wrapper.properties
-          fi
+      - name: Download App Icon
+        run: |
+          curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon.png
 
-      # 7️⃣ Build APK (نظيف)
+      # 3. معالجة هوية التطبيق (الاسم والحزمة)
+      - name: Customize App Metadata
+        run: |
+          cd user_project
+          
+          # تغيير اسم التطبيق في AndroidManifest.xml
+          sed -i 's/android:label="[^"]*"/android:label="${{ github.event.client_payload.display_name }}"/g' android/app/src/main/AndroidManifest.xml
+          
+          # تغيير الـ Package Name في ملف build.gradle
+          sed -i 's/applicationId "[^"]*"/applicationId "${{ github.event.client_payload.package_name }}"/g' android/app/build.gradle
+          
+          # استبدال الأيقونة (البسيطة والافتراضية)
+          cp ../app_icon.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          cp ../app_icon.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          cp ../app_icon.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          cp ../app_icon.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          cp ../app_icon.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+      # 4. بناء التطبيق
       - name: Build APK
         run: |
-          cd ${{ env.PROJECT_ROOT }}
-          flutter clean
+          cd user_project
           flutter pub get
-          flutter build apk --release
+          # إصلاح التوافقية للمشاريع القديمة (اختياري)
+          flutter build apk --release --no-tree-shake-icons
 
-      # 8️⃣ رفع APK
-      - name: Upload Release
+      # 5. إنشاء الـ Release وإرسال الرابط
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}
-          files: ${{ env.PROJECT_ROOT }}/build/app/outputs/flutter-apk/*.apk
+          files: user_project/build/app/outputs/flutter-apk/app-release.apk
+          name: Build ${{ github.event.client_payload.display_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 6. تغيير اسم الملف المرفوع ليطابق ما يبحث عنه السيرفر
+      - name: Rename APK for Download
+        run: |
+          mv user_project/build/app/outputs/flutter-apk/app-release.apk ${{ github.event.client_payload.app_name }}.apk
+
+      # ملاحظة: السيرفر يبحث عن رابط محدد، GitHub يضع الملفات في Release Assets
+      # سنقوم بإعادة رفع الملف المسمى بشكل صحيح في الخطوة الأخيرة
+      - name: Upload Final APK
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: build-${{ github.event.client_payload.request_id }}
+          files: ${{ github.event.client_payload.app_name }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

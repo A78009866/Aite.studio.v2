@@ -211,7 +211,6 @@
 
     <div id="logoutModal" class="glass-modal-overlay">
         <div class="glass-card">
-            <div style="font-size: 3rem; margin-bottom: 15px;">👋</div>
             <h3 id="t_logout_title" style="margin-bottom: 10px; color:white;">تسجيل الخروج؟</h3>
             <p id="t_logout_desc" style="color:#aaa; margin-bottom: 20px;">هل أنت متأكد أنك تريد الخروج من حسابك؟</p>
             <button onclick="auth.signOut(); closeModal('logoutModal')" class="glass-btn primary" id="t_confirm_logout">نعم، خروج</button>
@@ -223,10 +222,10 @@
         <div class="glass-card">
             <h3 style="margin-bottom: 20px; color:white;"><i class="fa-solid fa-language"></i> Language</h3>
             <button onclick="setLanguage('ar'); closeModal('langModal')" class="glass-btn secondary" style="display:flex; justify-content:space-between; align-items:center;">
-                <span>العربية</span> <span style="font-size:1.2rem;">🇸🇦</span>
+                <span>العربية</span> <span style="font-size:1.2rem;">AR</span>
             </button>
             <button onclick="setLanguage('en'); closeModal('langModal')" class="glass-btn secondary" style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
-                <span>English</span> <span style="font-size:1.2rem;">🇺🇸</span>
+                <span>English</span> <span style="font-size:1.2rem;">EN</span>
             </button>
             <button onclick="closeModal('langModal')" class="glass-btn primary" style="margin-top:20px;" id="t_close">إغلاق</button>
         </div>
@@ -267,7 +266,7 @@
         <div class="main-container">
             
             <div class="config-panel">
-                <h1 id="t_welcome" style="font-size: 2rem; margin-bottom: 10px;">مرحباً المطور! 🚀</h1>
+                <h1 id="t_welcome" style="font-size: 2rem; margin-bottom: 10px;">اهلا بك ايها المطور!</h1>
                 <p id="t_sub" style="color: #888; margin-bottom: 30px; line-height: 1.6;">منصة البناء السحابي لتطبيقات فلاتر.</p>
 
                 <div class="tabs-container">
@@ -303,7 +302,7 @@
                             <div class="upload-card" onclick="document.getElementById('zipInput').click()">
                                 <div id="zipUploadContent">
                                     <i class="fa-solid fa-file-zipper upload-icon"></i>
-                                    <p id="t_click_zip" style="color:#aaa;">اضغط لرفع ملف المشروع المضغوط</p>
+                                    <p id="t_click_zip" style="color:#aaa;">اضغط لرفع ملف مشروعك ZIP (يجب ان يحتوي على مجلدات lib و android)</p>
                                 </div>
                                 <input type="file" id="zipInput" accept=".zip" style="display:none">
                             </div>
@@ -317,7 +316,7 @@
                         </div>
 
                         <button type="submit" id="submitBtn" class="action-btn">
-                            <i class="fa-solid fa-hammer"></i> <span id="t_btn_build">بدء البناء السحابي</span>
+                            <i class="fa-solid fa-hammer"></i> <span id="t_btn_build">بدء البناء </span>
                         </button>
                     </form>
 

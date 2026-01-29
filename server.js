@@ -3,128 +3,135 @@ const multer = require('multer');
 const axios = require('axios');
 const fs = require('fs');
 const FormData = require('form-data');
-const path = require('path');
+const path = require('path'); // ضروري للمسارات
 const cors = require('cors');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// 1. زيادة سعة استقبال البيانات لـ Express لتجنب أخطاء JSON الكبيرة
+// زيادة السعة
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.use(cors());
 
-// إعداد مجلد الملفات المؤقتة
-const uploadDir = '/tmp'; 
+// تحديد مكان واجهة الموقع (مجلد public) بشكل دقيق
+const publicPath = path.join(__dirname, 'public');
+app.use(express.static(publicPath));
+
+// المسار الرئيسي: إذا دخل المستخدم للموقع، نعرض له index.html
+app.get('/', (req, res) => {
+    const indexPath = path.join(publicPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.send(`
+            <h1 style="color:red">Error: index.html not found!</h1>
+            <p>Please make sure you created a folder named <b>public</b> and put your <b>index.html</b> inside it.</p>
+            <p>Current directory searched: ${publicPath}</p>
+        `);
+    }
+});
+
+// إعداد التخزين المؤقت
+const uploadDir = path.join('/tmp'); 
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// 2. إعداد Multer للسماح بملفات كبيرة (حتى 100 ميغا)
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
-        cb(null, file.originalname);
+        // تنظيف اسم الملف لتجنب مشاكل الرموز
+        const safeName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+        cb(null, safeName);
     }
 });
 
 const upload = multer({ 
     storage: storage,
-    limits: { fileSize: 100 * 1024 * 1024 } // 100 MB Limit
+    limits: { fileSize: 100 * 1024 * 1024 } 
 });
 
-app.use(express.static('public'));
-
+// نقطة استقبال الطلب
 app.post('/trigger-build', upload.fields([{ name: 'file' }, { name: 'icon' }]), async (req, res) => {
     try {
         const { appName, packageName, displayName } = req.body;
-        const projectFile = req.files['file'] ? req.files['file'][0] : null;
-        const iconFile = req.files['icon'] ? req.files['icon'][0] : null;
-
-        if (!projectFile || !iconFile) {
-            return res.status(400).json({ error: 'Project file and icon are required' });
+        
+        if (!req.files || !req.files['file'] || !req.files['icon']) {
+            return res.status(400).json({ error: 'Project file (zip) and Icon are required!' });
         }
 
-        console.log(`Received files: Project=${projectFile.size} bytes, Icon=${iconFile.size} bytes`);
+        const projectFile = req.files['file'][0];
+        const iconFile = req.files['icon'][0];
 
-        // رفع الملفات إلى خدمة تخزين مؤقتة (file.io) لأن GitHub Actions لا يستقبل ملفات مباشرة
-        // ملاحظة: يمكنك تغيير هذا لاحقاً لاستخدام AWS S3 أو Firebase إذا أردت استقراراً أعلى
-        
-        // 1. رفع ملف المشروع
+        console.log(`Processing: ${projectFile.originalname} & ${iconFile.originalname}`);
+
+        // 1. رفع المشروع
         const projectFormData = new FormData();
         projectFormData.append('file', fs.createReadStream(projectFile.path));
         
-        console.log('Uploading project zip to temporary storage...');
-        const projectUploadResponse = await axios.post('https://file.io/?expires=1d', projectFormData, {
+        console.log('Uploading ZIP...');
+        const projectUpload = await axios.post('https://file.io/?expires=1d', projectFormData, {
             headers: projectFormData.getHeaders(),
             maxContentLength: Infinity,
             maxBodyLength: Infinity
         });
 
-        // 2. رفع ملف الأيقونة
+        // 2. رفع الأيقونة
         const iconFormData = new FormData();
         iconFormData.append('file', fs.createReadStream(iconFile.path));
         
-        console.log('Uploading icon to temporary storage...');
-        const iconUploadResponse = await axios.post('https://file.io/?expires=1d', iconFormData, {
+        console.log('Uploading Icon...');
+        const iconUpload = await axios.post('https://file.io/?expires=1d', iconFormData, {
             headers: iconFormData.getHeaders(),
             maxContentLength: Infinity,
             maxBodyLength: Infinity
         });
 
-        if (!projectUploadResponse.data.success || !iconUploadResponse.data.success) {
-            throw new Error('Failed to upload files to temporary storage');
+        if (!projectUpload.data.success || !iconUpload.data.success) {
+            throw new Error('Failed to upload files to temporary storage.');
         }
 
-        const projectUrl = projectUploadResponse.data.link;
-        const iconUrl = iconUploadResponse.data.link;
-
-        console.log(`Files uploaded. URLs: \nProject: ${projectUrl} \nIcon: ${iconUrl}`);
-
-        // إرسال الطلب إلى GitHub Actions
-        const githubToken = process.env.GITHUB_TOKEN;
-        const repoOwner = process.env.GITHUB_REPO_OWNER; 
-        const repoName = process.env.GITHUB_REPO_NAME;
-        
-        // توليد معرف طلب عشوائي
+        // 3. إرسال إلى GitHub
         const requestId = Math.floor(Math.random() * 1000000);
-
         await axios.post(
-            `https://api.github.com/repos/${repoOwner}/${repoName}/dispatches`,
+            `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/dispatches`,
             {
                 event_type: 'build-flutter',
                 client_payload: {
-                    zip_url: projectUrl,
-                    icon_url: iconUrl,
-                    app_name: appName,
-                    display_name: displayName,
-                    package_name: packageName,
+                    zip_url: projectUpload.data.link,
+                    icon_url: iconUpload.data.link,
+                    app_name: appName || 'app',
+                    display_name: displayName || 'My App',
+                    package_name: packageName || 'com.example.app',
                     request_id: requestId
                 }
             },
             {
                 headers: {
-                    'Authorization': `token ${githubToken}`,
+                    'Authorization': `token ${process.env.GITHUB_TOKEN}`,
                     'Accept': 'application/vnd.github.v3+json'
                 }
             }
         );
 
-        // تنظيف الملفات المؤقتة
-        fs.unlinkSync(projectFile.path);
-        fs.unlinkSync(iconFile.path);
+        // تنظيف
+        try {
+            fs.unlinkSync(projectFile.path);
+            fs.unlinkSync(iconFile.path);
+        } catch (e) { console.error('Cleanup error:', e); }
 
-        res.json({ success: true, message: 'Build triggered successfully!', buildId: requestId });
+        res.json({ success: true, message: 'Build started!', buildId: requestId });
 
     } catch (error) {
-        console.error('Error:', error.message);
-        if (error.response) console.error('Response data:', error.response.data);
+        console.error('SERVER ERROR:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
 
 app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+    console.log(`Server is running at http://localhost:${port}`);
+    console.log(`Serving frontend from: ${publicPath}`);
 });

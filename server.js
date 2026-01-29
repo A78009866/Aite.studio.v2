@@ -9,7 +9,7 @@ const path = require('path');
 
 const app = express();
 app.use(cors());
-app.use(express.static('public')); 
+app.use(express.static('public'));
 app.use(express.json());
 
 // Cloudinary Configuration
@@ -30,7 +30,7 @@ app.get('/', (req, res) => {
 app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'projectZip', maxCount: 1 }]), async (req, res) => {
     try {
         const { appName, packageName } = req.body;
-        
+
         // Validation
         if (!req.files || !req.files['icon'] || !req.files['projectZip']) {
             throw new Error("Missing files");
@@ -80,10 +80,12 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
         if (fs.existsSync(iconFile.path)) fs.unlinkSync(iconFile.path);
         if (fs.existsSync(zipFile.path)) fs.unlinkSync(zipFile.path);
 
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             message: "Build triggered successfully",
-            build_id: githubPayload.client_payload.request_id
+            build_id: githubPayload.client_payload.request_id,
+            icon_url: iconUpload.secure_url,
+            zip_url: zipUpload.secure_url
         });
 
     } catch (error) {

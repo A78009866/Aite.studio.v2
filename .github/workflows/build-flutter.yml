@@ -31,7 +31,8 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.19.0'
+          # استخدام الإصدار المرسل من السيرفر (Server) ديناميكياً
+          flutter-version: ${{ github.event.client_payload.flutter_version }}
           cache: true
 
       - name: Download & Extract Project
@@ -39,18 +40,25 @@ jobs:
           mkdir -p temp_zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
           unzip project.zip -d temp_zip
+          # البحث الذكي عن جذر المشروع (أين يقع pubspec.yaml)
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
       - name: Auto-Repair & Inject
         run: |
           cd ${{ env.PROJECT_ROOT }}
-          # استخدام display_name (الاسم المقروء) لاسم التطبيق في الـ Manifest
-          find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' {} +
-          # استخدام package_name للـ ID
-          find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
-          sed -i 's/sdk: ">=.*/sdk: ">=2.12.0 <4.0.0"/g' pubspec.yaml
           
+          # حقن اسم التطبيق في Manifest
+          find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' {} +
+          
+          # حقن اسم الحزمة (Package ID) في build.gradle
+          find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
+          
+          # ملاحظة: تم إزالة سطر فرض إصدار SDK في pubspec.yaml لأنه يسبب تضارباً
+          # مع الإصدار الديناميكي الذي حددناه في الخطوة السابقة.
+          # نعتمد الآن على ملف المستخدم الأصلي + إصدار فلاتر المختار.
+
+          # تحميل ومعالجة الأيقونة
           curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
           mkdir -p android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi
           convert app_icon_raw.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
@@ -59,6 +67,7 @@ jobs:
           convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
+          # إصلاحات Gradle القديمة
           if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
             sed -i 's/gradle-.*-all.zip/gradle-7.5-all.zip/g' android/gradle/wrapper/gradle-wrapper.properties
           fi
@@ -73,7 +82,7 @@ jobs:
           flutter pub get
           flutter build apk --release --target-platform android-arm64 --split-per-abi --obfuscate --split-debug-info=build/app/outputs/symbols
           
-          # إعادة التسمية باستخدام app_name (الآمن بدون مسافات)
+          # إعادة التسمية
           ORIGINAL_PATH="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
           NEW_NAME="${{ github.event.client_payload.app_name }}.apk"
           mv "$ORIGINAL_PATH" "build/app/outputs/flutter-apk/$NEW_NAME"
@@ -88,5 +97,6 @@ jobs:
             ✅ Build Complete
             App: ${{ github.event.client_payload.display_name }}
             Package: ${{ github.event.client_payload.package_name }}
+            Flutter Version: ${{ github.event.client_payload.flutter_version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

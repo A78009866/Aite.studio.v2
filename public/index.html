@@ -872,77 +872,168 @@
         }
 
         // --- Submit ---
-        document.getElementById('buildForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
+// --- المتغيرات لإدارة حالة البناء ---
+let isBuilding = false;
+let pollingInterval = null;
+let buildStartTime = 0;
 
-            const zipFile = document.getElementById('zipInput').files[0];
-            if (!finalIconBlob) return showToast('err_select_icon');
-            if (!zipFile) return showToast('err_select_zip');
+document.getElementById('buildForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
 
-            const btn = document.getElementById('submitBtn');
-            const statusDiv = document.getElementById('statusContainer');
-            const statusTxt = document.getElementById('currentStatus');
-            const progressBar = document.getElementById('progressBar');
-            const resultArea = document.getElementById('resultArea');
+    const zipFile = document.getElementById('zipInput').files[0];
+    if (!finalIconBlob) return showToast('err_select_icon');
+    if (!zipFile) return showToast('err_select_zip');
 
-            btn.disabled = true;
-            btn.innerHTML = '<span class="loader" style="width:20px; height:20px; border-width:2px;"></span>';
-            statusDiv.style.display = 'block';
-            statusTxt.innerText = translations[currentLang]['status_uploading'];
-            progressBar.style.width = '10%';
-            resultArea.innerHTML = '';
+    const btn = document.getElementById('submitBtn');
+    const statusDiv = document.getElementById('statusContainer');
+    const statusTxt = document.getElementById('currentStatus');
+    const progressBar = document.getElementById('progressBar');
+    const resultArea = document.getElementById('resultArea');
 
-            const formData = new FormData();
-            formData.append('appName', document.getElementById('appName').value);
-            formData.append('packageName', document.getElementById('packageName').value);
-            formData.append('icon', finalIconBlob, 'icon.png');
-            formData.append('projectZip', zipFile);
+    // 1. بدء العملية
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loader" style="width:20px; height:20px; border-width:2px;"></span>';
+    statusDiv.style.display = 'block';
+    statusTxt.innerText = translations[currentLang]['status_uploading'];
+    progressBar.style.width = '5%';
+    progressBar.style.background = "var(--primary)";
+    resultArea.innerHTML = '';
+    
+    const formData = new FormData();
+    formData.append('appName', document.getElementById('appName').value);
+    formData.append('packageName', document.getElementById('packageName').value);
+    formData.append('icon', finalIconBlob, 'icon.png');
+    formData.append('projectZip', zipFile);
 
+    try {
+        // 2. إرسال الملفات للسيرفر
+        const response = await fetch('/build-flutter', { method: 'POST', body: formData });
+        const result = await response.json();
+
+        if (result.success) {
+            // 3. بدء عملية التتبع (Polling)
+            startPolling(result.build_id, result.safe_app_name);
+        } else { 
+            throw new Error(result.error); 
+        }
+
+    } catch (error) {
+        handleBuildError(error.message);
+    }
+});
+
+function startPolling(buildId, safeAppName) {
+    const statusTxt = document.getElementById('currentStatus');
+    const progressBar = document.getElementById('progressBar');
+    
+    buildStartTime = Date.now();
+    isBuilding = true;
+    
+    // رسائل توضيحية تتغير مع الوقت
+    const messages = [
+        { time: 0, msg: "جاري تهيئة البيئة السحابية..." },
+        { time: 30, msg: "تثبيت Flutter SDK والمكاتب..." },
+        { time: 90, msg: "جاري بناء ملف APK (يستغرق 3-5 دقائق)..." },
+        { time: 200, msg: "تحسين حجم التطبيق وضغطه..." },
+        { time: 300, msg: "جاري توقيع التطبيق ورفعه..." }
+    ];
+
+    // تحديث الشريط والنصوص
+    pollingInterval = setInterval(async () => {
+        const elapsedSec = Math.floor((Date.now() - buildStartTime) / 1000);
+        
+        // تحديث الرسالة بناءً على الوقت المنقضي
+        const currentMsgObj = messages.slice().reverse().find(m => elapsedSec >= m.time);
+        if(currentMsgObj) statusTxt.innerText = currentMsgObj.msg;
+
+        // تحديث شريط التقدم ببطء (وهمي ذكي حتى 95%)
+        let progress = Math.min(10 + (elapsedSec / 4), 95);
+        progressBar.style.width = progress + '%';
+
+        // التحقق من السيرفر كل 10 ثواني
+        if (elapsedSec % 10 === 0) {
             try {
-                let fakeProgress = 10;
-                const progressInterval = setInterval(() => {
-                    if (fakeProgress < 90) { fakeProgress += 5; progressBar.style.width = fakeProgress + '%'; }
-                }, 500);
+                const checkRes = await fetch(`/check-status/${buildId}?appName=${safeAppName}`);
+                const checkData = await checkRes.json();
 
-                const response = await fetch('/build-flutter', { method: 'POST', body: formData });
-                clearInterval(progressInterval);
-                const result = await response.json();
-
-                if (result.success) {
-                    progressBar.style.width = '100%';
-                    statusTxt.innerText = translations[currentLang]['status_success'];
-                    resultArea.innerHTML = `
-                    <div style="text-align:center; padding:10px;">
-                        <i class="fa-brands fa-telegram" style="font-size:3rem; color:#0088cc; margin-bottom:10px;"></i>
-                        <p>${translations[currentLang]['msg_success']}</p>
-                        <small style="color:#666">Build ID: ${result.build_id}</small>
-                    </div>
-                `;
-                    btn.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                    // Save to Firebase
-                    if (currentUser) {
-                        const newAppRef = db.ref('users/' + currentUser.uid + '/apps').push();
-                        newAppRef.set({
-                            appName: document.getElementById('appName').value,
-                            packageName: document.getElementById('packageName').value,
-                            iconUrl: result.icon_url,
-                            buildId: result.build_id,
-                            timestamp: Date.now()
-                        });
-                    }
-
-                } else { throw new Error(result.error); }
-            } catch (error) {
-                console.error(error);
-                statusTxt.innerText = translations[currentLang]['status_error'];
-                statusTxt.style.color = "var(--danger)";
-                progressBar.style.background = "var(--danger)";
-                resultArea.innerText = "Error: " + error.message;
-                btn.disabled = false;
-                btn.innerHTML = `<i class="fa-solid fa-rocket"></i> <span data-i18n="btn_start_build">${translations[currentLang]['btn_start_build']}</span>`;
+                if (checkData.completed) {
+                    finishBuild(checkData.download_url, buildId);
+                }
+            } catch (err) {
+                console.error("Polling error", err);
+                // لا نوقف البناء بسبب خطأ اتصال عابر
             }
+        }
+        
+        // إيقاف اجباري بعد 10 دقائق (Timeout)
+        if (elapsedSec > 600) {
+            handleBuildError("انتهت مهلة البناء. يرجى المحاولة لاحقاً أو التحقق من الكود.");
+        }
+
+    }, 1000);
+}
+
+function finishBuild(downloadUrl, buildId) {
+    clearInterval(pollingInterval);
+    isBuilding = false;
+
+    const statusTxt = document.getElementById('currentStatus');
+    const progressBar = document.getElementById('progressBar');
+    const resultArea = document.getElementById('resultArea');
+    const btn = document.getElementById('submitBtn');
+
+    progressBar.style.width = '100%';
+    statusTxt.innerText = "تم البناء بنجاح! جاري التنزيل...";
+    
+    // إنشاء زر التحميل والرابط
+    resultArea.innerHTML = `
+        <div style="text-align:center; padding:20px; animation: fadeIn 0.5s;">
+            <i class="fa-solid fa-file-arrow-down" style="font-size:3rem; color:var(--primary); margin-bottom:15px;"></i>
+            <h3>تطبيقك جاهز!</h3>
+            <p style="color:#888; font-size:0.9rem; word-break: break-all;">${downloadUrl}</p>
+            <a href="${downloadUrl}" class="build-btn" style="margin-top:15px; text-decoration:none;">
+                <i class="fa-solid fa-download"></i> تحميل APK
+            </a>
+            <small style="display:block; margin-top:10px; color:#555;">Build ID: ${buildId}</small>
+        </div>
+    `;
+
+    // تنزيل تلقائي
+    window.location.href = downloadUrl;
+
+    // إعادة تفعيل الزر الرئيسي
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-check"></i> تم البناء';
+    
+    // حفظ في Firebase (اختياري)
+    if (currentUser) {
+        db.ref('users/' + currentUser.uid + '/apps').push({
+            appName: document.getElementById('appName').value,
+            packageName: document.getElementById('packageName').value,
+            downloadUrl: downloadUrl,
+            buildId: buildId,
+            timestamp: Date.now()
         });
+    }
+}
+
+function handleBuildError(msg) {
+    if(pollingInterval) clearInterval(pollingInterval);
+    isBuilding = false;
+
+    const statusTxt = document.getElementById('currentStatus');
+    const progressBar = document.getElementById('progressBar');
+    const resultArea = document.getElementById('resultArea');
+    const btn = document.getElementById('submitBtn');
+
+    statusTxt.innerText = "فشل البناء";
+    statusTxt.style.color = "var(--danger)";
+    progressBar.style.background = "var(--danger)";
+    resultArea.innerHTML = `<div style="color:var(--danger); padding:10px; background:rgba(255,68,68,0.1); border-radius:8px;">${msg}</div>`;
+    
+    btn.disabled = false;
+    btn.innerHTML = `<i class="fa-solid fa-rocket"></i> إعادة المحاولة`;
+}
     </script>
 </body>
 </html>

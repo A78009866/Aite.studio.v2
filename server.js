@@ -5,6 +5,7 @@ const cloudinary = require('cloudinary').v2;
 const axios = require('axios');
 const cors = require('cors');
 const path = require('path');
+const AdmZip = require('adm-zip'); // تأكد من تثبيت هذه المكتبة: npm install adm-zip
 
 const app = express();
 
@@ -18,7 +19,7 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// استخدام الذاكرة (مهم لـ Vercel)
+// استخدام الذاكرة
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.get('/', (req, res) => {
@@ -29,7 +30,51 @@ function sanitizeFilename(name) {
     return name.trim().replace(/[^a-z0-9]/gi, '_').toLowerCase();
 }
 
-// --- دالة مساعدة للرفع المباشر (Stream Upload) ---
+// --- دالة لاكتشاف إصدار Flutter المناسب من ملف pubspec.yaml ---
+function detectFlutterVersion(zipBuffer) {
+    try {
+        const zip = new AdmZip(zipBuffer);
+        const zipEntries = zip.getEntries();
+        let pubspecContent = null;
+
+        // البحث عن ملف pubspec.yaml داخل ملف الـ ZIP (قد يكون داخل مجلد فرعي)
+        for (const entry of zipEntries) {
+            if (entry.entryName.endsWith('pubspec.yaml') && !entry.entryName.includes('__MACOSX')) {
+                pubspecContent = entry.getData().toString('utf8');
+                break;
+            }
+        }
+
+        if (pubspecContent) {
+            // البحث عن Dart SDK Constraints
+            // مثال: sdk: '>=3.5.0 <4.0.0'
+            const sdkMatch = pubspecContent.match(/sdk:\s*['"]?>=?([\d.]+)/);
+            if (sdkMatch && sdkMatch[1]) {
+                const dartVersion = parseFloat(sdkMatch[1]);
+                console.log(`Detected Dart SDK requirement: ${dartVersion}`);
+
+                // خريطة تقريبية بين Dart SDK و Flutter Version
+                // Dart 3.5+ يحتاج Flutter 3.24+
+                if (dartVersion >= 3.5) return '3.24.0';
+                // Dart 3.4+ يحتاج Flutter 3.22+
+                if (dartVersion >= 3.4) return '3.22.0';
+                // Dart 3.3+ يحتاج Flutter 3.19+
+                if (dartVersion >= 3.3) return '3.19.0';
+                // Dart 3.0+ يحتاج Flutter 3.10+
+                if (dartVersion >= 3.0) return '3.10.0';
+                // Dart 2.12+ (Null Safety)
+                if (dartVersion >= 2.12) return '3.0.0';
+            }
+        }
+    } catch (e) {
+        console.warn("Failed to detect version from ZIP, using stable:", e.message);
+    }
+    
+    // القيمة الافتراضية الآمنة إذا فشل الكشف
+    return 'stable';
+}
+
+// --- دالة مساعدة للرفع المباشر ---
 const uploadToCloudinary = (buffer, folder, resourceType, publicId = null) => {
     return new Promise((resolve, reject) => {
         const options = { folder: folder, resource_type: resourceType };
@@ -43,7 +88,7 @@ const uploadToCloudinary = (buffer, folder, resourceType, publicId = null) => {
     });
 };
 
-// 1. نقطة البناء (تم إصلاح مشكلة ZIP هنا)
+// 1. نقطة البناء
 app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'projectZip', maxCount: 1 }]), async (req, res) => {
     try {
         const { appName, packageName } = req.body;
@@ -55,19 +100,22 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
 
         console.log(`Starting build for ${appName}...`);
 
-        // 1. رفع الأيقونة
+        // 1. تحديد إصدار Flutter قبل الرفع
+        const detectedFlutterVersion = detectFlutterVersion(req.files['projectZip'][0].buffer);
+        console.log(`Selected Flutter Version: ${detectedFlutterVersion}`);
+
+        // 2. رفع الأيقونة
         const iconResult = await uploadToCloudinary(
             req.files['icon'][0].buffer,
             "aite_studio/icons",
             "image"
         );
 
-        // 2. رفع ملف ZIP (الإصلاح: استخدام uploadToCloudinary بدلاً من الملفات المحلية)
-        // هذا يضمن أن الملف وصل كاملاً إلى Cloudinary
+        // 3. رفع ملف ZIP
         const zipResult = await uploadToCloudinary(
             req.files['projectZip'][0].buffer,
             "aite_studio/projects",
-            "raw", // مهم جداً للملفات المضغوطة
+            "raw",
             `${packageName}_source_${Date.now()}`
         );
 
@@ -75,7 +123,7 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
 
         const requestId = Date.now().toString();
 
-        // 3. إرسال إلى GitHub
+        // 4. إرسال إلى GitHub مع الإصدار المكتشف
         await axios.post(
             `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/dispatches`,
             {
@@ -85,7 +133,8 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
                     display_name: appName,
                     package_name: packageName,
                     icon_url: iconResult.secure_url,
-                    zip_url: zipResult.secure_url, // الرابط الآن مضمون
+                    zip_url: zipResult.secure_url,
+                    flutter_version: detectedFlutterVersion, // <-- نرسل الإصدار هنا
                     request_id: requestId
                 }
             },
@@ -103,7 +152,8 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
             safe_app_name: safeAppName,
             icon_url: iconResult.secure_url,
             app_name: appName,
-            package_name: packageName
+            package_name: packageName,
+            detected_version: detectedFlutterVersion
         });
 
     } catch (error) {

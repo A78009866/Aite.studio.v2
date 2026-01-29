@@ -5,7 +5,7 @@ const cloudinary = require('cloudinary').v2;
 const axios = require('axios');
 const cors = require('cors');
 const path = require('path');
-const AdmZip = require('adm-zip');
+const AdmZip = require('adm-zip'); // تأكد أنك نفذت npm install adm-zip
 
 const app = express();
 app.use(cors());
@@ -20,11 +20,7 @@ cloudinary.config({
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-/**
- * وظيفة الكشف عن الإصدار (المنطق الذكي النهائي)
- * القاعدة: إذا كان المشروع حديثاً (Dart 3+) نعطيه أحدث Flutter متاح.
- * هذا يحل مشكلة تعارض المكتبات الحديثة مع الإصدارات القديمة.
- */
+// دالة الكشف عن الإصدار (آمنة ولا تسبب توقف السيرفر)
 function detectFlutterVersion(zipBuffer) {
     try {
         const zip = new AdmZip(zipBuffer);
@@ -32,6 +28,7 @@ function detectFlutterVersion(zipBuffer) {
         let pubspecContent = null;
 
         for (const entry of zipEntries) {
+            // البحث عن pubspec.yaml في الجذر أو المجلدات الفرعية
             if (entry.entryName.endsWith('pubspec.yaml') && !entry.entryName.includes('__MACOSX')) {
                 pubspecContent = entry.getData().toString('utf8');
                 break;
@@ -44,55 +41,60 @@ function detectFlutterVersion(zipBuffer) {
                 const dartVersion = parseFloat(sdkMatch[1]);
                 console.log(`Detected Dart SDK: ${dartVersion}`);
                 
-                // المشاريع الحديثة (Dart 3.0+) تحتاج Flutter 3.24+
-                if (dartVersion >= 3.0) return '3.24.3';
-                
-                // المشاريع المتوسطة (Null Safety)
-                if (dartVersion >= 2.12) return '3.10.0';
+                // خوارزمية التوافق
+                if (dartVersion >= 3.0) return '3.24.3'; // للمشاريع الحديثة
+                if (dartVersion >= 2.12) return '3.10.0'; // للمشاريع المتوسطة
             }
         }
     } catch (e) {
-        console.warn("Version detection failed, using default:", e.message);
+        console.error("Warning: Version detection failed:", e.message);
     }
-    // في حالة الشك، استخدم الأحدث والأقوى
+    // العودة للنسخة المستقرة الحديثة في حال الفشل
     return '3.24.3';
 }
 
-const uploadToCloudinary = (buffer, folder, resourceType, publicId = null) => {
-    return new Promise((resolve, reject) => {
-        const options = { folder: folder, resource_type: resourceType };
-        if (publicId) options.public_id = publicId;
-        const stream = cloudinary.uploader.upload_stream(options, (error, result) => {
-            if (error) return reject(error);
-            resolve(result);
-        });
-        stream.end(buffer);
-    });
-};
-
 app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'projectZip', maxCount: 1 }]), async (req, res) => {
     try {
+        // 1. التحقق من وجود الملفات (هذا هو الإصلاح المهم لمنع الايرور)
+        if (!req.files || !req.files['icon'] || !req.files['projectZip']) {
+            console.error("Error: Missing files in request");
+            return res.status(400).json({ error: "Missing icon or projectZip file" });
+        }
+
         const { appName, packageName } = req.body;
-        
-        // 1. اكتشاف النسخة
+        console.log(`Received build request for: ${appName}`);
+
+        // 2. اكتشاف النسخة (الآن هو آمن لأنه يتم بعد التحقق من الملف)
         const detectedFlutterVersion = detectFlutterVersion(req.files['projectZip'][0].buffer);
         console.log(`Selected Flutter Version: ${detectedFlutterVersion}`);
 
-        // 2. رفع الملفات
+        // 3. رفع الملفات إلى Cloudinary
+        const uploadToCloudinary = (buffer, folder, resourceType, publicId = null) => {
+            return new Promise((resolve, reject) => {
+                const options = { folder: folder, resource_type: resourceType };
+                if (publicId) options.public_id = publicId;
+                const stream = cloudinary.uploader.upload_stream(options, (error, result) => {
+                    if (error) return reject(error);
+                    resolve(result);
+                });
+                stream.end(buffer);
+            });
+        };
+
         const iconResult = await uploadToCloudinary(req.files['icon'][0].buffer, "aite_studio/icons", "image");
         const zipResult = await uploadToCloudinary(req.files['projectZip'][0].buffer, "aite_studio/projects", "raw", `${packageName}_src_${Date.now()}`);
 
         const requestId = Date.now().toString();
 
-        // 3. إرسال أمر البناء لـ GitHub
+        // 4. إرسال الطلب إلى GitHub
         await axios.post(
             `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/dispatches`,
             {
                 event_type: "build-flutter",
                 client_payload: {
-                    app_name: appName.trim().replace(/[^a-z0-9]/gi, '_').toLowerCase(),
-                    display_name: appName,
-                    package_name: packageName,
+                    app_name: appName ? appName.trim().replace(/[^a-z0-9]/gi, '_').toLowerCase() : "app",
+                    display_name: appName || "My App",
+                    package_name: packageName || "com.example.app",
                     icon_url: iconResult.secure_url,
                     zip_url: zipResult.secure_url,
                     flutter_version: detectedFlutterVersion,
@@ -107,11 +109,30 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
             }
         );
 
-        res.json({ success: true, build_id: requestId });
+        res.json({ success: true, build_id: requestId, detected_version: detectedFlutterVersion });
 
     } catch (error) {
-        console.error(error);
+        console.error("Server Error:", error);
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// نقطة فحص الحالة
+app.get('/check-status/:buildId', async (req, res) => {
+    try {
+        const { buildId } = req.params;
+        const { appName } = req.query;
+        const releaseUrl = `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/tags/build-${buildId}`;
+        
+        try {
+            await axios.get(releaseUrl, { headers: { 'Authorization': `token ${process.env.GITHUB_TOKEN}` } });
+            const downloadUrl = `https://github.com/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/download/build-${buildId}/${appName}.apk`;
+            res.json({ completed: true, download_url: downloadUrl });
+        } catch (e) {
+            res.json({ completed: false });
+        }
+    } catch (e) {
+        res.status(500).json({ error: "Check failed" });
     }
 });
 

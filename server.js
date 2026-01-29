@@ -27,7 +27,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 function detectFlutterVersion(zipBuffer) {
     // نثبت النسخة 3.24.3 لأنها تدعم Dart 3.5 وتتوافق مع معظم الحزم الحديثة
-    return '3.24.3';
+    return '3.30.0';
 }
 
 app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'projectZip', maxCount: 1 }]), async (req, res) => {

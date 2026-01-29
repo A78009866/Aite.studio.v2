@@ -12,7 +12,11 @@
   ],
   "routes": [
     {
-      "src": "/build-flutter",
+      "src": "/trigger-build",
+      "dest": "server.js"
+    },
+    {
+      "src": "/check-status",
       "dest": "server.js"
     },
     {

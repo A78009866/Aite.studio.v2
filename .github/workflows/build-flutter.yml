@@ -1,4 +1,4 @@
-name: Aite Optimized Flutter Engine
+name: Aite Universal Flutter Engine
 
 on:
   repository_dispatch:
@@ -9,79 +9,101 @@ permissions:
 
 jobs:
   build:
-    name: Build Minimalist APK
+    name: Build Universal APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
+      # 1. إعداد الأدوات اللازمة للصور
       - name: Install ImageMagick
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
+
+      # 2. استخدام Java 17 (المعيار الحالي لأغلب مشاريع فلاتر)
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
 
+      # 3. استخدام أحدث نسخة مستقرة من فلاتر (تحل مشكلة إصدار Dart)
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.19.0'
           cache: true
+          # إزالة flutter-version المحدد للسماح بجلب الأحدث دائماً
 
+      # 4. تحميل واستخراج المشروع
       - name: Download & Extract Project
         run: |
           mkdir -p temp_zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
-          unzip project.zip -d temp_zip
+          unzip -q project.zip -d temp_zip
+          # البحث الذكي عن مجلد المشروع الذي يحتوي على pubspec.yaml
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
-      - name: Auto-Repair & Inject
+
+      # 5. الحقن والتعديل (بدون تدمير إعدادات المشروع الأصلية)
+      - name: Smart Inject & Configure
         run: |
           cd ${{ env.PROJECT_ROOT }}
-          # استخدام display_name (الاسم المقروء) لاسم التطبيق في الـ Manifest
-          find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' {} +
-          # استخدام package_name للـ ID
-          find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
-          sed -i 's/sdk: ">=.*/sdk: ">=2.12.0 <4.0.0"/g' pubspec.yaml
           
+          # 1. تعديل اسم التطبيق (Label)
+          find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' {} +
+          
+          # 2. تعديل Package Name (Application ID)
+          # نستخدم طريقة أكثر أماناً لتجنب استبدال نصوص خاطئة
+          find android/app -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/' {} +
+          
+          # 3. معالجة الأيقونات
           curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
           mkdir -p android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi
+          
           convert app_icon_raw.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           convert app_icon_raw.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           convert app_icon_raw.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
-            sed -i 's/gradle-.*-all.zip/gradle-7.5-all.zip/g' android/gradle/wrapper/gradle-wrapper.properties
-          fi
-          if [ -f "android/build.gradle" ]; then
-            sed -i 's/com.android.tools.build:gradle:[0-9.]*/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
-            sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.8.22"/g' android/build.gradle
-          fi
-      - name: Build Optimized APK
+
+          # 4. تنظيف ملفات البناء القديمة لضمان عدم حدوث تضارب
+          rm -rf build
+          rm -rf .dart_tool
+          
+          # ملاحظة: قمنا بإزالة أوامر sed التي تعدل إصدارات gradle/kotlin قسراً
+          # لأنها السبب الرئيسي لفشل بناء المشاريع الحديثة
+
+      # 6. البناء
+      - name: Build APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
-          flutter pub get
-          flutter build apk --release --target-platform android-arm64 --split-per-abi --obfuscate --split-debug-info=build/app/outputs/symbols
           
-          # إعادة التسمية باستخدام app_name (الآمن بدون مسافات)
-          ORIGINAL_PATH="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+          # تحديث الاعتماديات ومحاولة حل المشاكل تلقائياً
+          flutter pub get
+          
+          # البناء مع تجاهل أخطاء التنسيق البسيطة (--no-fatal-infos)
+          flutter build apk --release --target-platform android-arm64 --split-per-abi --no-tree-shake-icons
+
+          # تجهيز الملف للنشر
+          ORIGINAL_PATH=$(find build/app/outputs/flutter-apk -name "*release.apk" | head -n 1)
           NEW_NAME="${{ github.event.client_payload.app_name }}.apk"
           mv "$ORIGINAL_PATH" "build/app/outputs/flutter-apk/$NEW_NAME"
+          
           echo "FINAL_APK_PATH=build/app/outputs/flutter-apk/$NEW_NAME" >> $GITHUB_ENV
-      - name: Upload Optimized APK
+
+      # 7. الرفع
+      - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/${{ env.FINAL_APK_PATH }}
           body: |
-            ✅ Build Complete
-            App: ${{ github.event.client_payload.display_name }}
+            🚀 Build Success
+            App Name: ${{ github.event.client_payload.display_name }}
             Package: ${{ github.event.client_payload.package_name }}
+            Framework: Flutter Stable
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -89,6 +89,13 @@ jobs:
             sed -i 's/com.android.tools.build:gradle:[0-9.]*/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
             sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.8.22"/g' android/build.gradle
           fi
+          # إضافة تجاوز لإصدار cupertino_icons إذا لزم الأمر
+          if ! grep -q "cupertino_icons:" pubspec.yaml; then
+            echo "  cupertino_icons: ^1.0.2" >> pubspec.yaml
+          fi
+          
+          # إجبار التوافق مع أي نسخة Dart موجودة
+          sed -i 's/sdk: .*/sdk: ">=3.0.0 <4.0.0"/' pubspec.yaml
 
       - name: Build Optimized APK
         run: |

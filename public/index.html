@@ -106,6 +106,29 @@
         .upload-icon { font-size: 2.5rem; color: #555; margin-bottom: 15px; transition: 0.3s; }
         .upload-card:hover .upload-icon { color: var(--primary); transform: scale(1.1); }
 
+        /* --- File Preview Card (New Style) --- */
+        .file-preview-card {
+            background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+            border-radius: 14px; padding: 15px; display: none; align-items: center; gap: 15px;
+            margin-bottom: 25px; animation: fadeIn 0.4s; position: relative; overflow: hidden;
+        }
+        .file-preview-card::before {
+            content: ''; position: absolute; left: 0; top: 0; height: 100%; width: 4px; background: var(--primary);
+        }
+        .file-icon-box {
+            width: 50px; height: 50px; background: rgba(0, 230, 118, 0.1); border-radius: 12px;
+            display: flex; align-items: center; justify-content: center; color: var(--primary); font-size: 1.5rem;
+        }
+        .file-info { flex: 1; overflow: hidden; }
+        .file-name { color: white; font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .file-meta { color: #777; font-size: 0.8rem; font-family: monospace; margin-top: 4px; display: flex; align-items: center; gap: 8px; }
+        .file-remove-btn {
+            background: transparent; border: none; color: #ff4444; cursor: pointer;
+            padding: 8px; font-size: 1.1rem; transition: 0.3s;
+        }
+        .file-remove-btn:hover { transform: scale(1.2); }
+
+
         /* --- Phone Preview (Updated) --- */
         .preview-panel { flex: 1 1 350px; display: flex; justify-content: center; padding-top: 20px; perspective: 1000px; }
         .phone-mockup {
@@ -168,15 +191,6 @@
             transition: 0.3s; box-shadow: 0 5px 20px rgba(0, 230, 118, 0.2);
         }
         .action-btn:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(0, 230, 118, 0.3); }
-
-        .folder-structure {
-            background: #111; border-radius: 12px; border: 1px solid var(--border);
-            padding: 15px; margin-bottom: 25px; display: none; animation: fadeIn 0.5s;
-        }
-        .folder-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid #222; font-family: monospace; color: #ccc; }
-        .folder-icon { color: #FFC107; }
-        .file-icon { color: #69F0AE; }
-        .check-icon { margin-right: auto; color: var(--primary); }
 
         /* Progress & Apps List */
         #statusContainer { margin-top: 25px; display: none; }
@@ -299,20 +313,30 @@
 
                         <div class="input-group">
                             <label class="input-label" id="t_zip">ملف المشروع (ZIP)</label>
-                            <div class="upload-card" onclick="document.getElementById('zipInput').click()">
+                            <div class="upload-card" id="zipUploadCard" onclick="document.getElementById('zipInput').click()">
                                 <div id="zipUploadContent">
                                     <i class="fa-solid fa-file-zipper upload-icon"></i>
-                                    <p id="t_click_zip" style="color:#aaa;">اضغط لرفع ملف مشروعك ZIP (يجب ان يحتوي على مجلدات lib و android)</p>
+                                    <p id="t_click_zip" style="color:#aaa;">اضغط لرفع ملف مشروعك ZIP (Flutter Only)</p>
                                 </div>
-                                <input type="file" id="zipInput" accept=".zip" style="display:none">
+                                <input type="file" id="zipInput" accept=".zip,application/zip,application/x-zip,application/x-zip-compressed" style="display:none">
                             </div>
-                        </div>
 
-                        <div id="folderPreview" class="folder-structure">
-                            <div id="t_struct" style="font-size:0.85rem; color:#777; margin-bottom:10px;">تم التحقق من الهيكل:</div>
-                            <div class="folder-row"><i class="fa-solid fa-folder folder-icon"></i> android/ <i class="fa-solid fa-check-circle check-icon"></i></div>
-                            <div class="folder-row"><i class="fa-solid fa-folder folder-icon"></i> lib/ <i class="fa-solid fa-check-circle check-icon"></i></div>
-                            <div class="folder-row"><i class="fa-solid fa-file-code file-icon"></i> pubspec.yaml <i class="fa-solid fa-check-circle check-icon"></i></div>
+                            <div id="zipFilePreview" class="file-preview-card">
+                                <div class="file-icon-box">
+                                    <i class="fa-brands fa-flutter"></i>
+                                </div>
+                                <div class="file-info">
+                                    <div id="zipFileNameDisplay" class="file-name">Project.zip</div>
+                                    <div class="file-meta">
+                                        <span id="zipFileSizeDisplay">0 MB</span>
+                                        <span>•</span>
+                                        <span style="color:var(--primary);">Flutter Project</span>
+                                    </div>
+                                </div>
+                                <button type="button" class="file-remove-btn" onclick="removeZipFile()">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
                         </div>
 
                         <button type="submit" id="submitBtn" class="action-btn">
@@ -409,10 +433,10 @@
                 icon: "أيقونة التطبيق",
                 zip: "ملف المشروع (ZIP)",
                 click_icon: "اضغط هنا لاختيار الصورة",
-                click_zip: "اضغط لرفع ملف المشروع",
+                click_zip: "اضغط لرفع ملف المشروع (Flutter Only)",
                 btn_build: "بدء البناء السحابي",
                 status: "الحالة:",
-                struct: "تم التحقق من الهيكل:",
+                struct: "تم التحقق من الملف:",
                 ready_title: "تطبيقك جاهز للتحميل",
                 download: "تحميل APK",
                 tab_build: "بناء تطبيق",
@@ -435,10 +459,10 @@
                 icon: "App Icon",
                 zip: "Project ZIP",
                 click_icon: "Click to upload Image",
-                click_zip: "Click to upload Project",
+                click_zip: "Click to upload Project (Flutter Only)",
                 btn_build: "Start Cloud Build",
                 status: "Status:",
-                struct: "Verified Structure:",
+                struct: "Verified File:",
                 ready_title: "App Ready",
                 download: "Download APK",
                 tab_build: "New Build",
@@ -463,7 +487,7 @@
                 t_confirm: 'confirm', t_cancel: 'cancel', t_welcome: 'welcome', t_sub: 'sub',
                 t_app_name: 'app_name', t_pkg_name: 'pkg_name', t_icon: 'icon', t_zip: 'zip',
                 t_click_icon: 'click_icon', t_click_zip: 'click_zip', t_btn_build: 'btn_build',
-                t_status: 'status', t_struct: 'struct', t_tab_build: 'tab_build', t_tab_apps: 'tab_apps',
+                t_status: 'status', t_tab_build: 'tab_build', t_tab_apps: 'tab_apps',
                 t_logout_title: 'logout_title', t_logout_desc: 'logout_desc', t_confirm_logout: 'confirm_logout',
                 t_close: 'close'
             };
@@ -535,12 +559,38 @@
             });
         }
 
-        document.getElementById('zipInput').addEventListener('change', function(e) {
-            if(e.target.files[0]) {
-                document.getElementById('zipUploadContent').innerHTML = '<i class="fa-solid fa-check-circle" style="color:var(--primary); font-size:3rem;"></i>';
-                document.getElementById('folderPreview').style.display = 'block';
+        // --- LOGIC FOR ZIP FILE PREVIEW (UPDATED) ---
+        const zipInput = document.getElementById('zipInput');
+        
+        zipInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if(file) {
+                // 1. تحقق صارم من الامتداد (Flutter Projects are often zipped)
+                const fileName = file.name.toLowerCase();
+                if(!fileName.endsWith('.zip')) {
+                    alert(currentLang === 'ar' ? "عذراً، يسمح فقط بملفات ZIP لمشاريع فلاتر" : "Sorry, only ZIP files are allowed for Flutter projects.");
+                    this.value = ''; // Reset input
+                    return;
+                }
+
+                // 2. تحديث واجهة العرض (الكارت الاحترافي)
+                document.getElementById('zipUploadCard').style.display = 'none';
+                const previewCard = document.getElementById('zipFilePreview');
+                previewCard.style.display = 'flex';
+                
+                document.getElementById('zipFileNameDisplay').innerText = file.name;
+                
+                // حساب الحجم بالميغابايت
+                const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+                document.getElementById('zipFileSizeDisplay').innerText = `${sizeInMB} MB`;
             }
         });
+
+        function removeZipFile() {
+            document.getElementById('zipInput').value = '';
+            document.getElementById('zipFilePreview').style.display = 'none';
+            document.getElementById('zipUploadCard').style.display = 'block';
+        }
 
         // Submit Logic
         let pollingInterval = null;

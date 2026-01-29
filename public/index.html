@@ -36,7 +36,7 @@
             display: flex; flex-direction: column; overflow-x: hidden;
         }
 
-        /* --- Navbar --- */
+        /* Navbar */
         .navbar {
             padding: 1.2rem 2rem; display: flex; justify-content: space-between; align-items: center;
             border-bottom: 1px solid var(--border); background: rgba(10, 10, 10, 0.95);
@@ -44,10 +44,12 @@
         }
         .brand { font-family: var(--font-en); font-size: 1.6rem; font-weight: 700; color: white; text-decoration: none; }
         .brand span { color: var(--primary); }
+        .nav-actions { display: flex; gap: 15px; align-items: center; }
+        .lang-btn { background: transparent; border: 1px solid var(--border); color: #fff; padding: 6px 12px; border-radius: 8px; cursor: pointer; transition: 0.3s; }
+        .lang-btn:hover { border-color: var(--primary); color: var(--primary); }
         .user-avatar { width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--primary); cursor: pointer; transition: 0.3s; }
-        .user-avatar:hover { transform: scale(1.05); box-shadow: 0 0 10px var(--primary-dim); }
 
-        /* --- Layout --- */
+        /* Layout */
         #appContent { flex: 1; display: none; width: 100%; }
         .main-container {
             display: flex; flex-wrap: wrap; padding: 3rem; gap: 4rem;
@@ -56,7 +58,7 @@
         }
         .config-panel { flex: 1 1 500px; max-width: 600px; width: 100%; animation: slideIn 0.6s ease; }
         
-        /* --- Form Elements --- */
+        /* Inputs & Cards */
         .input-group { margin-bottom: 1.5rem; }
         .input-label { display: block; margin-bottom: 10px; color: var(--text-muted); font-size: 0.95rem; font-weight: 600; }
         .input-field {
@@ -74,19 +76,7 @@
         .upload-icon { font-size: 2.5rem; color: #555; margin-bottom: 15px; transition: 0.3s; }
         .upload-card:hover .upload-icon { color: var(--primary); transform: scale(1.1); }
 
-        /* --- Beautiful Folder Preview (Requested) --- */
-        .folder-structure {
-            background: #111; border-radius: 12px; border: 1px solid var(--border);
-            padding: 15px; margin-bottom: 25px; display: none; /* Hidden initially */
-            animation: fadeIn 0.5s;
-        }
-        .folder-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid #222; font-family: monospace; color: #ccc; }
-        .folder-row:last-child { border-bottom: none; }
-        .folder-icon { color: #FFC107; } /* Yellow for folders */
-        .file-icon { color: #69F0AE; } /* Green for files */
-        .check-icon { margin-right: auto; color: var(--primary); opacity: 0; animation: popIn 0.5s 0.3s forwards; }
-
-        /* --- Buttons --- */
+        /* Buttons */
         .action-btn {
             width: 100%; background: var(--primary); color: #000; padding: 18px; border-radius: 14px;
             font-weight: 700; font-size: 1.1rem; border: none; cursor: pointer;
@@ -94,15 +84,19 @@
             transition: 0.3s; box-shadow: 0 5px 20px rgba(0, 230, 118, 0.2);
         }
         .action-btn:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(0, 230, 118, 0.3); }
-        .action-btn:disabled { background: #333; color: #777; cursor: not-allowed; transform: none; box-shadow: none; }
+        .action-btn:disabled { background: #333; color: #777; cursor: not-allowed; }
 
-        /* --- Progress Bar --- */
-        #statusContainer { margin-top: 25px; display: none; }
-        .progress-container { width: 100%; background: #222; height: 8px; border-radius: 10px; overflow: hidden; margin: 15px 0; }
-        .progress-bar { width: 0%; height: 100%; background: var(--primary); transition: width 0.4s ease; box-shadow: 0 0 10px var(--primary); }
-        .status-text { display: flex; justify-content: space-between; font-size: 0.9rem; color: #aaa; }
+        /* Folder Structure Animation */
+        .folder-structure {
+            background: #111; border-radius: 12px; border: 1px solid var(--border);
+            padding: 15px; margin-bottom: 25px; display: none; animation: fadeIn 0.5s;
+        }
+        .folder-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid #222; font-family: monospace; color: #ccc; }
+        .folder-icon { color: #FFC107; }
+        .file-icon { color: #69F0AE; }
+        .check-icon { margin-right: auto; color: var(--primary); }
 
-        /* --- Phone Preview (Fixed) --- */
+        /* Phone Preview */
         .preview-panel { flex: 1 1 350px; display: flex; justify-content: center; padding-top: 20px; perspective: 1000px; }
         .phone-mockup {
             width: 320px; height: 640px; background: #000; border-radius: 45px;
@@ -122,7 +116,12 @@
         }
         .app-name-preview { font-size: 1.4rem; font-weight: 600; color: white; text-align: center; }
 
-        /* --- Result & Download --- */
+        /* Progress & Results */
+        #statusContainer { margin-top: 25px; display: none; }
+        .progress-container { width: 100%; background: #222; height: 8px; border-radius: 10px; overflow: hidden; margin: 15px 0; }
+        .progress-bar { width: 0%; height: 100%; background: var(--primary); transition: width 0.4s ease; }
+        .status-text { display: flex; justify-content: space-between; font-size: 0.9rem; color: #aaa; }
+        
         .result-card {
             background: rgba(0, 230, 118, 0.05); border: 1px solid var(--primary); border-radius: 16px;
             padding: 20px; text-align: center; animation: fadeIn 0.5s; margin-top: 20px;
@@ -132,7 +131,7 @@
             padding: 12px 25px; border-radius: 10px; text-decoration: none; font-weight: bold; margin-top: 15px;
         }
 
-        /* --- Mobile Responsive --- */
+        /* Responsive */
         @media (max-width: 900px) {
             .main-container { flex-direction: column; align-items: center; gap: 2rem; padding: 1.5rem; }
             .config-panel { order: 1; width: 100%; }
@@ -140,11 +139,6 @@
             .phone-mockup { width: 280px; height: 560px; border-width: 8px; transform: none !important; }
         }
 
-        /* --- Animations --- */
-        @keyframes slideIn { from{opacity:0; transform:translateX(-20px);} to{opacity:1; transform:translateX(0);} }
-        @keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
-        @keyframes popIn { 0%{opacity:0; transform:scale(0);} 80%{transform:scale(1.2);} 100%{opacity:1; transform:scale(1);} }
-        
         /* Modals & Loaders */
         #loadingOverlay, #loginOverlay, .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000;
@@ -155,6 +149,8 @@
         .modal-box { background: var(--bg-card); padding: 30px; border-radius: 20px; border: 1px solid var(--border); width: 90%; max-width: 400px; text-align: center; }
         .loader { width: 50px; height: 50px; border: 4px solid #333; border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { 100% {transform: rotate(360deg);} }
+        @keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
+        @keyframes slideIn { from{opacity:0; transform:translateX(-20px);} to{opacity:1; transform:translateX(0);} }
     </style>
 </head>
 
@@ -165,30 +161,31 @@
     <div id="loginOverlay">
         <div class="modal-box">
             <h2 class="brand" style="font-size: 2rem; margin-bottom: 10px;">Aite<span>.</span>studio</h2>
-            <p style="color:#888; margin-bottom: 25px;">قم بتسجيل الدخول لبدء بناء تطبيقاتك</p>
+            <p id="t_login_desc" style="color:#888; margin-bottom: 25px;">Please sign in to manage your apps</p>
             <button onclick="signInWithGoogle()" class="action-btn" style="background:#333; color:white;">
-                <i class="fa-brands fa-google"></i> تسجيل الدخول عبر Google
+                <i class="fa-brands fa-google"></i> <span id="t_signin">Sign in with Google</span>
             </button>
         </div>
     </div>
 
     <div id="cropModal" class="modal-overlay">
         <div class="modal-box" style="max-width: 500px;">
-            <h3 style="margin-bottom: 15px;">ضبط الأيقونة</h3>
+            <h3 id="t_crop_title" style="margin-bottom: 15px;">Adjust Icon</h3>
             <div style="background:#000; border-radius:10px; overflow:hidden; margin-bottom:20px; max-height:400px; display:flex; justify-content:center;">
                 <img id="cropImage" src="" style="max-width:100%;">
             </div>
             <div style="display:flex; gap:10px;">
-                <button onclick="performCrop()" class="action-btn">تأكيد</button>
-                <button onclick="document.getElementById('cropModal').style.display='none'" class="action-btn" style="background:#333;">إلغاء</button>
+                <button onclick="performCrop()" class="action-btn" id="t_confirm">Confirm</button>
+                <button onclick="document.getElementById('cropModal').style.display='none'" class="action-btn" style="background:#333;" id="t_cancel">Cancel</button>
             </div>
         </div>
     </div>
 
     <nav class="navbar">
         <a href="#" class="brand">Aite<span>.</span>studio</a>
-        <div style="display:flex; align-items:center; gap:15px;">
-            <img id="userAvatar" class="user-avatar" src="" style="display:none;" title="تسجيل الخروج" onclick="auth.signOut()">
+        <div class="nav-actions">
+            <button class="lang-btn" onclick="toggleLanguage()">AR / EN</button>
+            <img id="userAvatar" class="user-avatar" src="" style="display:none;" onclick="auth.signOut()">
         </div>
     </nav>
 
@@ -196,65 +193,65 @@
         <div class="main-container">
             
             <div class="config-panel">
-                <h1 style="font-size: 2rem; margin-bottom: 10px;">مرحباً المطور! 🚀</h1>
-                <p style="color: #888; margin-bottom: 30px; line-height: 1.6;">ارفع ملفات مشروعك وسنقوم ببناء ملف APK وتوقيعه سحابياً في دقائق.</p>
+                <h1 id="t_welcome" style="font-size: 2rem; margin-bottom: 10px;">Welcome Developer! 🚀</h1>
+                <p id="t_sub" style="color: #888; margin-bottom: 30px; line-height: 1.6;">Upload your project files and we'll build your APK in the cloud.</p>
 
                 <form id="buildForm">
                     <div class="input-group">
-                        <label class="input-label">اسم التطبيق</label>
-                        <input type="text" class="input-field" id="appName" placeholder="مثال: متجري" oninput="updatePreview()" required>
+                        <label class="input-label" id="t_app_name">App Name</label>
+                        <input type="text" class="input-field" id="appName" placeholder="e.g. My Shop" oninput="updatePreview()" required>
                     </div>
 
                     <div class="input-group">
-                        <label class="input-label">معرف الحزمة (Package Name)</label>
+                        <label class="input-label" id="t_pkg_name">Package Name</label>
                         <input type="text" class="input-field" id="packageName" placeholder="com.company.app" required>
                     </div>
 
                     <div class="input-group">
-                        <label class="input-label">أيقونة التطبيق</label>
+                        <label class="input-label" id="t_icon">App Icon</label>
                         <div class="upload-card" onclick="document.getElementById('iconInput').click()">
                             <div id="iconUploadContent">
                                 <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
-                                <p style="color:#aaa;">اضغط هنا لاختيار الصورة (PNG)</p>
+                                <p id="t_click_icon" style="color:#aaa;">Click to upload (PNG)</p>
                             </div>
                             <input type="file" id="iconInput" accept="image/*" style="display:none">
                         </div>
                     </div>
 
                     <div class="input-group">
-                        <label class="input-label">ملف المشروع (ZIP)</label>
+                        <label class="input-label" id="t_zip">Project ZIP</label>
                         <div class="upload-card" onclick="document.getElementById('zipInput').click()">
                             <div id="zipUploadContent">
                                 <i class="fa-solid fa-file-zipper upload-icon"></i>
-                                <p style="color:#aaa;">اضغط لرفع ملف المشروع المضغوط</p>
+                                <p id="t_click_zip" style="color:#aaa;">Click to upload Flutter Code</p>
                             </div>
                             <input type="file" id="zipInput" accept=".zip" style="display:none">
                         </div>
                     </div>
 
                     <div id="folderPreview" class="folder-structure">
-                        <div style="font-size:0.85rem; color:#777; margin-bottom:10px;">تم التحقق من هيكل المشروع:</div>
-                        <div class="folder-row"><i class="fa-solid fa-folder folder-icon"></i> android/ <i class="fa-solid fa-check-circle check-icon"></i></div>
-                        <div class="folder-row"><i class="fa-solid fa-folder folder-icon"></i> lib/ <i class="fa-solid fa-check-circle check-icon"></i></div>
-                        <div class="folder-row"><i class="fa-solid fa-file-code file-icon"></i> pubspec.yaml <i class="fa-solid fa-check-circle check-icon"></i></div>
+                        <div id="t_struct" style="font-size:0.85rem; color:#777; margin-bottom:10px;">Verified Project Structure:</div>
+                        <div class="folder-row"><i class="fa-solid fa-folder folder-icon"></i> android/ <i class="fa-solid fa-check-circle check-icon" style="opacity:1;"></i></div>
+                        <div class="folder-row"><i class="fa-solid fa-folder folder-icon"></i> lib/ <i class="fa-solid fa-check-circle check-icon" style="opacity:1;"></i></div>
+                        <div class="folder-row"><i class="fa-solid fa-file-code file-icon"></i> pubspec.yaml <i class="fa-solid fa-check-circle check-icon" style="opacity:1;"></i></div>
                     </div>
 
                     <button type="submit" id="submitBtn" class="action-btn">
-                        <i class="fa-solid fa-hammer"></i> بدء البناء السحابي
+                        <i class="fa-solid fa-hammer"></i> <span id="t_btn_build">Start Cloud Build</span>
                     </button>
                 </form>
 
                 <div id="statusContainer">
                     <div class="status-text">
-                        <span>حالة العملية:</span>
-                        <span id="statusLabel" style="color:var(--primary);">جاري الاتصال...</span>
+                        <span id="t_status">Status:</span>
+                        <span id="statusLabel" style="color:var(--primary);">Connecting...</span>
                     </div>
                     <div class="progress-container"><div id="progressBar" class="progress-bar"></div></div>
                     <div id="resultArea"></div>
                 </div>
 
                 <div id="myAppsSection" style="margin-top: 50px; display:none;">
-                    <h3 style="border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px;">تطبيقاتي السابقة</h3>
+                    <h3 id="t_my_apps" style="border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px;">My Previous Apps</h3>
                     <div id="appsGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100%, 1fr)); gap: 15px;"></div>
                 </div>
             </div>
@@ -274,7 +271,75 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
     <script>
-        // Firebase Config
+        // Translations Dictionary
+        const translations = {
+            ar: {
+                login_desc: "قم بتسجيل الدخول لبدء بناء تطبيقاتك",
+                signin: "تسجيل الدخول عبر Google",
+                crop_title: "ضبط الأيقونة",
+                confirm: "تأكيد",
+                cancel: "إلغاء",
+                welcome: "مرحباً المطور! 🚀",
+                sub: "ارفع ملفات مشروعك وسنقوم ببناء ملف APK وتوقيعه سحابياً في دقائق.",
+                app_name: "اسم التطبيق",
+                pkg_name: "معرف الحزمة (Package Name)",
+                icon: "أيقونة التطبيق",
+                zip: "ملف المشروع (ZIP)",
+                click_icon: "اضغط هنا لاختيار الصورة (PNG)",
+                click_zip: "اضغط لرفع ملف المشروع المضغوط",
+                btn_build: "بدء البناء السحابي",
+                status: "حالة العملية:",
+                my_apps: "تطبيقاتي السابقة",
+                struct: "تم التحقق من هيكل المشروع:",
+                ready_title: "تطبيقك جاهز للتحميل",
+                download: "تحميل APK المباشر"
+            },
+            en: {
+                login_desc: "Please sign in to manage your apps",
+                signin: "Sign in with Google",
+                crop_title: "Adjust Icon",
+                confirm: "Confirm",
+                cancel: "Cancel",
+                welcome: "Welcome Developer! 🚀",
+                sub: "Upload your project files and we'll build your APK in the cloud.",
+                app_name: "App Name",
+                pkg_name: "Package Name",
+                icon: "App Icon",
+                zip: "Project ZIP",
+                click_icon: "Click to upload (PNG)",
+                click_zip: "Click to upload Flutter Code",
+                btn_build: "Start Cloud Build",
+                status: "Status:",
+                my_apps: "My Previous Apps",
+                struct: "Verified Project Structure:",
+                ready_title: "Your App is Ready",
+                download: "Download Direct APK"
+            }
+        };
+
+        let currentLang = 'ar';
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'ar' ? 'en' : 'ar';
+            document.documentElement.dir = currentLang === 'ar' ? 'rtl' : 'ltr';
+            document.documentElement.lang = currentLang;
+            document.body.style.fontFamily = currentLang === 'ar' ? "var(--font-ar)" : "var(--font-en)";
+            
+            // Map IDs to keys
+            const map = {
+                t_login_desc: 'login_desc', t_signin: 'signin', t_crop_title: 'crop_title',
+                t_confirm: 'confirm', t_cancel: 'cancel', t_welcome: 'welcome', t_sub: 'sub',
+                t_app_name: 'app_name', t_pkg_name: 'pkg_name', t_icon: 'icon', t_zip: 'zip',
+                t_click_icon: 'click_icon', t_click_zip: 'click_zip', t_btn_build: 'btn_build',
+                t_status: 'status', t_my_apps: 'my_apps', t_struct: 'struct'
+            };
+
+            for (const [id, key] of Object.entries(map)) {
+                if(document.getElementById(id)) document.getElementById(id).innerText = translations[currentLang][key];
+            }
+        }
+
+        // Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyAN-9qBeL51nwpctJw9rSQYzz1C7dDRf1E",
             authDomain: "world-3212f.firebaseapp.com",
@@ -289,7 +354,6 @@
         const db = firebase.database();
         let currentUser = null;
 
-        // Auth Logic
         auth.onAuthStateChanged(user => {
             document.getElementById('loadingOverlay').style.display = 'none';
             if (user) {
@@ -307,12 +371,11 @@
 
         function signInWithGoogle() { auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }
 
-        // Preview Logic
+        // Logic
         function updatePreview() {
             document.getElementById('previewName').innerText = document.getElementById('appName').value || "App Name";
         }
 
-        // Cropper Logic
         let cropper = null; let finalIconBlob = null;
         document.getElementById('iconInput').addEventListener('change', function(e) {
             if(e.target.files[0]) {
@@ -338,26 +401,23 @@
             });
         }
 
-        // ZIP Logic (With Folder Animation)
         document.getElementById('zipInput').addEventListener('change', function(e) {
             if(e.target.files[0]) {
                 document.getElementById('zipUploadContent').innerHTML = '<i class="fa-solid fa-check-circle" style="color:var(--primary); font-size:3rem;"></i>';
-                document.getElementById('folderPreview').style.display = 'block'; // Show the animation
+                document.getElementById('folderPreview').style.display = 'block';
             }
         });
 
-        // Submission & Polling Logic
+        // Submit & Poll
         let pollingInterval = null;
-
         document.getElementById('buildForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            if(!finalIconBlob || !document.getElementById('zipInput').files[0]) return alert("يرجى رفع الملفات المطلوبة");
+            if(!finalIconBlob || !document.getElementById('zipInput').files[0]) return alert("Please upload files");
 
             const btn = document.getElementById('submitBtn');
             const statusBox = document.getElementById('statusContainer');
             
             btn.disabled = true;
-            btn.innerHTML = '<div class="loader" style="width:25px;height:25px;border-width:3px;"></div> جاري الرفع...';
             statusBox.style.display = 'block';
             document.getElementById('progressBar').style.width = '5%';
             document.getElementById('resultArea').innerHTML = '';
@@ -369,15 +429,11 @@
             fd.append('projectZip', document.getElementById('zipInput').files[0]);
 
             try {
-                // Important: Using explicit URL if needed, or relative path
                 const res = await fetch('/build-flutter', { method: 'POST', body: fd });
                 const data = await res.json();
-
                 if(data.success) {
                     startPolling(data.build_id, data.safe_app_name, data.icon_url, data.app_name, data.package_name);
-                } else {
-                    throw new Error(data.error);
-                }
+                } else { throw new Error(data.error); }
             } catch(err) {
                 handleError(err.message);
             }
@@ -390,47 +446,49 @@
 
             pollingInterval = setInterval(async () => {
                 const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                
+                // Status Texts
+                if(currentLang === 'ar') {
+                    if(elapsed < 20) label.innerText = "رفع الملفات إلى السحابة...";
+                    else if(elapsed < 60) label.innerText = "تحضير بيئة فلاتر...";
+                    else if(elapsed < 120) label.innerText = "بناء التطبيق...";
+                    else label.innerText = "توقيع ملف APK...";
+                } else {
+                    if(elapsed < 20) label.innerText = "Uploading to cloud...";
+                    else if(elapsed < 60) label.innerText = "Setting up Flutter...";
+                    else if(elapsed < 120) label.innerText = "Building APK...";
+                    else label.innerText = "Signing APK...";
+                }
 
-                // Messages
-                if(elapsed < 20) label.innerText = "تهيئة بيئة العمل السحابية...";
-                else if(elapsed < 60) label.innerText = "تثبيت المكاتب وبدء البناء...";
-                else if(elapsed < 120) label.innerText = "يجري الآن تحويل الكود إلى APK...";
-                else label.innerText = "المراحل الأخيرة: توقيع التطبيق...";
-
-                // Progress
                 let progress = Math.min(10 + (elapsed / 2.5), 90);
                 bar.style.width = progress + '%';
 
-                // Check Server (Every 5s)
                 if(elapsed % 5 === 0) {
                     try {
                         const checkRes = await fetch(`/check-status/${buildId}?appName=${safeName}`);
                         const checkData = await checkRes.json();
-                        
-                        if(checkData.completed) {
-                            finishBuild(checkData.download_url, buildId, iconUrl, realName, pkgName);
-                        }
-                    } catch(e) { console.log("Waiting for build..."); }
+                        if(checkData.completed) finishBuild(checkData.download_url, buildId, iconUrl, realName, pkgName);
+                    } catch(e) {}
                 }
-
-                if(elapsed > 600) handleError("انتهت مهلة البناء");
+                if(elapsed > 600) handleError("Timeout");
             }, 1000);
         }
 
         function finishBuild(url, id, iconUrl, realName, pkgName) {
             clearInterval(pollingInterval);
             document.getElementById('progressBar').style.width = '100%';
-            document.getElementById('statusLabel').innerText = "تم البناء بنجاح! 🎉";
+            document.getElementById('statusLabel').innerText = "Done! 🎉";
             document.getElementById('submitBtn').disabled = false;
-            document.getElementById('submitBtn').innerHTML = '<i class="fa-solid fa-plus"></i> بناء تطبيق جديد';
+            
+            const txt_ready = translations[currentLang].ready_title;
+            const txt_dl = translations[currentLang].download;
 
-            const resArea = document.getElementById('resultArea');
-            resArea.innerHTML = `
+            document.getElementById('resultArea').innerHTML = `
                 <div class="result-card">
-                    <h3 style="color:white; margin-bottom:10px;">تطبيقك جاهز للتحميل</h3>
+                    <h3 style="color:white; margin-bottom:10px;">${txt_ready}</h3>
                     <div style="font-size:0.9rem; color:#aaa; margin-bottom:15px;">Build ID: ${id}</div>
                     <a href="${url}" class="download-btn" target="_blank">
-                        <i class="fa-brands fa-android"></i> تحميل APK المباشر
+                        <i class="fa-brands fa-android"></i> ${txt_dl}
                     </a>
                 </div>
             `;
@@ -445,11 +503,10 @@
 
         function handleError(msg) {
             clearInterval(pollingInterval);
-            document.getElementById('statusLabel').innerText = "خطأ: " + msg;
+            document.getElementById('statusLabel').innerText = "Error: " + msg;
             document.getElementById('statusLabel').style.color = "var(--danger)";
             document.getElementById('progressBar').style.background = "var(--danger)";
             document.getElementById('submitBtn').disabled = false;
-            document.getElementById('submitBtn').innerHTML = 'إعادة المحاولة';
         }
 
         function loadMyApps() {
@@ -475,6 +532,9 @@
                 }
             });
         }
+        
+        // Init Language
+        toggleLanguage(); // sets to AR initially
     </script>
 </body>
 </html>

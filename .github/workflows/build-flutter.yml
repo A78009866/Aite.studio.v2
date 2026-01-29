@@ -45,9 +45,11 @@ jobs:
       - name: Auto-Repair & Inject
         run: |
           cd ${{ env.PROJECT_ROOT }}
-          sed -i 's/sdk: ">=.*/sdk: ">=2.12.0 <4.0.0"/g' pubspec.yaml
+          # استخدام display_name (الاسم المقروء) لاسم التطبيق في الـ Manifest
+          find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' {} +
+          # استخدام package_name للـ ID
           find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
-          find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.app_name }}"/' {} +
+          sed -i 's/sdk: ">=.*/sdk: ">=2.12.0 <4.0.0"/g' pubspec.yaml
           
           curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
           mkdir -p android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi
@@ -64,12 +66,6 @@ jobs:
             sed -i 's/com.android.tools.build:gradle:[0-9.]*/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
             sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.8.22"/g' android/build.gradle
           fi
-          if [ -f "android/app/build.gradle" ]; then
-            sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle
-            sed -i 's/targetSdkVersion .*/targetSdkVersion 34/g' android/app/build.gradle
-            sed -i 's/minSdkVersion .*/minSdkVersion 21/g' android/app/build.gradle
-            sed -i '/apply from: ".*app_plugin_loader.gradle"/d' android/app/build.gradle
-          fi
 
       - name: Build Optimized APK
         run: |
@@ -77,7 +73,7 @@ jobs:
           flutter pub get
           flutter build apk --release --target-platform android-arm64 --split-per-abi --obfuscate --split-debug-info=build/app/outputs/symbols
           
-          # --- الجزء الجديد: إعادة تسمية الملف الناتج ---
+          # إعادة التسمية باستخدام app_name (الآمن بدون مسافات)
           ORIGINAL_PATH="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
           NEW_NAME="${{ github.event.client_payload.app_name }}.apk"
           mv "$ORIGINAL_PATH" "build/app/outputs/flutter-apk/$NEW_NAME"
@@ -89,8 +85,8 @@ jobs:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/${{ env.FINAL_APK_PATH }}
           body: |
-            ✅ تم بناء تطبيقك بنجاح
-            اسم الملف: ${{ github.event.client_payload.app_name }}.apk
-            المعمارية: ARM64
+            ✅ Build Complete
+            App: ${{ github.event.client_payload.display_name }}
+            Package: ${{ github.event.client_payload.package_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

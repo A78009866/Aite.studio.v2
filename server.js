@@ -5,13 +5,27 @@ const cloudinary = require('cloudinary').v2;
 const axios = require('axios');
 const cors = require('cors');
 const path = require('path');
-const AdmZip = require('adm-zip'); // تأكد أنك نفذت npm install adm-zip
+const AdmZip = require('adm-zip');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// إعدادات Cloudinary
+// ========================================================
+// 1. إصلاح مشكلة "Cannot GET /" (عرض الموقع)
+// ========================================================
+// جعل مجلد 'public' عاماً للوصول (يجب أن تضع فيه ملف index.html)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// عند فتح الصفحة الرئيسية، أرسل ملف index.html
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ========================================================
+// 2. إعدادات السيرفر والمنطق
+// ========================================================
+
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
@@ -20,7 +34,6 @@ cloudinary.config({
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// دالة الكشف عن الإصدار (آمنة ولا تسبب توقف السيرفر)
 function detectFlutterVersion(zipBuffer) {
     try {
         const zip = new AdmZip(zipBuffer);
@@ -28,7 +41,6 @@ function detectFlutterVersion(zipBuffer) {
         let pubspecContent = null;
 
         for (const entry of zipEntries) {
-            // البحث عن pubspec.yaml في الجذر أو المجلدات الفرعية
             if (entry.entryName.endsWith('pubspec.yaml') && !entry.entryName.includes('__MACOSX')) {
                 pubspecContent = entry.getData().toString('utf8');
                 break;
@@ -39,36 +51,28 @@ function detectFlutterVersion(zipBuffer) {
             const sdkMatch = pubspecContent.match(/sdk:\s*['"]?>=?([\d.]+)/);
             if (sdkMatch && sdkMatch[1]) {
                 const dartVersion = parseFloat(sdkMatch[1]);
-                console.log(`Detected Dart SDK: ${dartVersion}`);
-                
-                // خوارزمية التوافق
-                if (dartVersion >= 3.0) return '3.24.3'; // للمشاريع الحديثة
-                if (dartVersion >= 2.12) return '3.10.0'; // للمشاريع المتوسطة
+                if (dartVersion >= 3.0) return '3.24.3';
+                if (dartVersion >= 2.12) return '3.10.0';
             }
         }
     } catch (e) {
         console.error("Warning: Version detection failed:", e.message);
     }
-    // العودة للنسخة المستقرة الحديثة في حال الفشل
     return '3.24.3';
 }
 
 app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'projectZip', maxCount: 1 }]), async (req, res) => {
     try {
-        // 1. التحقق من وجود الملفات (هذا هو الإصلاح المهم لمنع الايرور)
         if (!req.files || !req.files['icon'] || !req.files['projectZip']) {
-            console.error("Error: Missing files in request");
             return res.status(400).json({ error: "Missing icon or projectZip file" });
         }
 
         const { appName, packageName } = req.body;
         console.log(`Received build request for: ${appName}`);
 
-        // 2. اكتشاف النسخة (الآن هو آمن لأنه يتم بعد التحقق من الملف)
         const detectedFlutterVersion = detectFlutterVersion(req.files['projectZip'][0].buffer);
         console.log(`Selected Flutter Version: ${detectedFlutterVersion}`);
 
-        // 3. رفع الملفات إلى Cloudinary
         const uploadToCloudinary = (buffer, folder, resourceType, publicId = null) => {
             return new Promise((resolve, reject) => {
                 const options = { folder: folder, resource_type: resourceType };
@@ -86,7 +90,6 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
 
         const requestId = Date.now().toString();
 
-        // 4. إرسال الطلب إلى GitHub
         await axios.post(
             `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/dispatches`,
             {
@@ -117,7 +120,6 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
     }
 });
 
-// نقطة فحص الحالة
 app.get('/check-status/:buildId', async (req, res) => {
     try {
         const { buildId } = req.params;

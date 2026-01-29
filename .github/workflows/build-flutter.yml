@@ -1,4 +1,4 @@
-name: Aite Universal Flutter Engine
+name: Aite Optimized Flutter Engine
 
 on:
   repository_dispatch:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Universal APK
+    name: Build Slim APK
     runs-on: ubuntu-latest
 
     steps:
@@ -29,20 +29,19 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      # 3. إعداد Flutter (النسخة المستقرة)
+      # 3. إعداد Flutter Stable
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
 
-      # 4. تحميل المشروع
+      # 4. تحميل واستخراج المشروع
       - name: Download & Extract Project
         run: |
           mkdir -p temp_zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
           unzip -q project.zip -d temp_zip
-          # العثور على المجلد الصحيح
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
@@ -67,26 +66,28 @@ jobs:
           convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
-          # تنظيف لتجنب المشاكل
+          # تنظيف
           rm -rf build .dart_tool
 
-      # 6. البناء (التغيير الجذري هنا)
-      - name: Build Universal APK
+      # 6. البناء الذكي (Smart Build)
+      - name: Build Optimized APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
           flutter pub get
           
-          # هنا قمنا بإزالة --split-per-abi لبناء ملف واحد شامل لكل المعالجات
-          # وأزلنا --target-platform ليقوم ببناء النسخة الافتراضية الشاملة
-          flutter build apk --release --no-tree-shake-icons
+          # 1. target-platform android-arm64: يبني فقط للمعالجات الحديثة (يوفر 60% من الحجم)
+          # 2. obfuscate + split-debug-info: يضغط الكود ويحذف رموز التصحيح (يوفر مساحة إضافية)
+          flutter build apk --release \
+            --target-platform android-arm64 \
+            --obfuscate \
+            --split-debug-info=build/app/outputs/symbols
           
-          # مسار الملف الناتج في النسخة الشاملة يكون دائماً app-release.apk
-          ORIGINAL_PATH="build/app/outputs/flutter-apk/app-release.apk"
+          # البحث عن الملف الناتج (قد يكون اسمه app-release.apk أو app-arm64-v8a-release.apk)
+          ORIGINAL_PATH=$(find build/app/outputs/flutter-apk -name "*release.apk" | head -n 1)
           
-          # التحقق من وجود الملف
           if [ ! -f "$ORIGINAL_PATH" ]; then
-             echo "Error: APK not found at $ORIGINAL_PATH"
+             echo "Error: APK not found!"
              exit 1
           fi
 
@@ -102,8 +103,9 @@ jobs:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/${{ env.FINAL_APK_PATH }}
           body: |
-            ✅ Universal Build Success
-            Device Support: All Android Devices (Universal)
+            🚀 High Performance Build
+            Architecture: ARM64 (Modern Devices)
+            Optimization: Obfuscated & Minified
             App: ${{ github.event.client_payload.display_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

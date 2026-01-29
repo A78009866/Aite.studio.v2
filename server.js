@@ -1,114 +1,73 @@
+require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
 const axios = require('axios');
-const fs = require('fs');
-const FormData = require('form-data');
-const path = require('path'); // ضروري للمسارات
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
-const port = process.env.PORT || 3000;
-
-// زيادة السعة
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.use(cors());
+app.use(express.static('public'));
+app.use(express.json());
 
-// تحديد مكان واجهة الموقع (مجلد public) بشكل دقيق
-const publicPath = path.join(__dirname, 'public');
-app.use(express.static(publicPath));
-
-// المسار الرئيسي: إذا دخل المستخدم للموقع، نعرض له index.html
-app.get('/', (req, res) => {
-    const indexPath = path.join(publicPath, 'index.html');
-    if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
-    } else {
-        res.send(`
-            <h1 style="color:red">Error: index.html not found!</h1>
-            <p>Please make sure you created a folder named <b>public</b> and put your <b>index.html</b> inside it.</p>
-            <p>Current directory searched: ${publicPath}</p>
-        `);
-    }
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// إعداد التخزين المؤقت
-const uploadDir = path.join('/tmp'); 
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
+const upload = multer({ dest: '/tmp/' });
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+function sanitizeFilename(name) {
+    return name.trim().replace(/[^a-z0-9]/gi, '_').toLowerCase();
 }
 
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        // تنظيف اسم الملف لتجنب مشاكل الرموز
-        const safeName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
-        cb(null, safeName);
-    }
-});
-
-const upload = multer({ 
-    storage: storage,
-    limits: { fileSize: 100 * 1024 * 1024 } 
-});
-
-// نقطة استقبال الطلب
-app.post('/trigger-build', upload.fields([{ name: 'file' }, { name: 'icon' }]), async (req, res) => {
+// 1. Build Endpoint
+app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'projectZip', maxCount: 1 }]), async (req, res) => {
     try {
-        const { appName, packageName, displayName } = req.body;
-        
-        if (!req.files || !req.files['file'] || !req.files['icon']) {
-            return res.status(400).json({ error: 'Project file (zip) and Icon are required!' });
+        const { appName, packageName } = req.body;
+        const safeAppName = sanitizeFilename(appName);
+
+        if (!req.files || !req.files['icon'] || !req.files['projectZip']) {
+            throw new Error("Missing files");
         }
 
-        const projectFile = req.files['file'][0];
         const iconFile = req.files['icon'][0];
+        const zipFile = req.files['projectZip'][0];
 
-        console.log(`Processing: ${projectFile.originalname} & ${iconFile.originalname}`);
+        // Upload Icon
+        const iconUpload = await cloudinary.uploader.upload(iconFile.path, { folder: "aite_studio/icons" });
 
-        // 1. رفع المشروع
-        const projectFormData = new FormData();
-        projectFormData.append('file', fs.createReadStream(projectFile.path));
-        
-        console.log('Uploading ZIP...');
-        const projectUpload = await axios.post('https://file.io/?expires=1d', projectFormData, {
-            headers: projectFormData.getHeaders(),
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity
+        // Upload ZIP
+        const zipUpload = await cloudinary.uploader.upload(zipFile.path, {
+            resource_type: "raw",
+            folder: "aite_studio/projects",
+            public_id: `${packageName}_source_${Date.now()}`
         });
 
-        // 2. رفع الأيقونة
-        const iconFormData = new FormData();
-        iconFormData.append('file', fs.createReadStream(iconFile.path));
-        
-        console.log('Uploading Icon...');
-        const iconUpload = await axios.post('https://file.io/?expires=1d', iconFormData, {
-            headers: iconFormData.getHeaders(),
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity
-        });
+        const requestId = Date.now().toString();
 
-        if (!projectUpload.data.success || !iconUpload.data.success) {
-            throw new Error('Failed to upload files to temporary storage.');
-        }
+        const githubPayload = {
+            event_type: "build-flutter",
+            client_payload: {
+                app_name: safeAppName,
+                display_name: appName,
+                package_name: packageName,
+                icon_url: iconUpload.secure_url,
+                zip_url: zipUpload.secure_url,
+                request_id: requestId
+            }
+        };
 
-        // 3. إرسال إلى GitHub
-        const requestId = Math.floor(Math.random() * 1000000);
         await axios.post(
             `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/dispatches`,
-            {
-                event_type: 'build-flutter',
-                client_payload: {
-                    zip_url: projectUpload.data.link,
-                    icon_url: iconUpload.data.link,
-                    app_name: appName || 'app',
-                    display_name: displayName || 'My App',
-                    package_name: packageName || 'com.example.app',
-                    request_id: requestId
-                }
-            },
+            githubPayload,
             {
                 headers: {
                     'Authorization': `token ${process.env.GITHUB_TOKEN}`,
@@ -117,21 +76,51 @@ app.post('/trigger-build', upload.fields([{ name: 'file' }, { name: 'icon' }]), 
             }
         );
 
-        // تنظيف
-        try {
-            fs.unlinkSync(projectFile.path);
-            fs.unlinkSync(iconFile.path);
-        } catch (e) { console.error('Cleanup error:', e); }
+        if (fs.existsSync(iconFile.path)) fs.unlinkSync(iconFile.path);
+        if (fs.existsSync(zipFile.path)) fs.unlinkSync(zipFile.path);
 
-        res.json({ success: true, message: 'Build started!', buildId: requestId });
+        // نرسل كل البيانات المهمة للواجهة الأمامية
+        res.json({
+            success: true,
+            build_id: requestId,
+            safe_app_name: safeAppName,
+            icon_url: iconUpload.secure_url, // مهم جداً: رابط الصورة الدائم
+            app_name: appName,
+            package_name: packageName
+        });
 
     } catch (error) {
-        console.error('SERVER ERROR:', error.message);
-        res.status(500).json({ error: error.message });
+        console.error("Server Error:", error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
-app.listen(port, () => {
-    console.log(`Server is running at http://localhost:${port}`);
-    console.log(`Serving frontend from: ${publicPath}`);
+// 2. Check Status
+app.get('/check-status/:buildId', async (req, res) => {
+    try {
+        const { buildId } = req.params;
+        const { appName } = req.query;
+
+        const releaseUrl = `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/tags/build-${buildId}`;
+        
+        try {
+            await axios.get(releaseUrl, {
+                headers: { 'Authorization': `token ${process.env.GITHUB_TOKEN}` }
+            });
+            
+            const downloadUrl = `https://github.com/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/download/build-${buildId}/${appName}.apk`;
+            res.json({ completed: true, download_url: downloadUrl });
+
+        } catch (ghError) {
+            res.json({ completed: false });
+        }
+    } catch (error) {
+        res.status(500).json({ error: "Check failed" });
+    }
 });
+
+const PORT = process.env.PORT || 3000;
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
+module.exports = app;

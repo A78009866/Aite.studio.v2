@@ -31,6 +31,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          # استخدام النسخة التي حددها السيرفر تلقائياً
           flutter-version: ${{ github.event.client_payload.flutter_version }}
           cache: true
 
@@ -39,6 +40,7 @@ jobs:
           mkdir -p temp_zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
           unzip project.zip -d temp_zip
+          # تحديد المجلد الرئيسي للمشروع
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
@@ -46,26 +48,31 @@ jobs:
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
-          # 1. تنظيف شامل لملف pubspec.yaml من مخلفات مكتبة الأيقونات المتسببة في الأخطاء
-          # سنقوم بحذف الأسطر التي تحتوي على هذه الكلمات لأنها تعطل Flutter CLI
+          # 1. إزالة الأسطر المسببة للمشاكل (الأيقونات المعطلة)
+          # نستخدم Regex لحذف الكلمة وأي محتوى تحتها (المسافات البادئة)
           sed -i '/flutter_icons:/d' pubspec.yaml
+          sed -i '/flutter_launcher_icons:/d' pubspec.yaml
           sed -i '/image_path:/d' pubspec.yaml
-          sed -i '/android: true/d' pubspec.yaml
-          sed -i '/ios: true/d' pubspec.yaml
           sed -i '/adaptive_icon_background:/d' pubspec.yaml
           sed -i '/adaptive_icon_foreground:/d' pubspec.yaml
-          sed -i '/flutter_launcher_icons/d' pubspec.yaml
+          
+          # 2. حذف أي أسطر فرعية تبدأ بمسافات وتحتوي على android: أو ios:
+          # هذا هو الحل الجذري لمنع خطأ "Unexpected child found under flutter"
+          sed -i '/^[[:space:]]*android:/d' pubspec.yaml
+          sed -i '/^[[:space:]]*ios:/d' pubspec.yaml
 
-          # 2. إضافة إصلاح تعارض المكتبات (Dependency Overrides) في نهاية الملف بشكل نظيف
+          # 3. إضافة إصلاح تعارض المكتبات (Dependency Overrides) في سطر جديد تماماً
           echo "" >> pubspec.yaml
           echo "dependency_overrides:" >> pubspec.yaml
           echo "  path: ^1.8.0" >> pubspec.yaml
 
-          # 3. حقن هوية التطبيق (Display Name & Package Name)
+          # 4. حقن اسم التطبيق في AndroidManifest
           find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' {} +
+          
+          # 5. حقن اسم الحزمة (Package ID) في ملفات build.gradle
           find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
           
-          # 4. معالجة الأيقونات باستخدام ImageMagick
+          # 6. توليد الأيقونات الاحترافية باستخدام ImageMagick
           curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
           mkdir -p android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi
           convert app_icon_raw.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
@@ -74,7 +81,7 @@ jobs:
           convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
-          # 5. إصلاحات التوافق لـ Gradle
+          # 7. تحديث Gradle لضمان التوافق مع البيئة السحابية
           if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
             sed -i 's/gradle-.*-all.zip/gradle-7.5-all.zip/g' android/gradle/wrapper/gradle-wrapper.properties
           fi
@@ -86,23 +93,28 @@ jobs:
       - name: Build Optimized APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
+          # تنظيف التبعيات القديمة
           rm -f pubspec.lock
           flutter pub get
+          
+          # البناء للهواتف الحديثة (arm64) مع تشفير الكود
           flutter build apk --release --target-platform android-arm64 --split-per-abi --obfuscate --split-debug-info=build/app/outputs/symbols
           
+          # تحضير الملف النهائي
           ORIGINAL_PATH="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
           NEW_NAME="${{ github.event.client_payload.app_name }}.apk"
           mv "$ORIGINAL_PATH" "build/app/outputs/flutter-apk/$NEW_NAME"
           echo "FINAL_APK_PATH=build/app/outputs/flutter-apk/$NEW_NAME" >> $GITHUB_ENV
 
-      - name: Create Release & Upload
+      - name: Upload & Release APK
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/${{ env.FINAL_APK_PATH }}
           body: |
-            ✅ Build Finished!
-            App: ${{ github.event.client_payload.display_name }}
-            Flutter Version: ${{ github.event.client_payload.flutter_version }}
+            ✅ Build Successful!
+            📱 App Name: ${{ github.event.client_payload.display_name }}
+            📦 Package: ${{ github.event.client_payload.package_name }}
+            🚀 Flutter Version: ${{ github.event.client_payload.flutter_version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

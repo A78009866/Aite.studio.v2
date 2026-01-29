@@ -12,12 +12,10 @@ app.use(cors());
 app.use(express.json());
 
 // ========================================================
-// 1. إصلاح مشكلة "Cannot GET /" (عرض الموقع)
+// 1. إعدادات الموقع
 // ========================================================
-// جعل مجلد 'public' عاماً للوصول (يجب أن تضع فيه ملف index.html)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// عند فتح الصفحة الرئيسية، أرسل ملف index.html
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -34,6 +32,7 @@ cloudinary.config({
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+// دالة تحديد الإصدار (تم تعديلها لتجبر استخدام نسخة حديثة)
 function detectFlutterVersion(zipBuffer) {
     try {
         const zip = new AdmZip(zipBuffer);
@@ -47,18 +46,15 @@ function detectFlutterVersion(zipBuffer) {
             }
         }
 
+        // هنا التغيير: نفضل دائماً النسخة الحديثة 3.24.3 لضمان عمل المكتبات الجديدة
+        // معظم المشاريع القديمة تعمل على الجديدة، لكن العكس غير صحيح
         if (pubspecContent) {
-            const sdkMatch = pubspecContent.match(/sdk:\s*['"]?>=?([\d.]+)/);
-            if (sdkMatch && sdkMatch[1]) {
-                const dartVersion = parseFloat(sdkMatch[1]);
-                if (dartVersion >= 3.0) return '3.24.3';
-                if (dartVersion >= 2.12) return '3.10.0';
-            }
+            console.log("Pubspec found, defaulting to latest stable Flutter.");
         }
     } catch (e) {
         console.error("Warning: Version detection failed:", e.message);
     }
-    return '3.24.3';
+    return '3.24.3'; // استخدام أحدث إصدار مستقر لحل مشاكل dependencies
 }
 
 app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'projectZip', maxCount: 1 }]), async (req, res) => {

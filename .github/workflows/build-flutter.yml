@@ -1,4 +1,4 @@
-name: Flutter Cloud Build Engine (Master Fix)
+name: Flutter Cloud Build Engine (Version Sync)
 
 on:
   repository_dispatch:
@@ -20,7 +20,8 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.3' # نثبت نسخة مستقرة وحديثة
+          # قمنا برفع النسخة لتدعم Dart 3.7 المطلوبة في مشروعك
+          flutter-version: '3.27.0' 
           channel: 'stable'
 
       - name: Extract and Normalize Project
@@ -28,7 +29,6 @@ jobs:
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
           unzip -q project.zip -d user_project
           cd user_project
-          # البحث عن المجلد الذي يحتوي على pubspec.yaml ونقله للجذر
           PUBSPEC_PATH=$(find . -name "pubspec.yaml" -print -quit)
           if [ -n "$PUBSPEC_PATH" ]; then
             PROJECT_DIR=$(dirname "$PUBSPEC_PATH")
@@ -37,26 +37,23 @@ jobs:
             fi
           fi
 
-      # --- مرحلة الإصلاح الجذري (The Deep Fix) ---
-      
       - name: Surgical Android Fix
         run: |
           MANIFEST="user_project/android/app/src/main/AndroidManifest.xml"
           GRADLE_PROP="user_project/android/gradle.properties"
           WRAPPER_PROP="user_project/android/gradle/wrapper/gradle-wrapper.properties"
           
-          # 1. تنظيف ملف الـ Manifest من مخلفات نظام ويندوز وإصلاح الـ Embedding
+          # تنظيف وإصلاح المانيفست
           if [ -f "$MANIFEST" ]; then
             tr -d '\r' < $MANIFEST > ${MANIFEST}.tmp && mv ${MANIFEST}.tmp $MANIFEST
             sed -i '/flutterEmbedding/d' $MANIFEST
-            # إضافة الوسم بطريقة تضمن وجود المسافة والـ android:name بشكل صحيح
             sed -i '/<\/application>/i \        <meta-data android:name="flutterEmbedding" android:value="2" />' $MANIFEST
           fi
 
-          # 2. تحديث MainActivity (الجافا والكوتلن)
+          # تحديث MainActivity
           find user_project/android -name "MainActivity.*" -exec sed -i 's/io.flutter.app.FlutterActivity/io.flutter.embedding.android.FlutterActivity/g' {} +
 
-          # 3. إجبار تفعيل AndroidX وتحديث الـ Gradle
+          # إجبار تفعيل AndroidX وتحديث الـ Gradle ليتوافق مع Flutter 3.27
           echo "android.useAndroidX=true" > $GRADLE_PROP
           echo "android.enableJetifier=true" >> $GRADLE_PROP
           
@@ -64,27 +61,21 @@ jobs:
              sed -i 's/gradle-.*-all.zip/gradle-7.5-all.zip/g' $WRAPPER_PROP
           fi
 
-          # 4. تحديث نسخ الـ Gradle Plugin وكوتلن في build.gradle الرئيسي
           MAIN_GRADLE="user_project/android/build.gradle"
           if [ -f "$MAIN_GRADLE" ]; then
             sed -i "s/com.android.tools.build:gradle:[0-9.]*/com.android.tools.build:gradle:7.3.0/g" $MAIN_GRADLE
-            sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.9.0"/g' $MAIN_GRADLE
+            sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.9.10"/g' $MAIN_GRADLE
           fi
 
       - name: Fix UI and Dependencies
         run: |
-          # إصلاح headline4 والخطوط الملغاة
           find user_project/lib -name "*.dart" -exec sed -i 's/headline4/headlineMedium/g' {} +
           find user_project/lib -name "*.dart" -exec sed -i 's/headline6/titleLarge/g' {} +
-          find user_project/lib -name "*.dart" -exec sed -i 's/bodyText1/bodyLarge/g' {} +
-          find user_project/lib -name "*.dart" -exec sed -i 's/caption/bodySmall/g' {} +
-
-      # --- مرحلة البناء النهائية ---
 
       - name: Build APK
         run: |
           cd user_project
-          flutter pub upgrade --major-versions
+          flutter pub upgrade
           flutter build apk --release --no-tree-shake-icons
 
       - name: Create Release and Upload

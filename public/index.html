@@ -116,8 +116,8 @@
             content: ''; position: absolute; left: 0; top: 0; height: 100%; width: 4px; background: var(--primary);
         }
         .file-icon-box {
-            width: 50px; height: 50px; background: rgba(0, 230, 118, 0.1); border-radius: 12px;
-            display: flex; align-items: center; justify-content: center; color: var(--primary); font-size: 1.5rem;
+            width: 50px; height: 50px; background: rgba(66, 165, 245, 0.1); border-radius: 12px;
+            display: flex; align-items: center; justify-content: center; color: #42A5F5; font-size: 1.8rem;
         }
         .file-info { flex: 1; overflow: hidden; }
         .file-name { color: white; font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -182,14 +182,31 @@
         .glass-btn.secondary { background: rgba(255,255,255,0.1); color: #fff; }
         .glass-btn:hover { opacity: 0.9; transform: scale(1.02); }
 
-        /* --- Other Elements --- */
+        /* --- Action Button (Updated for Disabled/Loading State) --- */
         .action-btn {
             width: 100%; background: var(--primary); color: #000; padding: 18px; border-radius: 14px;
             font-weight: 700; font-size: 1.1rem; border: none; cursor: pointer;
             display: flex; justify-content: center; align-items: center; gap: 12px;
-            transition: 0.3s; box-shadow: 0 5px 20px rgba(0, 230, 118, 0.2);
+            transition: all 0.3s ease; box-shadow: 0 5px 20px rgba(0, 230, 118, 0.2);
         }
         .action-btn:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(0, 230, 118, 0.3); }
+        
+        /* حالة الزر عندما يكون غير جاهز */
+        .action-btn.not-ready {
+            opacity: 0.4;
+            cursor: not-allowed;
+            background: #333;
+            color: #888;
+            box-shadow: none;
+            transform: none !important;
+        }
+        
+        /* حالة الزر أثناء التحميل */
+        .action-btn.loading {
+            opacity: 0.7;
+            cursor: wait;
+            pointer-events: none;
+        }
 
         #statusContainer { margin-top: 25px; display: none; }
         .progress-container { width: 100%; background: #222; height: 8px; border-radius: 10px; overflow: hidden; margin: 15px 0; }
@@ -207,10 +224,8 @@
         .loader { width: 50px; height: 50px; border: 4px solid #333; border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { 100% {transform: rotate(360deg);} }
 
-        /* تعديلات الموبايل: جعل المعاينة في الأسفل */
         @media (max-width: 900px) {
             .main-container { flex-direction: column; align-items: center; gap: 2rem; padding: 1rem; }
-            /* order: 1 لجعل الهاتف يظهر في الأسفل */
             .preview-panel { order: 1; width: 100%; transform: scale(0.9); margin-bottom: 0; margin-top: 20px; }
             .config-panel { width: 100%; }
         }
@@ -292,12 +307,12 @@
                     <form id="buildForm">
                         <div class="input-group">
                             <label class="input-label" id="t_app_name">اسم التطبيق</label>
-                            <input type="text" class="input-field" id="appName" placeholder="مثال: متجري" oninput="updatePreview()" required>
+                            <input type="text" class="input-field" id="appName" placeholder="مثال: متجري" oninput="updatePreview(); checkFormValidity();" required>
                         </div>
 
                         <div class="input-group">
                             <label class="input-label" id="t_pkg_name">معرف الحزمة (Package Name)</label>
-                            <input type="text" class="input-field" id="packageName" placeholder="com.company.app" required>
+                            <input type="text" class="input-field" id="packageName" placeholder="com.company.app" oninput="checkFormValidity()" required>
                         </div>
 
                         <div class="input-group">
@@ -340,8 +355,8 @@
                             </div>
                         </div>
 
-                        <button type="submit" id="submitBtn" class="action-btn">
-                            <i class="fa-solid fa-hammer"></i> <span id="t_btn_build">بدء البناء </span>
+                        <button type="submit" id="submitBtn" class="action-btn not-ready">
+                            <i class="fa-solid fa-hammer" id="btnIcon"></i> <span id="t_btn_build">بدء البناء </span>
                         </button>
                     </form>
 
@@ -427,7 +442,7 @@
                 crop_title: "ضبط الأيقونة",
                 confirm: "تأكيد",
                 cancel: "إلغاء",
-                welcome: "اهلا بك ايها المطور!", // تم التعديل
+                welcome: "اهلا بك ايها المطور!",
                 sub: "منصة البناء السحابي لتطبيقات فلاتر.",
                 app_name: "اسم التطبيق",
                 pkg_name: "معرف الحزمة",
@@ -453,7 +468,7 @@
                 crop_title: "Adjust Icon",
                 confirm: "Confirm",
                 cancel: "Cancel",
-                welcome: "Welcome Developer!", // تم التعديل
+                welcome: "Welcome Developer!",
                 sub: "Cloud build platform for Flutter apps.",
                 app_name: "App Name",
                 pkg_name: "Package Name",
@@ -535,6 +550,22 @@
             document.getElementById('previewName').innerText = document.getElementById('appName').value || "App Name";
         }
 
+        // --- VALIDATION & BUTTON STATE LOGIC ---
+        function checkFormValidity() {
+            const name = document.getElementById('appName').value.trim();
+            const pkg = document.getElementById('packageName').value.trim();
+            const hasIcon = finalIconBlob !== null;
+            const hasZip = document.getElementById('zipInput').files.length > 0;
+            
+            const btn = document.getElementById('submitBtn');
+            
+            if(name && pkg && hasIcon && hasZip) {
+                btn.classList.remove('not-ready');
+            } else {
+                btn.classList.add('not-ready');
+            }
+        }
+
         let cropper = null; let finalIconBlob = null;
         document.getElementById('iconInput').addEventListener('change', function(e) {
             if(e.target.files[0]) {
@@ -557,6 +588,7 @@
                 document.getElementById('iconPlaceholder').style.display = 'none';
                 document.getElementById('cropModal').style.display = 'none';
                 document.getElementById('iconUploadContent').innerHTML = '<i class="fa-solid fa-check-circle" style="color:var(--primary); font-size:3rem;"></i>';
+                checkFormValidity(); // Check validity after cropping
             });
         }
 
@@ -570,6 +602,7 @@
                 if(!fileName.endsWith('.zip')) {
                     alert(currentLang === 'ar' ? "عذراً، يسمح فقط بملفات ZIP لمشاريع فلاتر" : "Sorry, only ZIP files are allowed for Flutter projects.");
                     this.value = '';
+                    checkFormValidity();
                     return;
                 }
 
@@ -580,6 +613,7 @@
                 document.getElementById('zipFileNameDisplay').innerText = file.name;
                 const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
                 document.getElementById('zipFileSizeDisplay').innerText = `${sizeInMB} MB`;
+                checkFormValidity(); // Check validity after zip upload
             }
         });
 
@@ -587,16 +621,26 @@
             document.getElementById('zipInput').value = '';
             document.getElementById('zipFilePreview').style.display = 'none';
             document.getElementById('zipUploadCard').style.display = 'block';
+            checkFormValidity(); // Check validity after remove
         }
 
         // Submit Logic
         let pollingInterval = null;
         document.getElementById('buildForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            if(!finalIconBlob || !document.getElementById('zipInput').files[0]) return alert("يرجى رفع الملفات");
+            
+            // تحقق نهائي قبل الإرسال
+            if(!finalIconBlob || !document.getElementById('zipInput').files[0]) return;
 
             const btn = document.getElementById('submitBtn');
-            btn.disabled = true;
+            const btnIcon = document.getElementById('btnIcon');
+            const btnText = document.getElementById('t_btn_build');
+            
+            // تفعيل حالة التحميل
+            btn.classList.add('loading');
+            const originalIconClass = btnIcon.className;
+            btnIcon.className = "fa-solid fa-circle-notch fa-spin"; // Spinner
+            
             document.getElementById('statusContainer').style.display = 'block';
             document.getElementById('progressBar').style.width = '5%';
             document.getElementById('resultArea').innerHTML = '';
@@ -615,6 +659,9 @@
                 } else { throw new Error(data.error); }
             } catch(err) {
                 handleError(err.message);
+                // Reset button on immediate error
+                btn.classList.remove('loading');
+                btnIcon.className = originalIconClass;
             }
         });
 
@@ -652,8 +699,13 @@
             clearInterval(pollingInterval);
             document.getElementById('progressBar').style.width = '100%';
             document.getElementById('statusLabel').innerText = "Done! 🎉";
-            document.getElementById('submitBtn').disabled = false;
             
+            // Reset Button
+            const btn = document.getElementById('submitBtn');
+            const btnIcon = document.getElementById('btnIcon');
+            btn.classList.remove('loading');
+            btnIcon.className = "fa-solid fa-hammer";
+
             const txt_ready = translations[currentLang].ready_title;
             const txt_dl = translations[currentLang].download;
 
@@ -678,7 +730,12 @@
             clearInterval(pollingInterval);
             document.getElementById('statusLabel').innerText = "Error: " + msg;
             document.getElementById('statusLabel').style.color = "#ff4444";
-            document.getElementById('submitBtn').disabled = false;
+            
+            // Reset Button
+            const btn = document.getElementById('submitBtn');
+            const btnIcon = document.getElementById('btnIcon');
+            btn.classList.remove('loading');
+            btnIcon.className = "fa-solid fa-hammer";
         }
 
         function loadMyApps() {
@@ -708,6 +765,7 @@
         
         // Init
         setLanguage('ar');
+        checkFormValidity(); // Initial check
     </script>
 </body>
 </html>

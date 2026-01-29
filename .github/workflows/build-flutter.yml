@@ -1,4 +1,4 @@
-name: Flutter Cloud Build Engine (Ultimate)
+name: Flutter Cloud Build Engine (Ultimate Fixed)
 
 on:
   repository_dispatch:
@@ -27,39 +27,41 @@ jobs:
         run: |
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
           unzip project.zip -d user_project
+          # معالجة ذكية للمجلدات المضغوطة
           cd user_project
-          if [ -d "$(ls -F | head -1)" ]; then
-            mv $(ls -d */ | head -1)* . || true
+          if [ $(ls -1 | wc -l) -eq 1 ]; then
+            SUBDIR=$(ls -1)
+            if [ -d "$SUBDIR" ]; then
+              mv "$SUBDIR"/* . || true
+            fi
           fi
 
-      # --- مرحلة الإصلاح الجراحي الآمن (Safe Surgical Fixes) ---
+      # --- مرحلة الإصلاح الاحترافية ---
       
-      - name: Fix Android V1 Embedding & Manifest Safely
+      - name: Fix Android V1 Embedding & Manifest
         run: |
           MANIFEST="user_project/android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            sed -i '/flutterEmbedding/d' $MANIFEST
+            sed -i '/<\/application>/i \        <meta-data android:name="flutterEmbedding" android:value="2" />' $MANIFEST
+          fi
           
-          # 1. تنظيف أي محاولات سابقة فاشلة لضمان عدم تكرار الأسطر
-          sed -i '/flutterEmbedding/d' $MANIFEST
-          
-          # 2. إضافة وسام الـ V2 Embedding قبل إغلاق وسام الـ </application> مباشرة لضمان سلامة الـ XML
-          sed -i '/<\/application>/i \        <meta-data android:name="flutterEmbedding" android:value="2" />' $MANIFEST
-
-          # 3. إصلاح MainActivity (السبب الحقيقي لخطأ V1 Embedding)
-          # نقوم بتبديل الاستيراد القديم بالحديث في ملفات Java و Kotlin
+          # تحديث MainActivity ليدعم المعمارية الجديدة (V2)
           find user_project/android -name "MainActivity.kt" -exec sed -i 's/io.flutter.app.FlutterActivity/io.flutter.embedding.android.FlutterActivity/g' {} +
           find user_project/android -name "MainActivity.java" -exec sed -i 's/io.flutter.app.FlutterActivity/io.flutter.embedding.android.FlutterActivity/g' {} +
 
-      - name: Fix Gradle & Kotlin Compatibility
+      - name: Fix Gradle Syntax (The Safe Way)
         run: |
           GRADLE_FILE="user_project/android/build.gradle"
-          # تحديث نسخة الكوتلن لتعمل مع فلاتر 3.24
-          sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.9.0"/g' $GRADLE_FILE
-          # تحديث نسخة Gradle Plugin
-          sed -i 's/com.android.tools.build:gradle:.*/com.android.tools.build:gradle:7.3.0/g' $GRADLE_FILE
+          if [ -f "$GRADLE_FILE" ]; then
+            # تحديث كوتلن
+            sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.9.0"/g' $GRADLE_FILE
+            # تحديث نسخة Gradle Plugin بدون كسر الاقتباسات (استبدال الأرقام فقط)
+            sed -i "s/com.android.tools.build:gradle:[0-9.]*/com.android.tools.build:gradle:7.3.0/g" $GRADLE_FILE
+          fi
 
       - name: Fix Typography (Material 3 Migration)
         run: |
-          # إصلاح المسميات القديمة في كود الدارت
           find user_project/lib -name "*.dart" -exec sed -i 's/headline4/headlineMedium/g' {} +
           find user_project/lib -name "*.dart" -exec sed -i 's/headline6/titleLarge/g' {} +
           find user_project/lib -name "*.dart" -exec sed -i 's/bodyText1/bodyLarge/g' {} +
@@ -73,10 +75,14 @@ jobs:
           flutter pub upgrade
           flutter build apk --release --no-tree-shake-icons
 
-      - name: Upload Final APK
+      - name: Rename and Upload
+        run: |
+          mv user_project/build/app/outputs/flutter-apk/app-release.apk ${{ github.event.client_payload.app_name }}.apk
+
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}
-          files: user_project/build/app/outputs/flutter-apk/app-release.apk
+          files: ${{ github.event.client_payload.app_name }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

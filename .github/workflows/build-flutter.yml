@@ -31,7 +31,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          # استخدام الإصدار المرسل من السيرفر
+          # استخدام الإصدار المرسل من السيرفر بناءً على تحليل مشروعك
           flutter-version: ${{ github.event.client_payload.flutter_version }}
           cache: true
 
@@ -40,7 +40,7 @@ jobs:
           mkdir -p temp_zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
           unzip project.zip -d temp_zip
-          # البحث عن جذر المشروع
+          # البحث عن المجلد الذي يحتوي على ملف pubspec.yaml
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
@@ -48,33 +48,21 @@ jobs:
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
-          # -------------------------------------------------------
-          # 🛠️ قسم الإصلاح الذكي للتبعيات (Dependency Fixer)
-          # -------------------------------------------------------
-          
-          # 1. إزالة مكتبة الأيقونات لأننا نقوم بتوليدها يدوياً وتسبب مشاكل تعارض
+          # 1. تنظيف ملف pubspec.yaml من المكتبات المسببة للتعارض
+          # نحذف مكتبة flutter_launcher_icons لأننا ننشئ الأيقونات برمجياً بالأسفل
           sed -i '/flutter_launcher_icons/d' pubspec.yaml
           
-          # 2. حل مشكلة تعارض Path بإضافة تجاوز (Override)
-          # نتحقق إذا كان dependency_overrides موجوداً أم لا
-          if grep -q "dependency_overrides:" pubspec.yaml; then
-            echo "  path: ^1.8.0" >> pubspec.yaml
-          else
-            echo "dependency_overrides:" >> pubspec.yaml
-            echo "  path: ^1.8.0" >> pubspec.yaml
-          fi
+          # 2. إضافة إصلاح تعارض المكتبات (Dependency Overrides) بشكل آمن
+          # نضمن إضافة سطر فارغ قبل القسم الجديد لتجنب خطأ الـ Parsing السابق
+          echo "" >> pubspec.yaml
+          echo "dependency_overrides:" >> pubspec.yaml
+          echo "  path: ^1.8.0" >> pubspec.yaml
 
-          # -------------------------------------------------------
-          # 💉 قسم الحقن (Injection)
-          # -------------------------------------------------------
-
-          # حقن اسم التطبيق
+          # 3. حقن هوية التطبيق (اسم التطبيق وحزمة المعرفات)
           find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' {} +
-          
-          # حقن اسم الحزمة (Package ID)
           find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
           
-          # معالجة الأيقونات (ImageMagick)
+          # 4. توليد أيقونات التطبيق بجميع المقاسات من الصورة المرفوعة
           curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
           mkdir -p android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi
           convert app_icon_raw.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
@@ -83,7 +71,7 @@ jobs:
           convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
-          # إصلاحات Gradle
+          # 5. تحديث ملفات Gradle لضمان التوافق مع خوادم GitHub الحديثة
           if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
             sed -i 's/gradle-.*-all.zip/gradle-7.5-all.zip/g' android/gradle/wrapper/gradle-wrapper.properties
           fi
@@ -95,29 +83,29 @@ jobs:
       - name: Build Optimized APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
-          
-          # تنظيف التبعيات القديمة ومحاولة التحديث
+          # حذف ملف القفل القديم لضمان تطبيق الإصلاحات الجديدة
           rm -f pubspec.lock
           flutter pub get
           
-          # بناء التطبيق
+          # بناء نسخة APK مخففة ومحمية (Obfuscated)
           flutter build apk --release --target-platform android-arm64 --split-per-abi --obfuscate --split-debug-info=build/app/outputs/symbols
           
-          # إعادة التسمية
+          # تجهيز الملف النهائي لإرساله للمستخدم
           ORIGINAL_PATH="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
           NEW_NAME="${{ github.event.client_payload.app_name }}.apk"
           mv "$ORIGINAL_PATH" "build/app/outputs/flutter-apk/$NEW_NAME"
           echo "FINAL_APK_PATH=build/app/outputs/flutter-apk/$NEW_NAME" >> $GITHUB_ENV
 
-      - name: Upload Optimized APK
+      - name: Create Release & Upload APK
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/${{ env.FINAL_APK_PATH }}
           body: |
-            ✅ Build Complete
-            App: ${{ github.event.client_payload.display_name }}
-            Package: ${{ github.event.client_payload.package_name }}
-            Flutter Version: ${{ github.event.client_payload.flutter_version }}
+            ✅ تم اكتمال بناء تطبيقك بنجاح بواسطة Aite Studio.
+            
+            🔹 اسم التطبيق: ${{ github.event.client_payload.display_name }}
+            🔹 المعرف: ${{ github.event.client_payload.package_name }}
+            🔹 نسخة Flutter المستخدمة: ${{ github.event.client_payload.flutter_version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

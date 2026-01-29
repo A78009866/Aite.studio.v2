@@ -89,6 +89,8 @@
             display: flex;
             align-items: center;
             gap: 20px;
+            /* Add margin to prevent overlap with centered brand */
+            margin-left: 20px; /* For RTL, pushes content away from center */
         }
 
         .user-profile {
@@ -592,6 +594,7 @@
         @media (max-width: 500px) {
             .nav-right {
                 gap: 12px;
+                margin-left: 10px; /* Smaller margin for smaller screens to prevent overlap */
             }
             .user-name {
                 display: none;
@@ -871,6 +874,8 @@
                     document.getElementById('userAvatar').src = user.photoURL || 'https://via.placeholder.com/42';
                     document.getElementById('userName').innerText = user.displayName || user.email;
                     loadMyApps();
+                    // Ensure phone preview is visible when logged in and 'new' tab is active by default
+                    document.querySelector('.preview-panel').style.display = 'flex';
                 } else {
                     currentUser = null;
                     document.getElementById('loginOverlay').style.display = 'flex';
@@ -878,20 +883,26 @@
                     document.getElementById('userProfile').style.display = 'none';
                     document.getElementById('userAvatar').src = '';
                     document.getElementById('userName').innerText = '';
+                    // Hide phone preview when logged out
+                    document.querySelector('.preview-panel').style.display = 'none';
                 }
             });
 
             // --- Tabs ---
             function switchTab(tab) {
                 document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                const previewPanel = document.querySelector('.preview-panel'); // Get the preview panel
+
                 if (tab === 'new') {
                     document.getElementById('tabNew').classList.add('active');
                     document.getElementById('viewNewApp').style.display = 'block';
                     document.getElementById('myAppsContainer').style.display = 'none';
+                    previewPanel.style.display = 'flex'; // Show phone preview for 'new app' tab
                 } else {
                     document.getElementById('tabList').classList.add('active');
                     document.getElementById('viewNewApp').style.display = 'none';
                     document.getElementById('myAppsContainer').style.display = 'block';
+                    previewPanel.style.display = 'none'; // Hide phone preview for 'my apps' tab
                 }
             }
 

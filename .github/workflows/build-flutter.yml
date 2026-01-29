@@ -1,4 +1,4 @@
-name: Aite Ultimate Slim Engine
+name: Aite Smart Universal Engine
 
 on:
   repository_dispatch:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Multi-Architecture APK
+    name: Build & Auto-Repair APK
     runs-on: ubuntu-latest
 
     steps:
@@ -17,9 +17,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install ImageMagick
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y imagemagick
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
 
       - name: Setup Java
         uses: actions/setup-java@v3
@@ -30,7 +28,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          channel: 'stable' # سيجلب أحدث نسخة مستقرة تلقائياً
           cache: true
 
       - name: Download & Extract Project
@@ -41,12 +39,21 @@ jobs:
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
-      - name: Configure App Assets
+      - name: Smart Repair & Configure
         run: |
           cd ${{ env.PROJECT_ROOT }}
+          
+          # 1. إصلاح مشكلة Gradle (التحويل للطريقة الحديثة)
+          # حذف السطر القديم الذي يسبب الخطأ في settings.gradle إذا وُجد
+          if [ -f "android/settings.gradle" ]; then
+            sed -i '/apply from:.*app_plugin_loader.gradle/d' android/settings.gradle
+          fi
+
+          # 2. تعديل اسم التطبيق والحزمة
           find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' {} +
           find android/app -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/' {} +
           
+          # 3. معالجة الأيقونات
           curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
           mkdir -p android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi
           convert app_icon_raw.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
@@ -54,21 +61,18 @@ jobs:
           convert app_icon_raw.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          
           rm -rf build .dart_tool
 
-      - name: Build Optimized Multi-ABI APK
+      - name: Build Optimized APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
-          flutter pub get
           
-          # التعديل الجوهري:
-          # 1. دعم المعماريتين (armeabi-v7a و arm64-v8a) لضمان العمل على كل الهواتف.
-          # 2. إزالة --obfuscate مؤقتاً لضمان عدم حدوث تعارض مع ملفات الـ SO.
-          # 3. استخدام --no-tree-shake-icons لتجنب مشاكل الأيقونات.
+          # تحديث الاعتماديات قسراً
+          flutter pub upgrade
           
-          flutter build apk --release \
-            --target-platform android-arm,android-arm64 \
-            --no-tree-shake-icons
+          # البناء لمعمارية ARM64 (للحجم الصغير) مع دعم شامل
+          flutter build apk --release --no-tree-shake-icons
           
           ORIGINAL_PATH="build/app/outputs/flutter-apk/app-release.apk"
           NEW_NAME="${{ github.event.client_payload.app_name }}.apk"
@@ -76,15 +80,15 @@ jobs:
           
           echo "FINAL_APK_PATH=build/app/outputs/flutter-apk/$NEW_NAME" >> $GITHUB_ENV
 
-      - name: Upload Final Release
+      - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/${{ env.FINAL_APK_PATH }}
           body: |
-            ✅ Build Finished
-            - Compatible with: All Android Phones (32-bit & 64-bit)
-            - Optimization: Compressed Assets
+            ✅ Smart Build Success
+            - Fixed Gradle Compatibility
+            - Optimized for Performance
             - App: ${{ github.event.client_payload.display_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

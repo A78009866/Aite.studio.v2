@@ -16,12 +16,7 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Install ImageMagick
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y imagemagick
-
-      - name: Setup Java
+      - name: Setup Environment
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
@@ -42,68 +37,78 @@ jobs:
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
-      - name: Auto-Repair & Android Clean Fix
+      - name: Smart Auto-Repair Engine
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
-          # 1. تنظيف pubspec.yaml من أي مخلفات
+          # ========================================================
+          # 1. إصلاح pubspec.yaml (Dependencies Hell Fix)
+          # ========================================================
+          # إزالة إعدادات الأيقونات القديمة التي تسبب توقف البناء
           sed -i '/flutter_icons:/d; /flutter_launcher_icons:/d; /image_path:/d; /adaptive_icon/d' pubspec.yaml
-          sed -i '/^[[:space:]]*android:/d; /^[[:space:]]*ios:/d' pubspec.yaml
+          
+          # إضافة تجاوزات (Overrides) بذكاء لإجبار المكتبات على العمل معاً
+          # استخدام 'any' هو الحل السحري لتجاهل تضارب الإصدارات
+          echo -e "\ndependency_overrides:\n  path: any\n  cupertino_icons: any\n  flutter_inappwebview: any\n  permission_handler: any" >> pubspec.yaml
 
-          # 2. إضافة التجاوزات لضمان تحميل المكتبات
-          echo "" >> pubspec.yaml
-          echo "dependency_overrides:" >> pubspec.yaml
-          echo "  path: any" >> pubspec.yaml
-          echo "  cupertino_icons: any" >> pubspec.yaml
-          echo "  flutter_inappwebview: any" >> pubspec.yaml
 
-          # 3. إصلاح AndroidManifest.xml (بدون كسر الـ XML)
+          # ========================================================
+          # 2. إصلاح AndroidManifest.xml (XML Structure Fix)
+          # ========================================================
           MANIFEST_PATH=$(find android/app/src/main -name "AndroidManifest.xml")
           if [ -f "$MANIFEST_PATH" ]; then
-            # إزالة أي محاولات سابقة فاشلة لإضافة flutterEmbedding لمنع التكرار وكسر الملف
-            sed -i '/android:name="flutterEmbedding"/d' "$MANIFEST_PATH"
-            
-            # إضافة سطر V2 Embedding بشكل صحيح داخل وسم <activity>
-            sed -i '/<activity/a \            <meta-data android:name="flutterEmbedding" android:value="2" />' "$MANIFEST_PATH"
-            
-            # تحديث اسم التطبيق
-            sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' "$MANIFEST_PATH"
+             # التحديث الآمن: نبحث عن android:name=".MainActivity" ونضيف البيانات الوصفية بعدها مباشرة
+             # هذا يضمن أننا داخل وسم <activity> ودون كسر هيكل الملف
+             sed -i 's/android:name=".MainActivity"/android:name=".MainActivity">\n            <meta-data android:name="flutterEmbedding" android:value="2" \//' "$MANIFEST_PATH"
+             
+             # تحديث اسم التطبيق
+             sed -i 's/android:label="[^"]*"/android:label="${{ github.event.client_payload.display_name }}"/g' "$MANIFEST_PATH"
           fi
 
-          # 4. تحديث MainActivity (ترقية الـ Import فقط للحفاظ على تخصيص المستخدم)
+
+          # ========================================================
+          # 3. ترقية MainActivity (V1 -> V2 Migration)
+          # ========================================================
+          # نقوم بتحديث الـ Import فقط للحفاظ على أي كود مخصص كتبه المستخدم
           MAIN_ACTIVITY_PATH=$(find android/app/src/main -name "MainActivity.*")
           if [ -f "$MAIN_ACTIVITY_PATH" ]; then
-            # تحويل Import من القديم (app) إلى الجديد (embedding)
-            sed -i 's/io.flutter.app.FlutterActivity/io.flutter.embedding.android.FlutterActivity/g' "$MAIN_ACTIVITY_PATH"
+             sed -i 's/io.flutter.app.FlutterActivity/io.flutter.embedding.android.FlutterActivity/g' "$MAIN_ACTIVITY_PATH"
           fi
 
-          # 5. حقن اسم الحزمة (Package ID) وتوليد الأيقونات
-          find android -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
-          curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
-          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
-          convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
-          # 6. إصلاح Gradle ليتوافق مع Flutter الحديث
+          # ========================================================
+          # 4. اللمسات الأخيرة (Gradle & Icons)
+          # ========================================================
+          # تحديث اسم الحزمة
+          find android -name "build.gradle" -exec sed -i 's/applicationId "[^"]*"/applicationId "${{ github.event.client_payload.package_name }}"/g' {} +
+          
+          # توليد الأيقونة لتجنب الخطأ
+          sudo apt-get update && sudo apt-get install -y imagemagick
+          curl -L "${{ github.event.client_payload.icon_url }}" -o icon.png
+          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
+          convert icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+          # إصلاح Gradle القديم
           if [ -f "android/build.gradle" ]; then
             sed -i 's/com.android.tools.build:gradle:[0-9.]*/com.android.tools.build:gradle:7.3.0/g' android/build.gradle
           fi
 
-      - name: Build Optimized APK
+      - name: Build Final APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
           rm -f pubspec.lock
           flutter pub get
-          # استخدام --no-pub لتسريع العملية لأننا قمنا بها للتو
+          # استخدام --no-pub لتوفير الوقت وتجنب إعادة التحقق
           flutter build apk --release --target-platform android-arm64 --split-per-abi --no-pub
 
-      - name: Create Release & Upload
+      - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/build/app/outputs/flutter-apk/*.apk
           body: |
-            ✅ تم بناء التطبيق بنجاح!
-            - تم ترقية هيكل أندرويد إلى V2 تلقائياً.
-            - تم الحفاظ على تخصيصات MainActivity.
+            ✅ Build Successful (Smart Engine)
+            App: ${{ github.event.client_payload.display_name }}
+            Flutter: ${{ github.event.client_payload.flutter_version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

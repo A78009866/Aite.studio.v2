@@ -1,4 +1,4 @@
-name: Aite Smart Universal Engine
+name: Aite Smart Logic Engine
 
 on:
   repository_dispatch:
@@ -8,30 +8,16 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build & Auto-Repair APK
+  analyze_and_build:
+    name: Analyze & Build
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Install ImageMagick
-        run: sudo apt-get update && sudo apt-get install -y imagemagick
-
-      - name: Setup Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable' # سيجلب أحدث نسخة مستقرة تلقائياً
-          cache: true
-
-      - name: Download & Extract Project
+      # 1. تحميل وفك ضغط المشروع مبكراً للتحليل
+      - name: Download & Extract for Analysis
         run: |
           mkdir -p temp_zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
@@ -39,45 +25,106 @@ jobs:
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
           echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
 
-      - name: Smart Repair & Configure
+      # 2. العقل المدبر: تحديد النسخ بناءً على pubspec.yaml
+      - name: Analyze Project Requirements
+        id: analyze
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
-          # 1. إصلاح مشكلة Gradle (التحويل للطريقة الحديثة)
-          # حذف السطر القديم الذي يسبب الخطأ في settings.gradle إذا وُجد
-          if [ -f "android/settings.gradle" ]; then
-            sed -i '/apply from:.*app_plugin_loader.gradle/d' android/settings.gradle
+          # قراءة نسخة الـ SDK المطلوبة من ملف pubspec.yaml
+          SDK_CONSTRAINT=$(grep "sdk:" pubspec.yaml | head -n 1)
+          echo "Detected SDK Constraint: $SDK_CONSTRAINT"
+          
+          # المنطق الذكي:
+          if [[ "$SDK_CONSTRAINT" == *"<3.0.0"* ]] || [[ "$SDK_CONSTRAINT" == *"2."* ]]; then
+            echo "Legacy Project Detected (Dart 2.x)"
+            echo "FLUTTER_CHANNEL=3.10.6" >> $GITHUB_ENV
+            echo "JAVA_VERSION=11" >> $GITHUB_ENV
+            echo "IS_LEGACY=true" >> $GITHUB_ENV
+          else
+            echo "Modern Project Detected (Dart 3.x)"
+            echo "FLUTTER_CHANNEL=stable" >> $GITHUB_ENV
+            echo "JAVA_VERSION=17" >> $GITHUB_ENV
+            echo "IS_LEGACY=false" >> $GITHUB_ENV
           fi
 
-          # 2. تعديل اسم التطبيق والحزمة
+      # 3. تثبيت Java بناءً على التحليل
+      - name: Setup Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      # 4. تثبيت Flutter بناءً على التحليل
+      - name: Setup Flutter ${{ env.FLUTTER_CHANNEL }}
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_CHANNEL == 'stable' && '' || env.FLUTTER_CHANNEL }}
+          channel: ${{ env.FLUTTER_CHANNEL == 'stable' && 'stable' || 'any' }}
+          cache: true
+
+      - name: Install Dependencies
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
+      # 5. التعديل الذكي (يختلف حسب نوع المشروع)
+      - name: Smart Configure
+        run: |
+          cd ${{ env.PROJECT_ROOT }}
+          
+          # تنظيف الملفات القديمة
+          rm -rf build .dart_tool android/.gradle
+          
+          # إذا كان المشروع حديثاً (Stable)، نحتاج لإزالة الكود القديم من Gradle
+          if [ "${{ env.IS_LEGACY }}" = "false" ]; then
+             echo "Applying Modern Fixes..."
+             if [ -f "android/settings.gradle" ]; then
+               sed -i '/apply from:.*app_plugin_loader.gradle/d' android/settings.gradle
+             fi
+             if [ -f "android/app/build.gradle" ]; then
+               sed -i '/apply from:.*flutter.gradle/d' android/app/build.gradle
+               # إعادة حقن تعريف flutterRoot إذا تم حذفه
+               if ! grep -q "def flutterRoot" android/app/build.gradle; then
+                   sed -i '1i def flutterRoot = localProperties.getProperty("flutter.sdk")' android/app/build.gradle
+               fi
+             fi
+          fi
+
+          # تعديلات الاسم والأيقونة (مشتركة للكل)
           find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' {} +
           find android/app -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/' {} +
           
-          # 3. معالجة الأيقونات
-          curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png
-          mkdir -p android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi
-          convert app_icon_raw.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
-          convert app_icon_raw.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
-          convert app_icon_raw.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          convert app_icon_raw.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          convert app_icon_raw.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          
-          rm -rf build .dart_tool
+          curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png || true
+          if [ -f "app_icon_raw.png" ]; then
+             mkdir -p android/app/src/main/res/mipmap-hdpi
+             convert app_icon_raw.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png || true
+          fi
 
-      - name: Build Optimized APK
+      # 6. البناء النهائي
+      - name: Build APK
         run: |
           cd ${{ env.PROJECT_ROOT }}
           
-          # تحديث الاعتماديات قسراً
-          flutter pub upgrade
+          flutter pub get
           
-          # البناء لمعمارية ARM64 (للحجم الصغير) مع دعم شامل
-          flutter build apk --release --no-tree-shake-icons
+          # إذا كان المشروع قديماً، لا نستخدم --no-tree-shake-icons لأنها قد لا تكون مدعومة
+          if [ "${{ env.IS_LEGACY }}" = "true" ]; then
+            flutter build apk --release --target-platform android-arm,android-arm64
+          else
+            # للمشاريع الحديثة
+            flutter pub upgrade --major-versions # محاولة تحديث المكتبات لتتوافق
+            flutter build apk --release --no-tree-shake-icons
+          fi
           
-          ORIGINAL_PATH="build/app/outputs/flutter-apk/app-release.apk"
+          # البحث عن الملف الناتج
+          ORIGINAL_PATH=$(find build/app/outputs/flutter-apk -name "*release.apk" | head -n 1)
+          
+          if [ -z "$ORIGINAL_PATH" ]; then
+            echo "Build Failed! APK not found."
+            exit 1
+          fi
+
           NEW_NAME="${{ github.event.client_payload.app_name }}.apk"
           mv "$ORIGINAL_PATH" "build/app/outputs/flutter-apk/$NEW_NAME"
-          
           echo "FINAL_APK_PATH=build/app/outputs/flutter-apk/$NEW_NAME" >> $GITHUB_ENV
 
       - name: Upload Release
@@ -86,9 +133,8 @@ jobs:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/${{ env.FINAL_APK_PATH }}
           body: |
-            ✅ Smart Build Success
-            - Fixed Gradle Compatibility
-            - Optimized for Performance
+            ✅ Build Success
+            - Engine: ${{ env.IS_LEGACY == 'true' && 'Legacy (Flutter 3.10)' || 'Modern (Flutter Stable)' }}
             - App: ${{ github.event.client_payload.display_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

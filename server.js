@@ -32,8 +32,9 @@ const CONFIG = {
   MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE) || 500 * 1024 * 1024, // 500MB default
   MAX_ICON_SIZE: 10 * 1024 * 1024, // 10MB للأيقونات
   
-  // إعدادات الملفات المؤقتة
-  TEMP_DIR: process.env.TEMP_DIR || path.join(__dirname, 'temp'),
+  // إعدادات الملفات المؤقتة - استخدام /tmp للتوافق مع Vercel والبيئات السحابية
+  TEMP_DIR: process.env.TEMP_DIR || '/tmp/aite-studio',
+  
   UPLOAD_TIMEOUT: parseInt(process.env.UPLOAD_TIMEOUT) || 300000, // 5 دقائق
   
   // Chunked upload
@@ -102,16 +103,25 @@ async function cleanupTemp(tempPath) {
  */
 async function periodicCleanup() {
   try {
+    // التأكد من وجود المجلد الرئيسي
+    if (!fsSync.existsSync(CONFIG.TEMP_DIR)) {
+      return;
+    }
+    
     const tempDirs = await fs.readdir(CONFIG.TEMP_DIR);
     const now = Date.now();
     const MAX_AGE = 24 * 60 * 60 * 1000; // 24 ساعة
     
     for (const dir of tempDirs) {
       const dirPath = path.join(CONFIG.TEMP_DIR, dir);
-      const stat = await fs.stat(dirPath);
-      if (now - stat.mtime.getTime() > MAX_AGE) {
-        await fs.rm(dirPath, { recursive: true, force: true });
-        console.log(`[Periodic Cleanup] Removed old dir: ${dir}`);
+      try {
+        const stat = await fs.stat(dirPath);
+        if (now - stat.mtime.getTime() > MAX_AGE) {
+          await fs.rm(dirPath, { recursive: true, force: true });
+          console.log(`[Periodic Cleanup] Removed old dir: ${dir}`);
+        }
+      } catch (err) {
+        // تجاهل الأخطاء للملفات التي لا يمكن قراءتها
       }
     }
   } catch (err) {
@@ -216,10 +226,7 @@ function makeSuccessResponse(data = {}) {
 // Multer Configuration - Disk Storage للملفات الكبيرة
 // =============================================================================
 
-// التأكد من وجود مجلد temp
-if (!fsSync.existsSync(CONFIG.TEMP_DIR)) {
-  fsSync.mkdirSync(CONFIG.TEMP_DIR, { recursive: true });
-}
+// ملاحظة: لا نحتاج لإنشاء المجلد هنا لأن createTempDir ستنشئ المسار الكامل
 
 // تخزين مؤقت على القرص للملفات الكبيرة
 const diskStorage = multer.diskStorage({

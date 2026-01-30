@@ -4,37 +4,42 @@ const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 const axios = require('axios');
 const cors = require('cors');
+const path = require('path');
 
 const app = express();
 app.use(cors());
-app.use(express.static('public'));
 app.use(express.json());
 
+// تكوين Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// استخدم الذاكرة للملفات الصغيرة (مثل 7MB) لتجنّب مشاكل الـ /tmp والأذونات
+// استخدام الذاكرة لملفات صغيرة لتجنّب مشاكل /tmp
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 } // حد أعلى آمن (50MB)
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB
 });
 
-// مساعدة لفحص الأخطاء عند رفع الملفات
-function makeErrorResponse(code, message, details) {
-  return { success: false, error: message, code, details };
-}
+// serve static files from public folder
+app.use(express.static(path.join(__dirname, 'public')));
+
+// route for root explicitly (safeguard)
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 function sanitizeFilename(name) {
   return String(name || '').trim().replace(/[^a-z0-9]/gi, '_').toLowerCase();
 }
-
 function isValidPackageName(pkg) {
   return /^[a-zA-Z][a-zA-Z0-9_\.]*$/.test(pkg);
 }
-
+function makeErrorResponse(code, message, details) {
+  return { success: false, error: message, code, details };
+}
 async function uploadToCloudinaryBuffer(buffer, options = {}) {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(options, (err, result) => {
@@ -47,7 +52,6 @@ async function uploadToCloudinaryBuffer(buffer, options = {}) {
 
 app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'projectZip', maxCount: 1 }]), async (req, res) => {
   try {
-    // فحص المدخلات الأساسية
     const { appName, packageName } = req.body || {};
     if (!appName || !packageName) {
       return res.status(400).json(makeErrorResponse('MISSING_FIELDS', 'appName and packageName are required'));
@@ -55,7 +59,6 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
     if (!isValidPackageName(packageName)) {
       return res.status(400).json(makeErrorResponse('INVALID_PACKAGE', 'Invalid package name format'));
     }
-
     if (!req.files || !req.files.icon || !req.files.projectZip) {
       return res.status(400).json(makeErrorResponse('MISSING_FILES', 'icon and projectZip files are required'));
     }
@@ -63,7 +66,6 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
     const iconFile = req.files.icon[0];
     const zipFile = req.files.projectZip[0];
 
-    // نوعية الملف
     if (!iconFile.mimetype.startsWith('image/')) {
       return res.status(400).json(makeErrorResponse('INVALID_ICON', 'Icon must be an image'));
     }
@@ -74,7 +76,7 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
     const requestId = Date.now().toString();
     const safeAppName = sanitizeFilename(appName);
 
-    // رفع الأيقونة باستخدام buffer (memory) إلى فولدر مخصص
+    // Upload icon
     const iconOptions = { folder: 'aite_studio/icons', public_id: `${sanitizeFilename(packageName)}_icon_${requestId}`, resource_type: 'image', overwrite: true };
     let iconUpload;
     try {
@@ -84,7 +86,7 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
       return res.status(500).json(makeErrorResponse('CLOUDINARY_ICON_FAIL', 'Failed to upload icon to Cloudinary', err.message || err));
     }
 
-    // رفع ملف الـ ZIP كـ raw باستخدام upload_stream (resource_type raw)
+    // Upload ZIP
     const zipOptions = { folder: 'aite_studio/projects', public_id: `${sanitizeFilename(packageName)}_source_${requestId}`, resource_type: 'raw', overwrite: true };
     let zipUpload;
     try {
@@ -94,7 +96,7 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
       return res.status(500).json(makeErrorResponse('CLOUDINARY_ZIP_FAIL', 'Failed to upload ZIP to Cloudinary', err.message || err));
     }
 
-    // dispatch إلى GitHub Actions
+    // Dispatch to GitHub Actions
     const githubPayload = {
       event_type: "build-flutter",
       client_payload: {
@@ -106,8 +108,8 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
         request_id: requestId
       }
     };
-
     const ghUrl = `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/dispatches`;
+
     try {
       await axios.post(ghUrl, githubPayload, {
         headers: {
@@ -121,7 +123,6 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
       return res.status(500).json(makeErrorResponse('GITHUB_DISPATCH_FAIL', 'Failed to trigger GitHub Actions', (err.response && err.response.data) || err.message || err));
     }
 
-    // نعيد نجاح مع معلومات لتحقّق الواجهة
     res.json({
       success: true,
       build_id: requestId,
@@ -137,8 +138,31 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
   }
 });
 
+// status endpoint
+app.get('/check-status/:buildId', async (req, res) => {
+  try {
+    const { buildId } = req.params;
+    const { appName } = req.query;
+    if (!buildId || !appName) return res.status(400).json({ error: "Missing parameters" });
+
+    const releaseUrl = `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/tags/build-${buildId}`;
+    try {
+      await axios.get(releaseUrl, { headers: { 'Authorization': `token ${process.env.GITHUB_TOKEN}` }, timeout: 8000 });
+      const downloadUrl = `https://github.com/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/download/build-${buildId}/${encodeURIComponent(appName)}.apk`;
+      return res.json({ completed: true, download_url: downloadUrl });
+    } catch (ghError) {
+      return res.json({ completed: false });
+    }
+  } catch (error) {
+    console.error("Status check error:", error);
+    return res.status(500).json({ error: "Check failed" });
+  }
+});
+
+// always start server (useful in production)
 const PORT = process.env.PORT || 3000;
-if (process.env.NODE_ENV !== 'production') {
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-}
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT} - env=${process.env.NODE_ENV || 'undefined'}`);
+});
+
 module.exports = app;

@@ -12,11 +12,10 @@ jobs:
     name: Analyze & Build
     runs-on: ubuntu-latest
     env:
-      # لا نستخدم runner.temp هنا لأن التعبير غير معترف به على مستوى job
-      # نستخدم مجلد داخل workspace كـ GRADLE cache افتراضي
       GRADLE_USER_HOME: ${{ github.workspace }}/.gradle_cache
       FLUTTER_VERSION: '3.10.6'
       ANDROID_COMPILE_SDK: '33'
+      BUILD_TGZ: ''    # قيمة افتراضية فارغة لتجنّب أخطاء التقييم
 
     steps:
       - name: Checkout repo
@@ -157,7 +156,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload build logs on failure
-        if: failure()
+        if: failure() && env.BUILD_TGZ != ''
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ github.event.client_payload.request_id }}

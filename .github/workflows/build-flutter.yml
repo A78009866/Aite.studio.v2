@@ -293,43 +293,36 @@ jobs:
           echo "Fixing signing configuration..."
           
           if [ -f "android/app/build.gradle" ]; then
-            # إنشاء مجلد signing إذا لم يكن موجوداً
             mkdir -p android/app/signing
             
-            # إنشاء signing.gradle فارغ أو بمحتوى بسيط
-            cat > android/app/signing/signing.gradle << 'SIGNINGEOF'
-def keystoreProperties = new Properties()
-def keystorePropertiesFile = rootProject.file('key.properties')
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-}
-
-android {
-    signingConfigs {
-        release {
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
-            storeFile file('debug.keystore')
-            storePassword 'android'
-        }
-    }
-    buildTypes {
-        release {
-            signingConfig signingConfigs.release
-        }
-    }
-}
-SIGNINGEOF
+            # استخدام printf بدلاً من cat << 'SIGNINGEOF'
+            printf '%s\n' 'def keystoreProperties = new Properties()' > android/app/signing/signing.gradle
+            printf '%s\n' 'def keystorePropertiesFile = rootProject.file("key.properties")' >> android/app/signing/signing.gradle
+            printf '%s\n' 'if (keystorePropertiesFile.exists()) {' >> android/app/signing/signing.gradle
+            printf '%s\n' '    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))' >> android/app/signing/signing.gradle
+            printf '%s\n' '}' >> android/app/signing/signing.gradle
+            printf '%s\n' '' >> android/app/signing/signing.gradle
+            printf '%s\n' 'android {' >> android/app/signing/signing.gradle
+            printf '%s\n' '    signingConfigs {' >> android/app/signing/signing.gradle
+            printf '%s\n' '        release {' >> android/app/signing/signing.gradle
+            printf '%s\n' '            keyAlias "androiddebugkey"' >> android/app/signing/signing.gradle
+            printf '%s\n' '            keyPassword "android"' >> android/app/signing/signing.gradle
+            printf '%s\n' '            storeFile file("debug.keystore")' >> android/app/signing/signing.gradle
+            printf '%s\n' '            storePassword "android"' >> android/app/signing/signing.gradle
+            printf '%s\n' '        }' >> android/app/signing/signing.gradle
+            printf '%s\n' '    }' >> android/app/signing/signing.gradle
+            printf '%s\n' '    buildTypes {' >> android/app/signing/signing.gradle
+            printf '%s\n' '        release {' >> android/app/signing/signing.gradle
+            printf '%s\n' '            signingConfig signingConfigs.release' >> android/app/signing/signing.gradle
+            printf '%s\n' '        }' >> android/app/signing/signing.gradle
+            printf '%s\n' '    }' >> android/app/signing/signing.gradle
+            printf '%s\n' '}' >> android/app/signing/signing.gradle
             
-            # إنشاء debug.keystore إذا لم يكن موجوداً
             if [ ! -f "android/app/debug.keystore" ]; then
               keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
             fi
             
-            # إزالة أي apply from: signing.gradle قديم
             sed -i "/apply from:.*signing/d" android/app/build.gradle
-            
-            # إضافة apply from: في نهاية الملف
             echo "" >> android/app/build.gradle
             echo "apply from: 'signing/signing.gradle'" >> android/app/build.gradle
             

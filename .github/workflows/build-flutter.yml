@@ -145,33 +145,12 @@ jobs:
             fi
           fi
 
-      - name: Fix Signing Configuration
+      - name: Setup Signing and Build Config
         working-directory: ${{ env.PROJECT_DIR }}/android/app
         run: |
           echo "Setting up signing configuration..."
           
-          mkdir -p signing
-          
-          cat > signing/signing.gradle << 'EOF'
-          android {
-              signingConfigs {
-                  release {
-                      storeFile file("../debug.keystore")
-                      storePassword "android"
-                      keyAlias "androiddebugkey"
-                      keyPassword "android"
-                  }
-              }
-              buildTypes {
-                  release {
-                      signingConfig signingConfigs.release
-                      minifyEnabled true
-                      shrinkResources true
-                  }
-              }
-          }
-          EOF
-          
+          # Create debug keystore if not exists
           if [ ! -f "debug.keystore" ]; then
             echo "Creating debug keystore..."
             keytool -genkey -v \
@@ -185,9 +164,95 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
           
-          if ! grep -q "apply from:.*signing/signing.gradle" build.gradle; then
-            echo "Adding signing script reference to build.gradle..."
-            sed -i '1s/^/apply from: "signing\/signing.gradle"\n\n/' build.gradle
+          # Remove any old signing references
+          rm -rf signing
+          sed -i '|apply from:.*signing.*gradle|d' build.gradle 2>/dev/null || true
+          
+          # Check if build.gradle has android block
+          if grep -q "^android {" build.gradle; then
+            echo "Found android block, checking for signingConfigs..."
+            
+            # If no signingConfigs, add them inside android block
+            if ! grep -q "signingConfigs" build.gradle; then
+              echo "Adding signingConfigs and buildTypes..."
+              
+              # Use python to modify the file safely
+              python3 << 'PYEOF'
+          import re
+          
+          with open('build.gradle', 'r') as f:
+              content = f.read()
+          
+          # Find the last closing brace of android block and insert before it
+          # Pattern to find android block content
+          signing_config = '''
+                  signingConfigs {
+                      release {
+                          storeFile file("debug.keystore")
+                          storePassword "android"
+                          keyAlias "androiddebugkey"
+                          keyPassword "android"
+                      }
+                  }
+                  buildTypes {
+                      release {
+                          signingConfig signingConfigs.release
+                          minifyEnabled true
+                          shrinkResources true
+                          proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                      }
+                  }
+          '''
+          
+          # Find the last } in the android block and insert before it
+          # This regex finds the android block and inserts before its closing }
+          lines = content.split('\n')
+          android_start = -1
+          brace_count = 0
+          android_end = -1
+          
+          for i, line in enumerate(lines):
+              if android_start == -1 and 'android {' in line:
+                  android_start = i
+                  brace_count = line.count('{') - line.count('}')
+              elif android_start != -1:
+                  brace_count += line.count('{') - line.count('}')
+                  if brace_count == 0:
+                      android_end = i
+                      break
+          
+          if android_end != -1:
+              lines.insert(android_end, signing_config)
+              with open('build.gradle', 'w') as f:
+                  f.write('\n'.join(lines))
+              print("Added signing config successfully")
+          else:
+              print("Could not find android block end")
+          PYEOF
+            fi
+          else
+            echo "No android block found, creating one..."
+            cat >> build.gradle << 'EOF'
+          
+          android {
+              signingConfigs {
+                  release {
+                      storeFile file("debug.keystore")
+                      storePassword "android"
+                      keyAlias "androiddebugkey"
+                      keyPassword "android"
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                      minifyEnabled true
+                      shrinkResources true
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+          }
+          EOF
           fi
 
       - name: Update Package Name and Kotlin
@@ -198,14 +263,12 @@ jobs:
             CURRENT_PKG=$(grep -o 'package="[^"]*"' $MANIFEST | head -1 | cut -d'"' -f2)
             if [ "$CURRENT_PKG" != "$PACKAGE_NAME" ]; then
               echo "Updating package name in AndroidManifest: $CURRENT_PKG -> $PACKAGE_NAME"
-              # Use | as delimiter instead of / to avoid issues with dots in package name
               sed -i "s|package=\"[^\"]*\"|package=\"$PACKAGE_NAME\"|" $MANIFEST
             fi
           fi
           
           BUILD_GRADLE="android/app/build.gradle"
           if [ -f "$BUILD_GRADLE" ]; then
-            # Use | as delimiter for applicationId
             sed -i "s|applicationId \".*\"|applicationId \"$PACKAGE_NAME\"|" $BUILD_GRADLE
             sed -i "s|applicationId '.*'|applicationId '$PACKAGE_NAME'|" $BUILD_GRADLE
             sed -i 's|minSdkVersion .*|minSdkVersion 21|' $BUILD_GRADLE

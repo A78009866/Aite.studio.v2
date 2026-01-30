@@ -4,8 +4,6 @@ const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 const axios = require('axios');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -18,87 +16,85 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// حدود الملفات لتحكم أفضل (مثلاً 250MB)
-const upload = multer({ dest: '/tmp/', limits: { fileSize: 250 * 1024 * 1024 } });
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// استخدم الذاكرة للملفات الصغيرة (مثل 7MB) لتجنّب مشاكل الـ /tmp والأذونات
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 } // حد أعلى آمن (50MB)
 });
+
+// مساعدة لفحص الأخطاء عند رفع الملفات
+function makeErrorResponse(code, message, details) {
+  return { success: false, error: message, code, details };
+}
 
 function sanitizeFilename(name) {
   return String(name || '').trim().replace(/[^a-z0-9]/gi, '_').toLowerCase();
 }
 
 function isValidPackageName(pkg) {
-  // تحقق أساسي: يجب أن تبدأ بحرف وتتكون من حروف/أرقام/underscore/dot
   return /^[a-zA-Z][a-zA-Z0-9_\.]*$/.test(pkg);
 }
 
-async function postWithRetry(url, payload, headers, maxAttempts = 3) {
-  let attempt = 0;
-  const baseDelay = 1000;
-  while (attempt < maxAttempts) {
-    try {
-      const resp = await axios.post(url, payload, { headers, timeout: 15000 });
-      return resp;
-    } catch (err) {
-      attempt++;
-      if (attempt >= maxAttempts) throw err;
-      await new Promise(r => setTimeout(r, baseDelay * attempt));
-    }
-  }
+async function uploadToCloudinaryBuffer(buffer, options = {}) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(options, (err, result) => {
+      if (err) return reject(err);
+      resolve(result);
+    });
+    stream.end(buffer);
+  });
 }
 
 app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'projectZip', maxCount: 1 }]), async (req, res) => {
-  let iconFile = null;
-  let zipFile = null;
   try {
+    // فحص المدخلات الأساسية
     const { appName, packageName } = req.body || {};
     if (!appName || !packageName) {
-      return res.status(400).json({ success: false, error: "appName and packageName are required" });
+      return res.status(400).json(makeErrorResponse('MISSING_FIELDS', 'appName and packageName are required'));
     }
-
     if (!isValidPackageName(packageName)) {
-      return res.status(400).json({ success: false, error: "Invalid package name format" });
+      return res.status(400).json(makeErrorResponse('INVALID_PACKAGE', 'Invalid package name format'));
     }
 
-    if (!req.files || !req.files['icon'] || !req.files['projectZip']) {
-      return res.status(400).json({ success: false, error: "Missing files (icon and projectZip are required)" });
+    if (!req.files || !req.files.icon || !req.files.projectZip) {
+      return res.status(400).json(makeErrorResponse('MISSING_FILES', 'icon and projectZip files are required'));
     }
 
-    iconFile = req.files['icon'][0];
-    zipFile = req.files['projectZip'][0];
+    const iconFile = req.files.icon[0];
+    const zipFile = req.files.projectZip[0];
 
-    // Additional type checks
+    // نوعية الملف
     if (!iconFile.mimetype.startsWith('image/')) {
-      return res.status(400).json({ success: false, error: "Icon must be an image" });
+      return res.status(400).json(makeErrorResponse('INVALID_ICON', 'Icon must be an image'));
     }
     if (!zipFile.originalname.toLowerCase().endsWith('.zip')) {
-      return res.status(400).json({ success: false, error: "Project file must be a .zip" });
+      return res.status(400).json(makeErrorResponse('INVALID_ZIP', 'Project file must be a .zip'));
     }
 
-    const safeAppName = sanitizeFilename(appName);
     const requestId = Date.now().toString();
+    const safeAppName = sanitizeFilename(appName);
 
-    // Upload icon first (image)
-    const iconPublicId = `aite_studio/icons/${sanitizeFilename(packageName)}_icon_${requestId}`;
-    const iconUpload = await cloudinary.uploader.upload(iconFile.path, {
-      folder: 'aite_studio/icons',
-      public_id: iconPublicId,
-      overwrite: true,
-      resource_type: 'image'
-    });
+    // رفع الأيقونة باستخدام buffer (memory) إلى فولدر مخصص
+    const iconOptions = { folder: 'aite_studio/icons', public_id: `${sanitizeFilename(packageName)}_icon_${requestId}`, resource_type: 'image', overwrite: true };
+    let iconUpload;
+    try {
+      iconUpload = await uploadToCloudinaryBuffer(iconFile.buffer, iconOptions);
+    } catch (err) {
+      console.error('Cloudinary icon upload error:', err);
+      return res.status(500).json(makeErrorResponse('CLOUDINARY_ICON_FAIL', 'Failed to upload icon to Cloudinary', err.message || err));
+    }
 
-    // Upload ZIP as raw resource
-    const zipPublicId = `aite_studio/projects/${sanitizeFilename(packageName)}_source_${requestId}`;
-    const zipUpload = await cloudinary.uploader.upload(zipFile.path, {
-      resource_type: "raw",
-      folder: "aite_studio/projects",
-      public_id: zipPublicId,
-      overwrite: true
-    });
+    // رفع ملف الـ ZIP كـ raw باستخدام upload_stream (resource_type raw)
+    const zipOptions = { folder: 'aite_studio/projects', public_id: `${sanitizeFilename(packageName)}_source_${requestId}`, resource_type: 'raw', overwrite: true };
+    let zipUpload;
+    try {
+      zipUpload = await uploadToCloudinaryBuffer(zipFile.buffer, zipOptions);
+    } catch (err) {
+      console.error('Cloudinary zip upload error:', err);
+      return res.status(500).json(makeErrorResponse('CLOUDINARY_ZIP_FAIL', 'Failed to upload ZIP to Cloudinary', err.message || err));
+    }
 
-    // Prepare payload for repo_dispatch
+    // dispatch إلى GitHub Actions
     const githubPayload = {
       event_type: "build-flutter",
       client_payload: {
@@ -112,19 +108,20 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
     };
 
     const ghUrl = `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/dispatches`;
-    const ghHeaders = {
-      'Authorization': `token ${process.env.GITHUB_TOKEN}`,
-      'Accept': 'application/vnd.github.v3+json'
-    };
+    try {
+      await axios.post(ghUrl, githubPayload, {
+        headers: {
+          'Authorization': `token ${process.env.GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github.v3+json'
+        },
+        timeout: 20000
+      });
+    } catch (err) {
+      console.error('GitHub dispatch error:', err && (err.response ? err.response.data : err.message || err));
+      return res.status(500).json(makeErrorResponse('GITHUB_DISPATCH_FAIL', 'Failed to trigger GitHub Actions', (err.response && err.response.data) || err.message || err));
+    }
 
-    // محاولة مع retries بسيطة
-    await postWithRetry(ghUrl, githubPayload, ghHeaders, 3);
-
-    // Clean up temp files (بعد نجاح الرفع)
-    try { if (fs.existsSync(iconFile.path)) fs.unlinkSync(iconFile.path); } catch (e) {}
-    try { if (fs.existsSync(zipFile.path)) fs.unlinkSync(zipFile.path); } catch (e) {}
-
-    // نُعيد إلى الواجهة كل المعلومات المهمة
+    // نعيد نجاح مع معلومات لتحقّق الواجهة
     res.json({
       success: true,
       build_id: requestId,
@@ -134,40 +131,9 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
       package_name: packageName
     });
 
-  } catch (error) {
-    console.error("Server Error:", error && (error.stack || error.message || error));
-    res.status(500).json({ success: false, error: error.message || 'Internal Error' });
-  } finally {
-    // تأكد من تنظيف الملفات المؤقتة حتى لو حدث خطأ
-    try { if (iconFile && fs.existsSync(iconFile.path)) fs.unlinkSync(iconFile.path); } catch (e) {}
-    try { if (zipFile && fs.existsSync(zipFile.path)) fs.unlinkSync(zipFile.path); } catch (e) {}
-  }
-});
-
-// Check status endpoint يتيح للواجهة معرفة صدور الريليز
-app.get('/check-status/:buildId', async (req, res) => {
-  try {
-    const { buildId } = req.params;
-    const { appName } = req.query;
-    if (!buildId || !appName) return res.status(400).json({ error: "Missing parameters" });
-
-    const releaseUrl = `https://api.github.com/repos/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/tags/build-${buildId}`;
-
-    try {
-      await axios.get(releaseUrl, {
-        headers: { 'Authorization': `token ${process.env.GITHUB_TOKEN}` },
-        timeout: 8000
-      });
-
-      const downloadUrl = `https://github.com/${process.env.GITHUB_REPO_OWNER}/${process.env.GITHUB_REPO_NAME}/releases/download/build-${buildId}/${encodeURIComponent(appName)}.apk`;
-      res.json({ completed: true, download_url: downloadUrl });
-    } catch (ghError) {
-      // أي خطأ من GitHub نُعامله كـ not ready (404 غالباً)
-      res.json({ completed: false });
-    }
-  } catch (error) {
-    console.error("Status check error:", error);
-    res.status(500).json({ error: "Check failed" });
+  } catch (err) {
+    console.error('Unexpected server error:', err && (err.stack || err));
+    res.status(500).json(makeErrorResponse('SERVER_ERROR', 'Unexpected error', err.message || err));
   }
 });
 

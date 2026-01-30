@@ -406,7 +406,6 @@ jobs:
           
           flutter build apk --release \
             --target-platform=android-arm64,android-arm,android-x64 \
-            --split-per-abi=false \
             --build-name=1.0.0 \
             --build-number=${{ github.run_number }}
           

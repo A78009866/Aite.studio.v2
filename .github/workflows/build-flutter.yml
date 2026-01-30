@@ -1,4 +1,4 @@
-name: Aite Smart Logic Engine
+name: Aite Smart Logic Engine (optimized & faster)
 
 on:
   repository_dispatch:
@@ -11,130 +11,189 @@ jobs:
   analyze_and_build:
     name: Analyze & Build
     runs-on: ubuntu-latest
-
+    env:
+      GRADLE_USER_HOME: ${{ runner.temp }}/.gradle_cache
+      DEFAULT_FLUTTER_VERSION: "3.10.6" # قابل للتعديل
+      ANDROID_COMPILE_SDK: "33"
     steps:
-      - name: Checkout Repo
+      - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # 1. تحميل وفك ضغط المشروع مبكراً للتحليل
-      - name: Download & Extract for Analysis
+      - name: Install Python (for pubspec parsing)
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml
+
+      - name: Download & extract uploaded ZIP
         run: |
           mkdir -p temp_zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
           unzip -q project.zip -d temp_zip
-          REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1)
-          echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
-
-      # 2. العقل المدبر: تحديد النسخ بناءً على pubspec.yaml
-      - name: Analyze Project Requirements
-        id: analyze
-        run: |
-          cd ${{ env.PROJECT_ROOT }}
-          
-          # قراءة نسخة الـ SDK المطلوبة من ملف pubspec.yaml
-          SDK_CONSTRAINT=$(grep "sdk:" pubspec.yaml | head -n 1)
-          echo "Detected SDK Constraint: $SDK_CONSTRAINT"
-          
-          # المنطق الذكي:
-          if [[ "$SDK_CONSTRAINT" == *"<3.0.0"* ]] || [[ "$SDK_CONSTRAINT" == *"2."* ]]; then
-            echo "Legacy Project Detected (Dart 2.x)"
-            echo "FLUTTER_CHANNEL=3.10.6" >> $GITHUB_ENV
-            echo "JAVA_VERSION=11" >> $GITHUB_ENV
-            echo "IS_LEGACY=true" >> $GITHUB_ENV
+          REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1 || true)
+          if [ -z "$REAL_ROOT" ]; then
+            echo "ERROR_NO_PUBSPEC=true" >> $GITHUB_ENV
           else
-            echo "Modern Project Detected (Dart 3.x)"
-            echo "FLUTTER_CHANNEL=stable" >> $GITHUB_ENV
-            echo "JAVA_VERSION=17" >> $GITHUB_ENV
-            echo "IS_LEGACY=false" >> $GITHUB_ENV
+            echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
           fi
 
-      # 3. تثبيت Java بناءً على التحليل
-      - name: Setup Java ${{ env.JAVA_VERSION }}
+      - name: Fail early if no pubspec found
+        if: env.ERROR_NO_PUBSPEC == 'true'
+        run: |
+          echo "No Flutter project (pubspec.yaml) found in the uploaded zip."
+          exit 1
+
+      - name: Analyze pubspec.yaml and choose Flutter (best-effort)
+        id: analyze_pubspec
+        run: |
+          python - <<'PY' > /tmp/flutter_choice.env
+import yaml, os, re
+root = os.getenv('PROJECT_ROOT')
+p = os.path.join(root,'pubspec.yaml')
+flutter_ver = os.getenv('DEFAULT_FLUTTER_VERSION','3.10.6')
+java_ver = "17"
+channel = "stable"
+try:
+    with open(p,'r',encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    sdk = None
+    env_block = data.get('environment') or {}
+    sdk = env_block.get('sdk')
+    if sdk:
+        # قواعد بسيطة للتمييز — قابل للتوسعة
+        if re.search(r'\\b3\\.', sdk):
+            flutter_ver = flutter_ver
+            java_ver = "17"
+            channel = "stable"
+        elif re.search(r'\\b2\\.', sdk):
+            flutter_ver = "3.10.6"
+            java_ver = "11"
+            channel = "stable"
+except Exception as e:
+    pass
+print("FLUTTER_VERSION=" + str(flutter_ver))
+print("FLUTTER_CHANNEL=" + str(channel))
+print("JAVA_VERSION=" + str(java_ver))
+PY
+          cat /tmp/flutter_choice.env >> $GITHUB_ENV
+          cat /tmp/flutter_choice.env
+
+      - name: Setup Java (use chosen stable)
         uses: actions/setup-java@v3
         with:
-          distribution: 'zulu'
+          distribution: 'temurin'
           java-version: ${{ env.JAVA_VERSION }}
 
-      # 4. تثبيت Flutter بناءً على التحليل
-      - name: Setup Flutter ${{ env.FLUTTER_CHANNEL }}
+      - name: Setup Android SDK commandline tools and platform-tools
+        env:
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y unzip wget lib32stdc++6 lib32z1
+          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          cd $ANDROID_SDK_ROOT
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline.zip
+          unzip -q cmdline.zip -d cmdline
+          mkdir -p cmdline-tools/latest
+          mv cmdline cmdline-tools/latest/cmdline
+          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/cmdline/bin:$PATH
+          yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses || true
+          sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-${{ env.ANDROID_COMPILE_SDK }}" "build-tools;33.0.2" "ndk;23.1.7779620" || true
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ env.FLUTTER_CHANNEL == 'stable' && '' || env.FLUTTER_CHANNEL }}
-          channel: ${{ env.FLUTTER_CHANNEL == 'stable' && 'stable' || 'any' }}
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
           cache: true
 
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y imagemagick
+      - name: Cache pub & gradle & flutter cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            ${{ env.GRADLE_USER_HOME }}
+            ~/.flutter/bin/cache
+          key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.yaml') }}-${{ github.event.client_payload.request_id }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
 
-      # 5. التعديل الذكي (يختلف حسب نوع المشروع)
-      - name: Smart Configure
+      - name: Preflight - flutter doctor & pub get
+        working-directory: ${{ env.PROJECT_ROOT }}
         run: |
-          cd ${{ env.PROJECT_ROOT }}
-          
-          # تنظيف الملفات القديمة
-          rm -rf build .dart_tool android/.gradle
-          
-          # إذا كان المشروع حديثاً (Stable)، نحتاج لإزالة الكود القديم من Gradle
-          if [ "${{ env.IS_LEGACY }}" = "false" ]; then
-             echo "Applying Modern Fixes..."
-             if [ -f "android/settings.gradle" ]; then
-               sed -i '/apply from:.*app_plugin_loader.gradle/d' android/settings.gradle
-             fi
-             if [ -f "android/app/build.gradle" ]; then
-               sed -i '/apply from:.*flutter.gradle/d' android/app/build.gradle
-               # إعادة حقن تعريف flutterRoot إذا تم حذفه
-               if ! grep -q "def flutterRoot" android/app/build.gradle; then
-                   sed -i '1i def flutterRoot = localProperties.getProperty("flutter.sdk")' android/app/build.gradle
-               fi
-             fi
-          fi
+          flutter --version
+          flutter doctor -v || true
+          flutter pub get --verbose
 
-          # تعديلات الاسم والأيقونة (مشتركة للكل)
-          find android/app/src/main -name "AndroidManifest.xml" -exec sed -i 's/android:label=".*"/android:label="${{ github.event.client_payload.display_name }}"/' {} +
-          find android/app -name "build.gradle" -exec sed -i 's/applicationId ".*"/applicationId "${{ github.event.client_payload.package_name }}"/' {} +
-          
-          curl -L "${{ github.event.client_payload.icon_url }}" -o app_icon_raw.png || true
-          if [ -f "app_icon_raw.png" ]; then
-             mkdir -p android/app/src/main/res/mipmap-hdpi
-             convert app_icon_raw.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png || true
-          fi
-
-      # 6. البناء النهائي
-      - name: Build APK
+      - name: Ensure gradlew executable (if project uses gradle wrapper)
+        working-directory: ${{ env.PROJECT_ROOT }}
         run: |
-          cd ${{ env.PROJECT_ROOT }}
-          
-          flutter pub get
-          
-          # إذا كان المشروع قديماً، لا نستخدم --no-tree-shake-icons لأنها قد لا تكون مدعومة
-          if [ "${{ env.IS_LEGACY }}" = "true" ]; then
-            flutter build apk --release --target-platform android-arm,android-arm64
-          else
-            # للمشاريع الحديثة
-            flutter pub upgrade --major-versions # محاولة تحديث المكتبات لتتوافق
-            flutter build apk --release --no-tree-shake-icons
-          fi
-          
-          # البحث عن الملف الناتج
-          ORIGINAL_PATH=$(find build/app/outputs/flutter-apk -name "*release.apk" | head -n 1)
-          
-          if [ -z "$ORIGINAL_PATH" ]; then
-            echo "Build Failed! APK not found."
+          if [ -f "./android/gradlew" ]; then chmod +x ./android/gradlew; fi
+
+      - name: Enable Gradle build cache (local) for performance
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          mkdir -p ${{ env.GRADLE_USER_HOME }}
+          # إضاءة caching إن لم تكن مفعلة
+          echo "org.gradle.caching=true" >> ${{ env.GRADLE_USER_HOME }}/gradle.properties || true
+
+      - name: Build APK (release, split per ABI) with logs and retries
+        working-directory: ${{ env.PROJECT_ROOT }}
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+        run: |
+          set -euo pipefail
+          LOGDIR=$RUNNER_TEMP/build_logs_${{ github.event.client_payload.request_id }}
+          mkdir -p "$LOGDIR"
+          MAX_ATTEMPTS=2
+          attempt=0
+          BUILD_OK=0
+          while [ $attempt -lt $MAX_ATTEMPTS ]; do
+            attempt=$((attempt+1))
+            echo "Build attempt #$attempt"
+            # محاولة مباشرة للإصدار release مع split-per-abi لتقليل حجم ووقت التجميع للأهداف المتعددة بالتوازي داخل gradle
+            flutter build apk --release --split-per-abi --no-shrink -v > "$LOGDIR/build-$attempt.log" 2>&1 || true
+            if grep -q "Built build/app/outputs" "$LOGDIR/build-$attempt.log" || find build -name "*.apk" | grep -q .; then
+              BUILD_OK=1
+              break
+            fi
+            echo "Attempt $attempt failed, collecting logs..."
+            sleep 6
+          done
+          if [ "$BUILD_OK" -ne 1 ]; then
+            echo "Build failed after $MAX_ATTEMPTS attempts, uploading logs and failing..."
+            tar -czf $RUNNER_TEMP/build_logs_${{ github.event.client_payload.request_id }}.tgz -C "$LOGDIR" .
+            echo "BUILD_TGZ=$RUNNER_TEMP/build_logs_${{ github.event.client_payload.request_id }}.tgz" >> $GITHUB_ENV
             exit 1
           fi
+          # اختر أول APK موجود
+          FINAL_APK=$(find build -name "*.apk" | head -n 1 || true)
+          if [ -z "$FINAL_APK" ]; then
+            echo "No APK produced (unexpected)."
+            exit 1
+          fi
+          echo "FINAL_APK_PATH=$FINAL_APK" >> $GITHUB_ENV
+          echo "Found APK: $FINAL_APK"
 
-          NEW_NAME="${{ github.event.client_payload.app_name }}.apk"
-          mv "$ORIGINAL_PATH" "build/app/outputs/flutter-apk/$NEW_NAME"
-          echo "FINAL_APK_PATH=build/app/outputs/flutter-apk/$NEW_NAME" >> $GITHUB_ENV
-
-      - name: Upload Release
+      - name: Upload Release with APK
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}
           files: ${{ env.PROJECT_ROOT }}/${{ env.FINAL_APK_PATH }}
           body: |
             ✅ Build Success
-            - Engine: ${{ env.IS_LEGACY == 'true' && 'Legacy (Flutter 3.10)' || 'Modern (Flutter Stable)' }}
             - App: ${{ github.event.client_payload.display_name }}
+            - Request ID: ${{ github.event.client_payload.request_id }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ github.event.client_payload.request_id }}
+          path: ${{ env.BUILD_TGZ }}

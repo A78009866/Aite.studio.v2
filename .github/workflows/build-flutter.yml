@@ -1,4 +1,4 @@
-name: Aite Smart Logic Engine (optimized & faster)
+name: Aite Smart Logic Engine (stable)
 
 on:
   repository_dispatch:
@@ -13,23 +13,25 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GRADLE_USER_HOME: ${{ runner.temp }}/.gradle_cache
-      DEFAULT_FLUTTER_VERSION: "3.10.6" # قابل للتعديل
-      ANDROID_COMPILE_SDK: "33"
+      FLUTTER_VERSION: '3.10.6'    # ثابت لتفادي مشكلات التقييم أثناء التنفيذ
+      ANDROID_COMPILE_SDK: '33'
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install Python (for pubspec parsing)
+      - name: Install Python (for potential parsing if needed)
         run: |
           python -m pip install --upgrade pip
-          pip install pyyaml
+          pip install pyyaml || true
 
       - name: Download & extract uploaded ZIP
         run: |
           mkdir -p temp_zip
-          curl -L "${{ github.event.client_payload.zip_url }}" -o project.zip
+          echo "Downloading project zip: ${{ github.event.client_payload.zip_url }}"
+          curl -sL "${{ github.event.client_payload.zip_url }}" -o project.zip
           unzip -q project.zip -d temp_zip
           REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1 || true)
           if [ -z "$REAL_ROOT" ]; then
@@ -41,51 +43,16 @@ jobs:
       - name: Fail early if no pubspec found
         if: env.ERROR_NO_PUBSPEC == 'true'
         run: |
-          echo "No Flutter project (pubspec.yaml) found in the uploaded zip."
+          echo "No Flutter project (pubspec.yaml) found in uploaded zip."
           exit 1
 
-      - name: Analyze pubspec.yaml and choose Flutter (best-effort)
-        id: analyze_pubspec
-        run: |
-          python - <<'PY' > /tmp/flutter_choice.env
-import yaml, os, re
-root = os.getenv('PROJECT_ROOT')
-p = os.path.join(root,'pubspec.yaml')
-flutter_ver = os.getenv('DEFAULT_FLUTTER_VERSION','3.10.6')
-java_ver = "17"
-channel = "stable"
-try:
-    with open(p,'r',encoding='utf-8') as f:
-        data = yaml.safe_load(f) or {}
-    sdk = None
-    env_block = data.get('environment') or {}
-    sdk = env_block.get('sdk')
-    if sdk:
-        # قواعد بسيطة للتمييز — قابل للتوسعة
-        if re.search(r'\\b3\\.', sdk):
-            flutter_ver = flutter_ver
-            java_ver = "17"
-            channel = "stable"
-        elif re.search(r'\\b2\\.', sdk):
-            flutter_ver = "3.10.6"
-            java_ver = "11"
-            channel = "stable"
-except Exception as e:
-    pass
-print("FLUTTER_VERSION=" + str(flutter_ver))
-print("FLUTTER_CHANNEL=" + str(channel))
-print("JAVA_VERSION=" + str(java_ver))
-PY
-          cat /tmp/flutter_choice.env >> $GITHUB_ENV
-          cat /tmp/flutter_choice.env
-
-      - name: Setup Java (use chosen stable)
+      - name: Setup Java 17
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
-          java-version: ${{ env.JAVA_VERSION }}
+          java-version: '17'
 
-      - name: Setup Android SDK commandline tools and platform-tools
+      - name: Setup Android SDK commandline tools & platform-tools
         env:
           ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
         run: |
@@ -96,10 +63,10 @@ PY
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline.zip
           unzip -q cmdline.zip -d cmdline
           mkdir -p cmdline-tools/latest
-          mv cmdline cmdline-tools/latest/cmdline
+          mv cmdline cmdline-tools/latest/cmdline || true
           export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/cmdline/bin:$PATH
           yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses || true
-          sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-${{ env.ANDROID_COMPILE_SDK }}" "build-tools;33.0.2" "ndk;23.1.7779620" || true
+          sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-${{ env.ANDROID_COMPILE_SDK }}" "build-tools;33.0.2" || true
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
 
@@ -107,10 +74,10 @@ PY
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: ${{ env.FLUTTER_CHANNEL }}
+          channel: stable
           cache: true
 
-      - name: Cache pub & gradle & flutter cache
+      - name: Cache pub, gradle and Flutter cache
         uses: actions/cache@v4
         with:
           path: |
@@ -128,23 +95,21 @@ PY
           flutter doctor -v || true
           flutter pub get --verbose
 
-      - name: Ensure gradlew executable (if project uses gradle wrapper)
+      - name: Ensure gradlew executable (if present)
         working-directory: ${{ env.PROJECT_ROOT }}
         run: |
           if [ -f "./android/gradlew" ]; then chmod +x ./android/gradlew; fi
 
-      - name: Enable Gradle build cache (local) for performance
+      - name: Enable Gradle local cache for performance
         working-directory: ${{ env.PROJECT_ROOT }}
         run: |
           mkdir -p ${{ env.GRADLE_USER_HOME }}
-          # إضاءة caching إن لم تكن مفعلة
           echo "org.gradle.caching=true" >> ${{ env.GRADLE_USER_HOME }}/gradle.properties || true
 
-      - name: Build APK (release, split per ABI) with logs and retries
+      - name: Build APK (release, split-per-abi) with logs & retries
         working-directory: ${{ env.PROJECT_ROOT }}
         env:
           ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
-          JAVA_HOME: ${{ env.JAVA_HOME }}
         run: |
           set -euo pipefail
           LOGDIR=$RUNNER_TEMP/build_logs_${{ github.event.client_payload.request_id }}
@@ -155,31 +120,29 @@ PY
           while [ $attempt -lt $MAX_ATTEMPTS ]; do
             attempt=$((attempt+1))
             echo "Build attempt #$attempt"
-            # محاولة مباشرة للإصدار release مع split-per-abi لتقليل حجم ووقت التجميع للأهداف المتعددة بالتوازي داخل gradle
             flutter build apk --release --split-per-abi --no-shrink -v > "$LOGDIR/build-$attempt.log" 2>&1 || true
-            if grep -q "Built build/app/outputs" "$LOGDIR/build-$attempt.log" || find build -name "*.apk" | grep -q .; then
+            if find build -name "*.apk" | grep -q .; then
               BUILD_OK=1
               break
             fi
-            echo "Attempt $attempt failed, collecting logs..."
+            echo "Attempt $attempt failed, logs at $LOGDIR/build-$attempt.log"
             sleep 6
           done
           if [ "$BUILD_OK" -ne 1 ]; then
-            echo "Build failed after $MAX_ATTEMPTS attempts, uploading logs and failing..."
+            echo "Build failed after $MAX_ATTEMPTS attempts. Archiving logs..."
             tar -czf $RUNNER_TEMP/build_logs_${{ github.event.client_payload.request_id }}.tgz -C "$LOGDIR" .
             echo "BUILD_TGZ=$RUNNER_TEMP/build_logs_${{ github.event.client_payload.request_id }}.tgz" >> $GITHUB_ENV
             exit 1
           fi
-          # اختر أول APK موجود
           FINAL_APK=$(find build -name "*.apk" | head -n 1 || true)
           if [ -z "$FINAL_APK" ]; then
-            echo "No APK produced (unexpected)."
+            echo "No APK produced (unexpected)"
             exit 1
           fi
           echo "FINAL_APK_PATH=$FINAL_APK" >> $GITHUB_ENV
           echo "Found APK: $FINAL_APK"
 
-      - name: Upload Release with APK
+      - name: Create GitHub Release with APK
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ github.event.client_payload.request_id }}

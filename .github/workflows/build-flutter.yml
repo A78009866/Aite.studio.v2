@@ -343,16 +343,46 @@ jobs:
             grep -A 2 "environment:" pubspec.yaml || cat pubspec.yaml | head -30
           fi
 
+      - name: 🔧 Fix Dependencies Versions
+        working-directory: project/${{ env.PROJECT_PATH }}
+        run: |
+          echo "Fixing dependencies versions..."
+          
+          if [ -f "pubspec.yaml" ]; then
+            # تحديث cupertino_icons إلى إصدار يدعم null safety
+            sed -i 's/cupertino_icons: \^0\.[0-9]*\.[0-9]*/cupertino_icons: ^1.0.5/g' pubspec.yaml
+            sed -i 's/cupertino_icons: ">=0\.[0-9]*\.[0-9]* <1\.0\.[0-9]*"/cupertino_icons: ^1.0.5/g' pubspec.yaml
+            
+            # إزالة أي قيود قديمة على cupertino_icons
+            sed -i 's/cupertino_icons:.*<1\.0\.[0-9]*/cupertino_icons: ^1.0.5/g' pubspec.yaml
+            
+            # تحديث shared_preferences إذا كان موجوداً
+            sed -i 's/shared_preferences: \^0\.[0-9]*\.[0-9]*/shared_preferences: ^2.2.0/g' pubspec.yaml
+            
+            # تحديث http إذا كان موجوداً
+            sed -i 's/http: \^0\.[0-9]*\.[0-9]*/http: ^1.1.0/g' pubspec.yaml
+            
+            # تحديث path_provider إذا كان موجوداً
+            sed -i 's/path_provider: \^1\.[0-9]*\.[0-9]*/path_provider: ^2.1.0/g' pubspec.yaml
+            sed -i 's/path_provider: \^0\.[0-9]*\.[0-9]*/path_provider: ^2.1.0/g' pubspec.yaml
+            
+            echo "✅ Updated dependencies:"
+            grep -A 30 "dependencies:" pubspec.yaml | head -35
+          fi
+
       - name: 📦 Get Dependencies
         working-directory: project/${{ env.PROJECT_PATH }}
         run: |
           echo "Getting Flutter dependencies..."
-          flutter pub get
           
-          if [ $? -ne 0 ]; then
-            echo "❌ Failed to get dependencies"
-            exit 1
-          fi
+          # محاولة الحصول على الـ dependencies
+          flutter pub get || {
+            echo "⚠️ Initial pub get failed, trying upgrade..."
+            flutter pub upgrade --major-versions || {
+              echo "⚠️ Upgrade failed, trying with --no-precompile..."
+              flutter pub get --no-precompile
+            }
+          }
 
       - name: 🔧 Build Native Dependencies (if needed)
         if: needs.analyze.outputs.has_native_code == 'true'

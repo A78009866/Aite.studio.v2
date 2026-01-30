@@ -1,4 +1,4 @@
-name: Aite Smart Logic Engine (stable)
+name: Aite Smart Logic Engine (stable, dynamic Flutter selection)
 
 on:
   repository_dispatch:
@@ -13,9 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GRADLE_USER_HOME: ${{ github.workspace }}/.gradle_cache
-      FLUTTER_VERSION: '3.10.6'
       ANDROID_COMPILE_SDK: '33'
-      BUILD_TGZ: ''    # قيمة افتراضية فارغة لتجنّب أخطاء التقييم
+      BUILD_TGZ: ''
 
     steps:
       - name: Checkout repo
@@ -23,20 +22,25 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Python (for potential parsing if needed)
+      - name: Install Python & PyYAML
         run: |
           python -m pip install --upgrade pip
           pip install pyyaml || true
 
-      - name: Download & extract uploaded ZIP
+      - name: Download & extract uploaded ZIP (robust)
         run: |
+          set -euo pipefail
           mkdir -p temp_zip
           echo "Downloading project zip: ${{ github.event.client_payload.zip_url }}"
-          curl -sL "${{ github.event.client_payload.zip_url }}" -o project.zip
+          curl -S --fail --location --retry 3 --retry-delay 3 "${{ github.event.client_payload.zip_url }}" -o project.zip
+          echo "Downloaded project.zip size: $(stat -c%s project.zip) bytes"
           unzip -q project.zip -d temp_zip
-          REAL_ROOT=$(find temp_zip -name "pubspec.yaml" -exec dirname {} + | head -n 1 || true)
+          REAL_ROOT=$(find temp_zip -maxdepth 6 -name "pubspec.yaml" -exec dirname {} + | head -n 1 || true)
+          echo "Detected project root: $REAL_ROOT"
           if [ -z "$REAL_ROOT" ]; then
             echo "ERROR_NO_PUBSPEC=true" >> $GITHUB_ENV
+            echo "Listing temp_zip top-level:"
+            ls -la temp_zip || true
           else
             echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
           fi
@@ -47,11 +51,60 @@ jobs:
           echo "No Flutter project (pubspec.yaml) found in uploaded zip."
           exit 1
 
-      - name: Setup Java 17
+      - name: Choose Flutter & Java version from pubspec.yaml
+        id: choose
+        run: |
+          set -euo pipefail
+          ROOT=${{ env.PROJECT_ROOT }}
+          FLUTTER_VER_DEFAULT="3.10.6"
+          JAVA_VER_DEFAULT="17"
+          # fallbacks
+          FLUTTER_VERSION="$FLUTTER_VER_DEFAULT"
+          JAVA_VERSION="$JAVA_VER_DEFAULT"
+          if [ -n "$ROOT" ] && [ -f "$ROOT/pubspec.yaml" ]; then
+            python - <<'PY' > /tmp/flutter_choice.env
+import yaml, os, re
+p = os.getenv('ROOT') or os.getenv('PROJECT_ROOT')
+if not p:
+    print("FLUTTER_VERSION=3.10.6")
+    print("JAVA_VERSION=17")
+else:
+    import sys
+    import io
+    try:
+        with open(os.path.join(p,'pubspec.yaml'),'r',encoding='utf-8') as f:
+            doc = yaml.safe_load(f) or {}
+        sdk = (doc.get('environment') or {}).get('sdk','')
+    except Exception as e:
+        sdk = ''
+    # Default choices:
+    flutter_v = "3.10.6"
+    java_v = "17"
+    if sdk:
+        if "3." in str(sdk) or ">=" in str(sdk) and "3" in str(sdk):
+            flutter_v = "3.10.6"
+            java_v = "17"
+        else:
+            # assume Dart 2.x legacy project -> use Flutter 3.7 (Dart 2.x)
+            flutter_v = "3.7.12"
+            java_v = "11"
+    print("FLUTTER_VERSION=" + flutter_v)
+    print("JAVA_VERSION=" + java_v)
+PY
+            # export values to GITHUB_ENV
+            cat /tmp/flutter_choice.env >> $GITHUB_ENV
+            cat /tmp/flutter_choice.env
+          else
+            echo "PROJECT_ROOT not set, using defaults"
+            echo "FLUTTER_VERSION=3.10.6" >> $GITHUB_ENV
+            echo "JAVA_VERSION=17" >> $GITHUB_ENV
+          fi
+
+      - name: Setup Java (chosen version)
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: ${{ env.JAVA_VERSION }}
 
       - name: Setup Android SDK commandline tools & platform-tools
         env:
@@ -71,7 +124,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
 
-      - name: Setup Flutter
+      - name: Setup Flutter (selected version)
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -94,7 +147,8 @@ jobs:
         run: |
           flutter --version
           flutter doctor -v || true
-          flutter pub get --verbose
+          # For legacy Dart2 projects we must ensure pub get uses compatible Flutter/Dart (we selected version above)
+          flutter pub get --verbose || (echo "flutter pub get failed; printing pubspec and pubspec.lock for debug"; ls -la || true; exit 1)
 
       - name: Ensure gradlew executable (if present)
         working-directory: ${{ env.PROJECT_ROOT }}
@@ -120,7 +174,7 @@ jobs:
           BUILD_OK=0
           while [ $attempt -lt $MAX_ATTEMPTS ]; do
             attempt=$((attempt+1))
-            echo "Build attempt #$attempt"
+            echo "Build attempt #$attempt (Flutter $FLUTTER_VERSION)"
             flutter build apk --release --split-per-abi --no-shrink -v > "$LOGDIR/build-$attempt.log" 2>&1 || true
             if find build -name "*.apk" | grep -q .; then
               BUILD_OK=1

@@ -29,7 +29,10 @@ on:
 env:
   PROJECT_DIR: ${{ github.workspace }}/flutter_project
   BUILD_ID: ${{ github.event.client_payload.request_id || github.run_id }}
+  # الاسم العربي للعرض (مثال: متجري)
   APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name }}
+  # الاسم الآمن للملف (مثال: my_store) - هذا هو التعديل الجديد 👇
+  SAFE_NAME: ${{ github.event.client_payload.safe_name || 'app-release' }}
   PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name }}
   ICON_URL: ${{ github.event.client_payload.icon_url || github.event.inputs.icon_url }}
   ZIP_URL: ${{ github.event.client_payload.zip_url || github.event.inputs.zip_url }}
@@ -182,15 +185,13 @@ jobs:
           APK_DIR="build/app/outputs/flutter-apk"
           DEFAULT_APK="$APK_DIR/app-$BUILD_MODE.apk"
           
-          # تنظيف الاسم للملف (إزالة الرموز الممنوعة فقط)
-          SAFE_FILENAME=$(echo "$APP_NAME" | sed 's/[\/\\\:*?"<>|]//g')
-          FINAL_APK="$APK_DIR/${SAFE_FILENAME}.apk"
+          # استخدام الاسم الآمن (SAFE_NAME) للملف بدلاً من اسم التطبيق العربي
+          FINAL_APK="$APK_DIR/${SAFE_NAME}.apk"
           
           echo "Renaming $DEFAULT_APK to $FINAL_APK"
           mv "$DEFAULT_APK" "$FINAL_APK"
           
-          # التعديل الهام: حفظ المسار الكامل (Absolute Path) للملف
-          # هذا يضمن أن خطوة الرفع تجد الملف بغض النظر عن المجلد الحالي
+          # حفظ المسار الكامل
           FULL_PATH="$(pwd)/$FINAL_APK"
           
           echo "APK_PATH=$FULL_PATH" >> $GITHUB_ENV

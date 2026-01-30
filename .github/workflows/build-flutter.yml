@@ -150,10 +150,8 @@ jobs:
         run: |
           echo "Setting up signing configuration..."
           
-          # Create signing directory
           mkdir -p signing
           
-          # Create the signing.gradle file that the project expects
           cat > signing/signing.gradle << 'EOF'
           android {
               signingConfigs {
@@ -174,7 +172,6 @@ jobs:
           }
           EOF
           
-          # Create debug keystore for signing
           if [ ! -f "debug.keystore" ]; then
             echo "Creating debug keystore..."
             keytool -genkey -v \
@@ -188,10 +185,8 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
           
-          # Ensure build.gradle applies this file
           if ! grep -q "apply from:.*signing/signing.gradle" build.gradle; then
             echo "Adding signing script reference to build.gradle..."
-            # Add apply statement at the beginning of the file
             sed -i '1s/^/apply from: "signing\/signing.gradle"\n\n/' build.gradle
           fi
 
@@ -203,29 +198,30 @@ jobs:
             CURRENT_PKG=$(grep -o 'package="[^"]*"' $MANIFEST | head -1 | cut -d'"' -f2)
             if [ "$CURRENT_PKG" != "$PACKAGE_NAME" ]; then
               echo "Updating package name in AndroidManifest: $CURRENT_PKG -> $PACKAGE_NAME"
-              sed -i "s/package=\"[^\"]*\"/package=\"$PACKAGE_NAME\"/" $MANIFEST
+              # Use | as delimiter instead of / to avoid issues with dots in package name
+              sed -i "s|package=\"[^\"]*\"|package=\"$PACKAGE_NAME\"|" $MANIFEST
             fi
           fi
           
           BUILD_GRADLE="android/app/build.gradle"
           if [ -f "$BUILD_GRADLE" ]; then
-            sed -i "s/applicationId \".*\"/applicationId \"$PACKAGE_NAME\"/" $BUILD_GRADLE
-            sed -i "s/applicationId '.*'/applicationId '$PACKAGE_NAME'/" $BUILD_GRADLE
-            sed -i 's/minSdkVersion .*/minSdkVersion 21/' $BUILD_GRADLE
-            sed -i 's/minSdk .*/minSdk 21/' $BUILD_GRADLE
-            sed -i "s/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/" $BUILD_GRADLE
+            # Use | as delimiter for applicationId
+            sed -i "s|applicationId \".*\"|applicationId \"$PACKAGE_NAME\"|" $BUILD_GRADLE
+            sed -i "s|applicationId '.*'|applicationId '$PACKAGE_NAME'|" $BUILD_GRADLE
+            sed -i 's|minSdkVersion .*|minSdkVersion 21|' $BUILD_GRADLE
+            sed -i 's|minSdk .*|minSdk 21|' $BUILD_GRADLE
+            sed -i "s|minSdkVersion flutter.minSdkVersion|minSdkVersion 21|" $BUILD_GRADLE
           fi
           
-          # Upgrade Kotlin version
           SETTINGS_GRADLE="android/settings.gradle"
           if [ -f "$SETTINGS_GRADLE" ]; then
-            sed -i 's/org.jetbrains.kotlin.android\"\] version \"[^\"]*\"/org.jetbrains.kotlin.android\"] version \"2.1.0\"/' $SETTINGS_GRADLE
-            sed -i "s/id \"org.jetbrains.kotlin.android\" version \".*\"/id \"org.jetbrains.kotlin.android\" version \"2.1.0\"/" $SETTINGS_GRADLE
+            sed -i 's|org.jetbrains.kotlin.android"] version "[^"]*"|org.jetbrains.kotlin.android"] version "2.1.0"|' $SETTINGS_GRADLE
+            sed -i "s|id \"org.jetbrains.kotlin.android\" version \".*\"|id \"org.jetbrains.kotlin.android\" version \"2.1.0\"|" $SETTINGS_GRADLE
           fi
           
           TOP_BUILD_GRADLE="android/build.gradle"
           if [ -f "$TOP_BUILD_GRADLE" ]; then
-            sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "2.1.0\"' $TOP_BUILD_GRADLE
+            sed -i 's|ext.kotlin_version = .*|ext.kotlin_version = "2.1.0"|' $TOP_BUILD_GRADLE
           fi
           
           if grep -r "google-services" android/app/build.gradle > /dev/null 2>&1; then

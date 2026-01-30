@@ -258,6 +258,7 @@ jobs:
           echo "Fixing Android V1 Embedding..."
           
           PKG_NAME="${{ needs.analyze.outputs.package_name }}"
+          PKG_PATH=$(echo "$PKG_NAME" | tr '.' '/')
           
           # تحديث AndroidManifest.xml لاستخدام V2 Embedding
           if [ -f "android/app/src/main/AndroidManifest.xml" ]; then
@@ -270,19 +271,16 @@ jobs:
             fi
             
             echo "✅ Updated AndroidManifest.xml"
-            cat android/app/src/main/AndroidManifest.xml
           fi
           
           # إنشاء MainActivity.kt جديد للـ V2 Embedding
-          mkdir -p android/app/src/main/kotlin/$(echo $PKG_NAME | tr '.' '/')
+          mkdir -p "android/app/src/main/kotlin/$PKG_PATH"
           
-          cat > "android/app/src/main/kotlin/$(echo $PKG_NAME | tr '.' '/')/MainActivity.kt" << EOF
-package $PKG_NAME
-
-import io.flutter.embedding.android.FlutterActivity
-
-class MainActivity: FlutterActivity()
-EOF
+          echo "package $PKG_NAME" > "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
+          echo "" >> "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
+          echo "import io.flutter.embedding.android.FlutterActivity" >> "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
+          echo "" >> "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
+          echo "class MainActivity: FlutterActivity()" >> "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
           
           echo "✅ Created MainActivity.kt for V2 Embedding"
           

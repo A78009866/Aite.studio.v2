@@ -286,20 +286,54 @@ jobs:
           
           # حذف MainActivity.java القديم إذا موجود
           find android -name "MainActivity.java" -delete 2>/dev/null || true
+
+      - name: 🔧 Fix Signing Configuration
+        working-directory: project/${{ env.PROJECT_PATH }}
+        run: |
+          echo "Fixing signing configuration..."
           
-          # تحديث app/build.gradle
           if [ -f "android/app/build.gradle" ]; then
-            # إضافة compileOptions إذا لم تكن موجودة
-            if ! grep -q "compileOptions" android/app/build.gradle; then
-              sed -i '/android {/a\    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_1_8\n        targetCompatibility JavaVersion.VERSION_1_8\n    }' android/app/build.gradle
+            # إنشاء مجلد signing إذا لم يكن موجوداً
+            mkdir -p android/app/signing
+            
+            # إنشاء signing.gradle فارغ أو بمحتوى بسيط
+            cat > android/app/signing/signing.gradle << 'SIGNINGEOF'
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('key.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    signingConfigs {
+        release {
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+            storeFile file('debug.keystore')
+            storePassword 'android'
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
+}
+SIGNINGEOF
+            
+            # إنشاء debug.keystore إذا لم يكن موجوداً
+            if [ ! -f "android/app/debug.keystore" ]; then
+              keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
             fi
             
-            # إضافة kotlinOptions إذا لم تكن موجودة
-            if ! grep -q "kotlinOptions" android/app/build.gradle; then
-              sed -i '/compileOptions/a\    kotlinOptions {\n        jvmTarget = "1.8"\n    }' android/app/build.gradle
-            fi
+            # إزالة أي apply from: signing.gradle قديم
+            sed -i "/apply from:.*signing/d" android/app/build.gradle
             
-            echo "✅ Updated app/build.gradle"
+            # إضافة apply from: في نهاية الملف
+            echo "" >> android/app/build.gradle
+            echo "apply from: 'signing/signing.gradle'" >> android/app/build.gradle
+            
+            echo "✅ Fixed signing configuration"
           fi
 
       - name: 🔧 Setup Project Configuration
@@ -316,6 +350,15 @@ jobs:
             
             # تحديث compileSdk
             sed -i "s/compileSdkVersion .*/compileSdkVersion 34/" android/app/build.gradle
+            
+            # إضافة compileOptions و kotlinOptions إذا لم تكونا موجودتين
+            if ! grep -q "compileOptions" android/app/build.gradle; then
+              sed -i '/android {/a\    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_1_8\n        targetCompatibility JavaVersion.VERSION_1_8\n    }' android/app/build.gradle
+            fi
+            
+            if ! grep -q "kotlinOptions" android/app/build.gradle; then
+              sed -i '/compileOptions/a\    kotlinOptions {\n        jvmTarget = "1.8"\n    }' android/app/build.gradle
+            fi
           fi
 
       - name: 🖼️ Setup App Icon
@@ -406,6 +449,24 @@ jobs:
             
             echo "✅ Updated dependencies:"
             grep -A 30 "dependencies:" pubspec.yaml | head -35
+          fi
+
+      - name: 🔧 Fix Flutter Lints
+        working-directory: project/${{ env.PROJECT_PATH }}
+        run: |
+          echo "Fixing flutter_lints version..."
+          
+          if [ -f "pubspec.yaml" ]; then
+            # خفض إصدار flutter_lints إلى 4.0.0 الذي يدعم Dart 3.5.0
+            sed -i 's/flutter_lints: \^6\.[0-9]*\.[0-9]*/flutter_lints: ^4.0.0/g' pubspec.yaml
+            sed -i 's/flutter_lints: \^5\.[0-9]*\.[0-9]*/flutter_lints: ^4.0.0/g' pubspec.yaml
+            sed -i 's/flutter_lints: \^3\.[0-9]*\.[0-9]*/flutter_lints: ^4.0.0/g' pubspec.yaml
+            
+            # إذا كان الإصدار يستخدم >=6.0.0 بدون ^، نغيره أيضاً
+            sed -i 's/flutter_lints: >=6\.[0-9]*\.[0-9]*/flutter_lints: ^4.0.0/g' pubspec.yaml
+            
+            echo "✅ Fixed flutter_lints:"
+            grep "flutter_lints" pubspec.yaml || echo "flutter_lints not found"
           fi
 
       - name: 📦 Get Dependencies

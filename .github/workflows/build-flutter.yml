@@ -216,11 +216,40 @@ jobs:
             sed -i 's|ext.kotlin_version = .*|ext.kotlin_version = "2.1.0"|' $TOP_BUILD_GRADLE
           fi
           
+          # FIX: Generate google-services.json specific to the PACKAGE_NAME to avoid "No matching client" error
           if grep -r "google-services" android/app/build.gradle > /dev/null 2>&1; then
-            if [ ! -f "android/app/google-services.json" ]; then
-              echo "Missing google-services.json, creating dummy..."
-              echo '{"project_info":{"project_id":"dummy","project_number":"123"},"client":[]}' > android/app/google-services.json
-            fi
+             echo "Google Services plugin detected. Generating matching configuration for $PACKAGE_NAME..."
+             cat > android/app/google-services.json << EOF
+          {
+            "project_info": {
+              "project_number": "123456789012",
+              "project_id": "dummy-project",
+              "storage_bucket": "dummy-project.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789012:android:dummy",
+                  "android_client_info": {
+                    "package_name": "$PACKAGE_NAME"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "AIzaSyDummyKeyForBuild"
+                  }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": []
+                  }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
           fi
 
       - name: Fix Firebase Configuration

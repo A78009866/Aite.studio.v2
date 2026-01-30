@@ -29,9 +29,9 @@ on:
 env:
   PROJECT_DIR: ${{ github.workspace }}/flutter_project
   BUILD_ID: ${{ github.event.client_payload.request_id || github.run_id }}
-  # الاسم العربي للعرض (مثال: متجري)
+  # الاسم الذي يظهر للمستخدم (عربي)
   APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name }}
-  # الاسم الآمن للملف (مثال: my_store) - هذا هو التعديل الجديد 👇
+  # اسم الملف الفيزيائي (إنجليزي وآمن)
   SAFE_NAME: ${{ github.event.client_payload.safe_name || 'app-release' }}
   PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name }}
   ICON_URL: ${{ github.event.client_payload.icon_url || github.event.inputs.icon_url }}
@@ -89,9 +89,9 @@ jobs:
           if [ ! -f "android/local.properties" ]; then echo "sdk.dir=/usr/local/lib/android/sdk" > android/local.properties; fi
 
       # -------------------------------------------------------------------------
-      # Python Script to Safely Rename App & Package
+      # سكربت بايثون المحدث: يصلح الاسم + يربط الأيقونة بشكل إجباري
       # -------------------------------------------------------------------------
-      - name: Force Update App Name and Package
+      - name: Force Update App Name, Package AND Icon
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           cat <<EOF > update_project_info.py
@@ -102,7 +102,7 @@ jobs:
           app_name = os.environ.get('APP_NAME', 'MyApp')
           package_name = os.environ.get('PACKAGE_NAME', 'com.example.app')
           
-          # 1. Update strings.xml
+          # 1. Update strings.xml (اسم التطبيق)
           strings_path = 'android/app/src/main/res/values/strings.xml'
           os.makedirs(os.path.dirname(strings_path), exist_ok=True)
           xml_content = f'''<?xml version="1.0" encoding="utf-8"?>
@@ -112,21 +112,32 @@ jobs:
           with open(strings_path, 'w', encoding='utf-8') as f:
               f.write(xml_content)
 
-          # 2. Update AndroidManifest.xml
+          # 2. Update AndroidManifest.xml (الاسم، الحزمة، والأيقونة)
           manifest_path = 'android/app/src/main/AndroidManifest.xml'
           ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
           try:
               tree = ET.parse(manifest_path)
               root = tree.getroot()
+              
+              # تحديث اسم الحزمة
               if 'package' in root.attrib: root.attrib['package'] = package_name
+              
               application = root.find('application')
               if application is not None:
-                  key = '{http://schemas.android.com/apk/res/android}label'
-                  application.attrib[key] = '@string/app_name'
+                  android_ns = '{http://schemas.android.com/apk/res/android}'
+                  
+                  # تحديث اسم التطبيق
+                  application.attrib[f'{android_ns}label'] = '@string/app_name'
+                  
+                  # >>> إصلاح الأيقونة: إجبار المانيفست على استخدام أيقوناتنا المولدة <<<
+                  application.attrib[f'{android_ns}icon'] = '@mipmap/ic_launcher'
+                  application.attrib[f'{android_ns}roundIcon'] = '@mipmap/ic_launcher'
+                  
               tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
+              print("Manifest updated successfully with Icon and Name.")
           except Exception as e: print(f"Manifest Error: {e}")
 
-          # 3. Update build.gradle
+          # 3. Update build.gradle (معرف التطبيق)
           gradle_path = 'android/app/build.gradle'
           if os.path.exists(gradle_path):
               with open(gradle_path, 'r') as f: content = f.read()
@@ -166,6 +177,7 @@ jobs:
         run: |
           mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-xxxhdpi
           wget -q -O icon_original.png "$ICON_URL"
+          # توليد الأيقونات في المسار القياسي ic_launcher
           convert icon_original.png -resize 48x48 $PROJECT_DIR/android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           convert icon_original.png -resize 72x72 $PROJECT_DIR/android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           convert icon_original.png -resize 96x96 $PROJECT_DIR/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
@@ -176,24 +188,21 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: flutter pub get
 
-      - name: Build Universal APK (FIXED PATH)
+      - name: Build Universal APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           flutter build apk --$BUILD_MODE --target-platform=android-arm,android-arm64 --split-debug-info=symbols/
           
-          # المسار الأصلي داخل مجلد المشروع
           APK_DIR="build/app/outputs/flutter-apk"
           DEFAULT_APK="$APK_DIR/app-$BUILD_MODE.apk"
           
-          # استخدام الاسم الآمن (SAFE_NAME) للملف بدلاً من اسم التطبيق العربي
+          # استخدام الاسم الآمن للملف (Fix Invalid Package)
           FINAL_APK="$APK_DIR/${SAFE_NAME}.apk"
           
           echo "Renaming $DEFAULT_APK to $FINAL_APK"
           mv "$DEFAULT_APK" "$FINAL_APK"
           
-          # حفظ المسار الكامل
           FULL_PATH="$(pwd)/$FINAL_APK"
-          
           echo "APK_PATH=$FULL_PATH" >> $GITHUB_ENV
 
       - name: Upload to GitHub Release

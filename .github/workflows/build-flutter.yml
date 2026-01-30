@@ -252,6 +252,58 @@ jobs:
           echo "PROJECT_PATH=$PROJECT_DIR" >> $GITHUB_ENV
           echo "Found project at: $PROJECT_DIR"
 
+      - name: 🔧 Fix Android Embedding
+        working-directory: project/${{ env.PROJECT_PATH }}
+        run: |
+          echo "Fixing Android V1 Embedding..."
+          
+          PKG_NAME="${{ needs.analyze.outputs.package_name }}"
+          
+          # تحديث AndroidManifest.xml لاستخدام V2 Embedding
+          if [ -f "android/app/src/main/AndroidManifest.xml" ]; then
+            # إزالة android:name القديم واستبداله
+            sed -i 's/android:name="io.flutter.app.FlutterApplication"/android:name="${applicationName}"/' android/app/src/main/AndroidManifest.xml
+            
+            # إضافة meta-data للـ V2 Embedding إذا لم تكن موجودة
+            if ! grep -q "flutterEmbedding" android/app/src/main/AndroidManifest.xml; then
+              sed -i '/<\/activity>/a\        <meta-data\n            android:name="flutterEmbedding"\n            android:value="2" />' android/app/src/main/AndroidManifest.xml
+            fi
+            
+            echo "✅ Updated AndroidManifest.xml"
+            cat android/app/src/main/AndroidManifest.xml
+          fi
+          
+          # إنشاء MainActivity.kt جديد للـ V2 Embedding
+          mkdir -p android/app/src/main/kotlin/$(echo $PKG_NAME | tr '.' '/')
+          
+          cat > "android/app/src/main/kotlin/$(echo $PKG_NAME | tr '.' '/')/MainActivity.kt" << EOF
+package $PKG_NAME
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity: FlutterActivity()
+EOF
+          
+          echo "✅ Created MainActivity.kt for V2 Embedding"
+          
+          # حذف MainActivity.java القديم إذا موجود
+          find android -name "MainActivity.java" -delete 2>/dev/null || true
+          
+          # تحديث app/build.gradle
+          if [ -f "android/app/build.gradle" ]; then
+            # إضافة compileOptions إذا لم تكن موجودة
+            if ! grep -q "compileOptions" android/app/build.gradle; then
+              sed -i '/android {/a\    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_1_8\n        targetCompatibility JavaVersion.VERSION_1_8\n    }' android/app/build.gradle
+            fi
+            
+            # إضافة kotlinOptions إذا لم تكن موجودة
+            if ! grep -q "kotlinOptions" android/app/build.gradle; then
+              sed -i '/compileOptions/a\    kotlinOptions {\n        jvmTarget = "1.8"\n    }' android/app/build.gradle
+            fi
+            
+            echo "✅ Updated app/build.gradle"
+          fi
+
       - name: 🔧 Setup Project Configuration
         working-directory: project/${{ env.PROJECT_PATH }}
         run: |
@@ -263,21 +315,9 @@ jobs:
             # تحديث SDK versions إذا لزم الأمر
             sed -i "s/minSdkVersion .*/minSdkVersion ${{ needs.analyze.outputs.min_sdk }}/" android/app/build.gradle
             sed -i "s/targetSdkVersion .*/targetSdkVersion ${{ needs.analyze.outputs.target_sdk }}/" android/app/build.gradle
-          fi
-          
-          # تحديث AndroidManifest.xml
-          if [ -f "android/app/src/main/AndroidManifest.xml" ]; then
-            sed -i "s/package=\"[^\"]*\"/package=\"${{ needs.analyze.outputs.package_name }}\"/" android/app/src/main/AndroidManifest.xml
-          fi
-          
-          # تحديث MainActivity.kt/java
-          MAIN_KT=$(find android -name "MainActivity.kt" 2>/dev/null | head -1)
-          MAIN_JAVA=$(find android -name "MainActivity.java" 2>/dev/null | head -1)
-          
-          if [ -n "$MAIN_KT" ]; then
-            sed -i "s/package .*/package ${{ needs.analyze.outputs.package_name }}/" "$MAIN_KT"
-          elif [ -n "$MAIN_JAVA" ]; then
-            sed -i "s/package .*/package ${{ needs.analyze.outputs.package_name }};/" "$MAIN_JAVA"
+            
+            # تحديث compileSdk
+            sed -i "s/compileSdkVersion .*/compileSdkVersion 34/" android/app/build.gradle
           fi
 
       - name: 🖼️ Setup App Icon

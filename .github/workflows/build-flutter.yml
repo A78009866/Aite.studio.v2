@@ -192,7 +192,20 @@ jobs:
             cp icon.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png 2>/dev/null || true
             cp icon.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png 2>/dev/null || true
           fi
-
+      - name: Fix Dart SDK Version
+        working-directory: project/${{ env.PROJECT_PATH }}
+        run: |
+          # خفض إصدار Dart SDK فقط إذا كان أعلى من المتاح
+          CURRENT_SDK=$(grep "sdk:" pubspec.yaml | grep -o "'[^']*'" | tr -d "'" | head -1)
+          echo "Current SDK: $CURRENT_SDK"
+          
+          # استبدال أي إصدار >=3.9.0 بـ >=3.0.0
+          sed -i "s/sdk: '>=3\.[9-9]\.[0-9]* <4\.0\.0'/sdk: '>=3.0.0 <4.0.0'/" pubspec.yaml
+          sed -i "s/sdk: '>=3\.[5-8]\.[0-9]* <4\.0\.0'/sdk: '>=3.0.0 <4.0.0'/" pubspec.yaml
+          sed -i "s/sdk: '\^3\.[5-9]\.[0-9]*'/sdk: '>=3.0.0 <4.0.0'/" pubspec.yaml
+          
+          echo "Updated pubspec.yaml:"
+          grep -A 1 "environment:" pubspec.yaml || cat pubspec.yaml | head -20
       - name: Get Dependencies
         working-directory: project/${{ env.PROJECT_PATH }}
         run: |

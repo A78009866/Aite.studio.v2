@@ -461,7 +461,20 @@ jobs:
             echo "✅ Fixed flutter_lints:"
             grep "flutter_lints" pubspec.yaml || echo "flutter_lints not found"
           fi
-
+      - name: 🔧 Fix Path Dependency
+        working-directory: project/${{ env.PROJECT_PATH }}
+        run: |
+          echo "Fixing path dependency..."
+          
+          if [ -f "pubspec.yaml" ]; then
+            # خفض إصدار path إلى 1.9.0 للتوافق مع flutter_test
+            sed -i 's/path: \^1\.9\.[0-9]*/path: ^1.9.0/g' pubspec.yaml
+            sed -i 's/path: 1\.9\.[0-9]*/path: ^1.9.0/g' pubspec.yaml
+            sed -i 's/path: >=1\.9\.[0-9]*/path: ^1.9.0/g' pubspec.yaml
+            
+            echo "✅ Fixed path dependency:"
+            grep "path:" pubspec.yaml || echo "path not found in dependencies"
+          fi
       - name: 📦 Get Dependencies
         working-directory: project/${{ env.PROJECT_PATH }}
         run: |

@@ -12,8 +12,10 @@ jobs:
     name: Analyze & Build
     runs-on: ubuntu-latest
     env:
-      GRADLE_USER_HOME: ${{ runner.temp }}/.gradle_cache
-      FLUTTER_VERSION: '3.10.6'    # ثابت لتفادي مشكلات التقييم أثناء التنفيذ
+      # لا نستخدم runner.temp هنا لأن التعبير غير معترف به على مستوى job
+      # نستخدم مجلد داخل workspace كـ GRADLE cache افتراضي
+      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle_cache
+      FLUTTER_VERSION: '3.10.6'
       ANDROID_COMPILE_SDK: '33'
 
     steps:

@@ -10,23 +10,21 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// تكوين Cloudinary
+// Configure Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// استخدام الذاكرة لملفات صغيرة لتجنّب مشاكل /tmp
+// Use memory storage for small uploads to avoid /tmp issues
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB
 });
 
-// serve static files from public folder
+// Serve static files from public folder
 app.use(express.static(path.join(__dirname, 'public')));
-
-// route for root explicitly (safeguard)
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -76,7 +74,7 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
     const requestId = Date.now().toString();
     const safeAppName = sanitizeFilename(appName);
 
-    // Upload icon
+    // Upload icon buffer to Cloudinary
     const iconOptions = { folder: 'aite_studio/icons', public_id: `${sanitizeFilename(packageName)}_icon_${requestId}`, resource_type: 'image', overwrite: true };
     let iconUpload;
     try {
@@ -86,7 +84,7 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
       return res.status(500).json(makeErrorResponse('CLOUDINARY_ICON_FAIL', 'Failed to upload icon to Cloudinary', err.message || err));
     }
 
-    // Upload ZIP
+    // Upload ZIP buffer to Cloudinary (raw)
     const zipOptions = { folder: 'aite_studio/projects', public_id: `${sanitizeFilename(packageName)}_source_${requestId}`, resource_type: 'raw', overwrite: true };
     let zipUpload;
     try {
@@ -138,7 +136,7 @@ app.post('/build-flutter', upload.fields([{ name: 'icon', maxCount: 1 }, { name:
   }
 });
 
-// status endpoint
+// Check status endpoint
 app.get('/check-status/:buildId', async (req, res) => {
   try {
     const { buildId } = req.params;
@@ -159,7 +157,7 @@ app.get('/check-status/:buildId', async (req, res) => {
   }
 });
 
-// always start server (useful in production)
+// Start server (always listen)
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} - env=${process.env.NODE_ENV || 'undefined'}`);

@@ -1,4 +1,5 @@
-name: Smart Flutter Build
+# .github/workflows/smart-flutter-build.yml
+name: Smart Flutter Cloud Build
 
 on:
   repository_dispatch:
@@ -6,13 +7,10 @@ on:
   workflow_dispatch:
     inputs:
       app_name:
-        description: 'App Name (safe filename)'
-        required: true
-      display_name:
-        description: 'Display Name'
+        description: 'App Name'
         required: true
       package_name:
-        description: 'Package Name'
+        description: 'Package Name (com.example.app)'
         required: true
       icon_url:
         description: 'Icon URL'
@@ -20,273 +18,319 @@ on:
       zip_url:
         description: 'Project ZIP URL'
         required: true
-      request_id:
-        description: 'Request ID'
-        required: false
       flutter_version:
-        description: 'Flutter Version'
+        description: 'Flutter Version (auto/stable/beta/3.x.x)'
+        default: 'auto'
         required: false
-        default: '3.24.0'
       build_mode:
         description: 'Build Mode'
-        required: false
         default: 'release'
+        required: false
+      enable_obfuscation:
+        description: 'Enable Obfuscation'
+        default: 'true'
+        required: false
 
 env:
-  JAVA_VERSION: '17'
-  ANDROID_API_LEVEL: '34'
-  ANDROID_BUILD_TOOLS: '34.0.0'
+  PROJECT_DIR: ${{ github.workspace }}/flutter_project
+  BUILD_ID: ${{ github.event.client_payload.request_id || github.run_id }}
+  APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name }}
+  PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name }}
+  ICON_URL: ${{ github.event.client_payload.icon_url || github.event.inputs.icon_url }}
+  ZIP_URL: ${{ github.event.client_payload.zip_url || github.event.inputs.zip_url }}
+  FLUTTER_VERSION_INPUT: ${{ github.event.client_payload.flutter_version || github.event.inputs.flutter_version || 'auto' }}
+  BUILD_MODE: ${{ github.event.client_payload.build_mode || github.event.inputs.build_mode || 'release' }}
 
 jobs:
-  analyze:
-    name: Analyze Project
-    runs-on: ubuntu-latest
-    outputs:
-      flutter_version: ${{ steps.detect.outputs.flutter_version }}
-      app_name: ${{ steps.vars.outputs.app_name }}
-      package_name: ${{ steps.vars.outputs.package_name }}
-      request_id: ${{ steps.vars.outputs.request_id }}
-      icon_url: ${{ steps.vars.outputs.icon_url }}
-      project_path: ${{ steps.detect.outputs.project_path }}
-    
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Variables
-        id: vars
-        run: |
-          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
-            echo "app_name=${{ github.event.client_payload.app_name }}" >> $GITHUB_OUTPUT
-            echo "package_name=${{ github.event.client_payload.package_name }}" >> $GITHUB_OUTPUT
-            echo "request_id=${{ github.event.client_payload.request_id }}" >> $GITHUB_OUTPUT
-            echo "flutter_version=${{ github.event.client_payload.flutter_version || '3.24.0' }}" >> $GITHUB_OUTPUT
-            echo "zip_url=${{ github.event.client_payload.zip_url }}" >> $GITHUB_OUTPUT
-            echo "icon_url=${{ github.event.client_payload.icon_url }}" >> $GITHUB_OUTPUT
-          else
-            echo "app_name=${{ github.event.inputs.app_name }}" >> $GITHUB_OUTPUT
-            echo "package_name=${{ github.event.inputs.package_name }}" >> $GITHUB_OUTPUT
-            echo "request_id=${{ github.event.inputs.request_id || github.run_id }}" >> $GITHUB_OUTPUT
-            echo "flutter_version=${{ github.event.inputs.flutter_version || '3.24.0' }}" >> $GITHUB_OUTPUT
-            echo "zip_url=${{ github.event.inputs.zip_url }}" >> $GITHUB_OUTPUT
-            echo "icon_url=${{ github.event.inputs.icon_url }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Download and Extract Project
-        run: |
-          mkdir -p project
-          cd project
-          curl -L -o project.zip "${{ steps.vars.outputs.zip_url }}"
-          unzip -q project.zip
-          rm project.zip
-          
-          # Find pubspec.yaml and get project directory
-          PUBSPEC=$(find . -name "pubspec.yaml" -not -path "*/.*" | head -1)
-          PROJECT_DIR=$(dirname "$PUBSPEC")
-          PROJECT_DIR=$(realpath "$PROJECT_DIR" | sed 's|/home/runner/work/[^/]*/[^/]*/||')
-          
-          echo "PROJECT_PATH=$PROJECT_DIR" >> $GITHUB_ENV
-          echo "project_path=$PROJECT_DIR" >> $GITHUB_OUTPUT
-          
-          # Detect Flutter version from pubspec.yaml
-          cd "$PROJECT_DIR"
-          CURRENT_SDK=$(grep "sdk:" pubspec.yaml | grep -o '[0-9]*\.[0-9]*\.[0-9]*' | head -1 || echo "3.24.0")
-          
-          FLUTTER_VERSION="${{ steps.vars.outputs.flutter_version }}"
-          if [ "$FLUTTER_VERSION" == "stable" ] || [ "$FLUTTER_VERSION" == "beta" ] || [ "$FLUTTER_VERSION" == "dev" ]; then
-            FLUTTER_VERSION="3.24.0"
-          fi
-          
-          echo "flutter_version=$FLUTTER_VERSION" >> $GITHUB_OUTPUT
-
-      - name: Upload Project Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: flutter-project-${{ steps.vars.outputs.request_id }}
-          path: project/
-          retention-days: 1
-
-  build:
-    name: Build APK
-    needs: analyze
+  analyze-and-build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ needs.analyze.outputs.flutter_version }}
-          cache: true
-
-      - name: Download Project
-        uses: actions/download-artifact@v4
-        with:
-          name: flutter-project-${{ needs.analyze.outputs.request_id }}
-          path: project
-
-      - name: Auto Fix Project
-        working-directory: project/${{ needs.analyze.outputs.project_path }}
+      - name: 🔧 Setup Environment
         run: |
-          PKG_NAME="${{ needs.analyze.outputs.package_name }}"
-          PKG_PATH=$(echo "$PKG_NAME" | tr '.' '/')
-          
-          # 1. Fix AndroidManifest.xml for V2 Embedding
-          if [ -f "android/app/src/main/AndroidManifest.xml" ]; then
-            sed -i 's/android:name="io.flutter.app.FlutterApplication"/android:name="${applicationName}"/' android/app/src/main/AndroidManifest.xml 2>/dev/null || true
-            if ! grep -q "flutterEmbedding" android/app/src/main/AndroidManifest.xml 2>/dev/null; then
-              sed -i '/<\/activity>/a\        <meta-data android:name="flutterEmbedding" android:value="2" />' android/app/src/main/AndroidManifest.xml 2>/dev/null || true
-            fi
-          fi
-          
-          # 2. Create MainActivity.kt for V2 Embedding
-          mkdir -p "android/app/src/main/kotlin/$PKG_PATH"
-          if [ ! -f "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt" ]; then
-            echo "package $PKG_NAME" > "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
-            echo "" >> "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
-            echo "import io.flutter.embedding.android.FlutterActivity" >> "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
-            echo "" >> "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
-            echo "class MainActivity: FlutterActivity()" >> "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
-          fi
-          find android -name "MainActivity.java" -delete 2>/dev/null || true
-          
-          # 3. Update package name
-          sed -i "s/applicationId \".*\"/applicationId \"$PKG_NAME\"/" android/app/build.gradle 2>/dev/null || true
-          
-          # 4. Setup icons
-          mkdir -p android/app/src/main/res/mipmap-xxxhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-mdpi
-          curl -L -o icon.png "${{ needs.analyze.outputs.icon_url }}" 2>/dev/null && \
-          cp icon.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png 2>/dev/null || true && \
-          cp icon.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png 2>/dev/null || true && \
-          cp icon.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png 2>/dev/null || true && \
-          cp icon.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png 2>/dev/null || true && \
-          cp icon.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png 2>/dev/null || true
-          
-          # 5. Fix pubspec.yaml - Smart SDK version adjustment
-          rm -f pubspec.lock
-          
-          # Get current SDK constraint
-          CURRENT_SDK_LINE=$(grep -A 1 "^environment:" pubspec.yaml | grep "sdk:" || echo "")
-          echo "Current SDK: $CURRENT_SDK_LINE"
-          
-          # Extract version numbers
-          CURRENT_MIN=$(echo "$CURRENT_SDK_LINE" | grep -o '>=\?[0-9]*\.[0-9]*' | grep -o '[0-9]*\.[0-9]*' | head -1 || echo "2.12.0")
-          
-          # If current SDK requires Dart > 3.5.0, downgrade to compatible version
-          if [ -n "$CURRENT_MIN" ]; then
-            MAJOR=$(echo "$CURRENT_MIN" | cut -d. -f1)
-            MINOR=$(echo "$CURRENT_MIN" | cut -d. -f2)
-            
-            # If requires Dart 3.9+, use 3.0.0 instead (compatible with Flutter 3.24)
-            if [ "$MAJOR" -ge 3 ] && [ "$MINOR" -ge 9 ]; then
-              echo "Downgrading SDK requirement from $CURRENT_MIN to 3.0.0"
-              sed -i "s/sdk: .*/sdk: '>=3.0.0 <4.0.0'/" pubspec.yaml
-            elif [ "$MAJOR" -lt 2 ] || ([ "$MAJOR" -eq 2 ] && [ "$MINOR" -lt 17 ]); then
-              # If too old, upgrade to 2.17 for super-parameters support
-              echo "Upgrading SDK requirement from $CURRENT_MIN to 2.17.0"
-              sed -i "s/sdk: .*/sdk: '>=2.17.0 <4.0.0'/" pubspec.yaml
-            fi
-          fi
-          
-          # Ensure environment section exists
-          if ! grep -q "^environment:" pubspec.yaml; then
-            echo "" >> pubspec.yaml
-            echo "environment:" >> pubspec.yaml
-            echo "  sdk: '>=2.17.0 <4.0.0'" >> pubspec.yaml
-          fi
-          
-          echo "Final pubspec.yaml:"
-          cat pubspec.yaml
+          echo "BUILD_ID=$BUILD_ID" >> $GITHUB_ENV
+          echo "Starting build for: $APP_NAME ($PACKAGE_NAME)"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq wget unzip imagemagick xmlstarlet jq
 
-      - name: Build APK
-        working-directory: project/${{ needs.analyze.outputs.project_path }}
+      - name: 📥 Download & Extract Project
         run: |
-          export FLUTTER_SUPPRESS_ANALYTICS=true
+          echo "Downloading project from: $ZIP_URL"
+          wget -q --show-progress -O project.zip "$ZIP_URL"
           
-          # Try multiple build strategies
-          BUILD_SUCCESS=false
-          
-          # Strategy 1: Normal build
-          echo "Trying normal build..."
-          flutter pub get 2>&1 && \
-          flutter build apk --release \
-            --target-platform=android-arm64,android-arm,android-x64 \
-            --build-name=1.0.0 \
-            --build-number=${{ github.run_number }} 2>&1 && BUILD_SUCCESS=true
-          
-          # Strategy 2: If failed, try with dependency override
-          if [ "$BUILD_SUCCESS" != "true" ]; then
-            echo "Trying with dependency override..."
-            rm -f pubspec.lock
-            flutter pub get --no-example 2>&1 && \
-            flutter build apk --release \
-              --target-platform=android-arm64,android-arm,android-x64 \
-              --build-name=1.0.0 \
-              --build-number=${{ github.run_number }} 2>&1 && BUILD_SUCCESS=true
-          fi
-          
-          # Strategy 3: If still failed, try without tree shake
-          if [ "$BUILD_SUCCESS" != "true" ]; then
-            echo "Trying without tree shake..."
-            flutter build apk --release \
-              --target-platform=android-arm64,android-arm,android-x64 \
-              --build-name=1.0.0 \
-              --build-number=${{ github.run_number }} \
-              --no-tree-shake-icons 2>&1 && BUILD_SUCCESS=true
-          fi
-          
-          # Strategy 4: Last resort - debug build
-          if [ "$BUILD_SUCCESS" != "true" ]; then
-            echo "Trying debug build as last resort..."
-            flutter build apk --debug \
-              --target-platform=android-arm64,android-arm,android-x64 2>&1 && BUILD_SUCCESS=true
-          fi
-          
-          if [ "$BUILD_SUCCESS" != "true" ]; then
-            echo "All build strategies failed"
+          # Verify download
+          if [ ! -f project.zip ]; then
+            echo "❌ Failed to download project"
             exit 1
           fi
           
-          echo "Build successful!"
+          mkdir -p $PROJECT_DIR
+          unzip -q project.zip -d temp_extract
+          
+          # Smart extraction: handle nested folders
+          if [ "$(ls -A temp_extract | wc -l)" == "1" ]; then
+            mv temp_extract/*/* $PROJECT_DIR/ 2>/dev/null || mv temp_extract/* $PROJECT_DIR/
+          else
+            mv temp_extract/* $PROJECT_DIR/
+          fi
+          
+          rm -rf temp_extract project.zip
+          echo "✅ Project extracted to: $PROJECT_DIR"
+          ls -la $PROJECT_DIR
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: 🔍 Detect Flutter Version (Smart Detection)
+        id: detect_flutter
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          DETECTED_VERSION="stable"
+          
+          # Method 1: Check .fvm/fvm_config.json (FVM)
+          if [ -f ".fvm/fvm_config.json" ]; then
+            DETECTED_VERSION=$(cat .fvm/fvm_config.json | jq -r '.flutterSdkVersion // "stable"')
+            echo "📌 Detected from FVM: $DETECTED_VERSION"
+          
+          # Method 2: Check pubspec.yaml for environment.sdk
+          elif [ -f "pubspec.yaml" ]; then
+            # Extract flutter constraint if exists
+            FLUTTER_CONSTRAINT=$(cat pubspec.yaml | grep -A 5 "environment:" | grep "flutter:" | head -1)
+            if [ ! -z "$FLUTTER_CONSTRAINT" ]; then
+              # Extract version from constraint like ">=3.0.0 <4.0.0"
+              VERSION=$(echo $FLUTTER_CONSTRAINT | grep -oP '\d+\.\d+\.\d+' | head -1)
+              if [ ! -z "$VERSION" ]; then
+                DETECTED_VERSION="$VERSION"
+                echo "📌 Detected from pubspec: $DETECTED_VERSION"
+              fi
+            fi
+            
+            # Check for very old projects (pre-2.0)
+            DART_SDK=$(cat pubspec.yaml | grep -A 3 "environment:" | grep "sdk:" | head -1)
+            if echo "$DART_SDK" | grep -q '"2\.'; then
+              if echo "$DART_SDK" | grep -q '"2\.[0-7]\.'; then
+                DETECTED_VERSION="2.10.5" # Pre-null safety
+                echo "📌 Legacy project detected (pre-2.8): $DETECTED_VERSION"
+              else
+                DETECTED_VERSION="2.10.5" # Null safety transition
+                echo "📌 Legacy project detected (2.8-2.10): $DETECTED_VERSION"
+              fi
+            fi
+          fi
+          
+          # Override if user specified specific version (not auto)
+          if [ "$FLUTTER_VERSION_INPUT" != "auto" ]; then
+            DETECTED_VERSION="$FLUTTER_VERSION_INPUT"
+            echo "📌 User override: $DETECTED_VERSION"
+          fi
+          
+          echo "FLUTTER_VERSION=$DETECTED_VERSION" >> $GITHUB_ENV
+          echo "version=$DETECTED_VERSION" >> $GITHUB_OUTPUT
+
+      - name: 🎯 Setup Flutter (Adaptive)
+        uses: subosito/flutter-action@v2
         with:
-          name: apk-${{ needs.analyze.outputs.request_id }}
-          path: project/${{ needs.analyze.outputs.project_path }}/build/app/outputs/flutter-apk/*.apk
-          retention-days: 7
-          if-no-files-found: ignore
+          flutter-version: ${{ steps.detect_flutter.outputs.version }}
+          channel: stable
+          cache: true
 
-  release:
-    name: Create Release
-    needs: [analyze, build]
-    runs-on: ubuntu-latest
-    if: success()
-    
-    steps:
-      - name: Download APK
-        uses: actions/download-artifact@v4
-        with:
-          name: apk-${{ needs.analyze.outputs.request_id }}
-          path: release
+      - name: 🩺 Pre-build Diagnostics & Fixes
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          echo "🔍 Running diagnostics..."
+          
+          # Fix 1: Ensure android/local.properties exists
+          mkdir -p android
+          if [ ! -f "android/local.properties" ]; then
+            echo "sdk.dir=/usr/local/lib/android/sdk" > android/local.properties
+          fi
+          
+          # Fix 2: Fix common gradle issues (missing wrapper)
+          if [ ! -d "android/gradle/wrapper" ]; then
+            echo "⚠️ Missing Gradle wrapper, creating..."
+            mkdir -p android/gradle/wrapper
+            cat > android/gradle/wrapper/gradle-wrapper.properties << 'EOF'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-7.5-all.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+            
+            # Create gradlew if missing
+            if [ ! -f "android/gradlew" ]; then
+              curl -sL https://raw.githubusercontent.com/flutter/flutter/stable/packages/flutter_tools/gradle/gradlew -o android/gradlew
+              chmod +x android/gradlew
+            fi
+          fi
+          
+          # Fix 3: Check and fix AndroidManifest.xml package name
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            CURRENT_PKG=$(grep -o 'package="[^"]*"' $MANIFEST | head -1 | cut -d'"' -f2)
+            if [ "$CURRENT_PKG" != "$PACKAGE_NAME" ]; then
+              echo "📝 Updating package name in AndroidManifest: $CURRENT_PKG -> $PACKAGE_NAME"
+              sed -i "s/package=\"[^\"]*\"/package=\"$PACKAGE_NAME\"/" $MANIFEST
+            fi
+          fi
+          
+          # Fix 4: Update applicationId in build.gradle
+          BUILD_GRADLE="android/app/build.gradle"
+          if [ -f "$BUILD_GRADLE" ]; then
+            # Check if kotlin or groovy
+            if grep -q "applicationId" $BUILD_GRADLE; then
+              sed -i "s/applicationId \".*\"/applicationId \"$PACKAGE_NAME\"/" $BUILD_GRADLE
+              sed -i "s/applicationId '.*'/applicationId '$PACKAGE_NAME'/" $BUILD_GRADLE
+            fi
+          fi
+          
+          # Fix 5: Ensure minSdkVersion compatibility
+          if [ -f "$BUILD_GRADLE" ]; then
+            # Set minSdk to 21 if lower (for modern Flutter)
+            sed -i 's/minSdkVersion .*/minSdkVersion 21/' $BUILD_GRADLE
+            sed -i 's/minSdk .*/minSdk 21/' $BUILD_GRADLE
+            sed -i "s/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/" $BUILD_GRADLE
+          fi
+          
+          # Fix 6: Create firebase config placeholder if missing (prevents build errors)
+          if grep -r "google-services" android/app/build.gradle > /dev/null 2>&1; then
+            if [ ! -f "android/app/google-services.json" ]; then
+              echo "⚠️ Missing google-services.json, creating dummy..."
+              echo '{"project_info":{"project_id":"dummy","project_number":"123"},"client":[]}' > android/app/google-services.json
+            fi
+          fi
 
-      - name: Create GitHub Release
+      - name: 🎨 Process Icon (Adaptive)
+        run: |
+          echo "🖼️ Processing app icon..."
+          mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-xxxhdpi
+          
+          # Download icon
+          wget -q -O icon_original.png "$ICON_URL"
+          
+          # Generate all required sizes using ImageMagick
+          convert icon_original.png -resize 48x48 $PROJECT_DIR/android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          convert icon_original.png -resize 72x72 $PROJECT_DIR/android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          convert icon_original.png -resize 96x96 $PROJECT_DIR/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          convert icon_original.png -resize 144x144 $PROJECT_DIR/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          convert icon_original.png -resize 192x192 $PROJECT_DIR/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          
+          # Generate adaptive icon foreground/background if supported
+          if [ -d "$PROJECT_DIR/android/app/src/main/res/mipmap-anydpi-v26" ]; then
+            convert icon_original.png -resize 108x108 $PROJECT_DIR/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_foreground.png
+          fi
+          
+          # Update AndroidManifest to use correct icon name if needed
+          # (Standard is ic_launcher which we just created)
+          rm icon_original.png
+          echo "✅ Icons generated successfully"
+
+      - name: 📦 Get Dependencies (with retry logic)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          # Try to get dependencies with auto-fix
+          flutter pub get || {
+            echo "⚠️ First attempt failed, trying fixes..."
+            
+            # Fix: Upgrade dependencies if conflict
+            flutter pub upgrade --major-versions || true
+            
+            # Fix: Clear pub cache if corrupted
+            flutter pub cache repair || true
+            
+            # Retry
+            flutter pub get
+          }
+
+      - name: 🧹 Code Generation (if needed)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          # Check for build_runner dependency
+          if grep -q "build_runner:" pubspec.yaml; then
+            echo "🔧 Running build_runner..."
+            flutter pub run build_runner build --delete-conflicting-outputs || true
+          fi
+          
+          # Check for freezed/json_serializable
+          if grep -q "json_serializable:" pubspec.yaml || grep -q "freezed:" pubspec.yaml; then
+            flutter pub run build_runner build --delete-conflicting-outputs || true
+          fi
+
+      - name: 🔨 Build APK (Intelligent Strategy)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          BUILD_ARGS="--$BUILD_MODE"
+          
+          # Add obfuscation for release builds if requested
+          if [ "$BUILD_MODE" == "release" ] && [ "${{ github.event.client_payload.enable_obfuscation || github.event.inputs.enable_obfuscation }}" != "false" ]; then
+            BUILD_ARGS="$BUILD_ARGS --obfuscate --split-debug-info=symbols/"
+            mkdir -p symbols
+          fi
+          
+          # Check if project supports --split-per-abi (reduces APK size)
+          flutter build apk $BUILD_ARGS --split-per-abi || {
+            echo "⚠️ Split per ABI failed, trying unified APK..."
+            flutter build apk $BUILD_ARGS
+          }
+          
+          # Find the generated APK
+          APK_PATH=$(find build/app/outputs/flutter-apk -name "*.apk" -type f | head -1)
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ APK not found!"
+            exit 1
+          fi
+          
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "✅ Build successful: $APK_PATH"
+          ls -lh $APK_PATH
+
+      - name: 🔐 Sign APK (if keystore provided)
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          echo "🔑 Signing APK..."
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/keystore.jks
+          
+          # Sign the APK
+          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+            -keystore android/app/keystore.jks \
+            -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
+            $APK_PATH ${{ secrets.KEY_ALIAS }}
+          
+          # Verify signature
+          jarsigner -verify $APK_PATH
+          echo "✅ APK signed successfully"
+
+      - name: 📤 Upload to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: build-${{ needs.analyze.outputs.request_id }}
-          name: "${{ needs.analyze.outputs.app_name }} - Build ${{ github.run_number }}"
-          files: release/*.apk
+          tag_name: build-${{ env.BUILD_ID }}
+          name: "${{ env.APP_NAME }} - Build ${{ env.BUILD_ID }}"
+          body: |
+            🚀 Automated Flutter Build
+            📱 App: ${{ env.APP_NAME }}
+            📦 Package: ${{ env.PACKAGE }}
+            🔧 Flutter Version: ${{ steps.detect_flutter.outputs.version }}
+            🕒 Built at: ${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
+          files: |
+            ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/*.apk
+            ${{ env.PROJECT_DIR }}/symbols/*  # Debug symbols if obfuscated
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🧹 Cleanup
+        if: always()
+        run: |
+          rm -rf $PROJECT_DIR
+          echo "🧹 Cleanup completed"
+
+      - name: 📊 Build Report
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "📊 BUILD REPORT"
+          echo "=========================================="
+          echo "Build ID: $BUILD_ID"
+          echo "App Name: $APP_NAME"
+          echo "Package: $PACKAGE_NAME"
+          echo "Flutter Version: ${{ steps.detect_flutter.outputs.version }}"
+          echo "Status: ${{ job.status }}"
+          echo "=========================================="

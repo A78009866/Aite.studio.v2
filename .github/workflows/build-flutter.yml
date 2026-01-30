@@ -45,6 +45,7 @@ jobs:
       - name: Setup Environment
         run: |
           echo "BUILD_ID=$BUILD_ID" >> $GITHUB_ENV
+          echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
           echo "Starting build for: $APP_NAME ($PACKAGE_NAME)"
           sudo apt-get update -qq
           sudo apt-get install -y -qq wget unzip imagemagick xmlstarlet jq
@@ -145,6 +146,51 @@ jobs:
             fi
           fi
 
+      - name: Update App Name and Package
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          echo "Updating App Name to: $APP_NAME"
+          echo "Updating Package to: $PACKAGE_NAME"
+          
+          # Create or update strings.xml with app_name
+          mkdir -p android/app/src/main/res/values
+          cat > android/app/src/main/res/values/strings.xml << EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">${APP_NAME}</string>
+          </resources>
+          EOF
+          
+          # Update AndroidManifest.xml to use @string/app_name
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            # Replace any existing label with @string/app_name
+            sed -i 's|android:label="[^"]*"|android:label="@string/app_name"|g' $MANIFEST
+            # Also update package name
+            sed -i "s|package=\"[^\"]*\"|package=\"$PACKAGE_NAME\"|g" $MANIFEST
+          fi
+          
+          # Update build.gradle applicationId
+          BUILD_GRADLE="android/app/build.gradle"
+          if [ -f "$BUILD_GRADLE" ]; then
+            sed -i "s|applicationId \".*\"|applicationId \"$PACKAGE_NAME\"|" $BUILD_GRADLE
+            sed -i "s|applicationId '.*'|applicationId '$PACKAGE_NAME'|" $BUILD_GRADLE
+            sed -i 's|minSdkVersion .*|minSdkVersion 21|' $BUILD_GRADLE
+            sed -i 's|minSdk .*|minSdk 21|' $BUILD_GRADLE
+            sed -i "s|minSdkVersion flutter.minSdkVersion|minSdkVersion 21|" $BUILD_GRADLE
+          fi
+          
+          SETTINGS_GRADLE="android/settings.gradle"
+          if [ -f "$SETTINGS_GRADLE" ]; then
+            sed -i 's|org.jetbrains.kotlin.android"] version "[^"]*"|org.jetbrains.kotlin.android"] version "2.1.0"|' $SETTINGS_GRADLE
+            sed -i "s|id \"org.jetbrains.kotlin.android\" version \".*\"|id \"org.jetbrains.kotlin.android\" version \"2.1.0\"|" $SETTINGS_GRADLE
+          fi
+          
+          TOP_BUILD_GRADLE="android/build.gradle"
+          if [ -f "$TOP_BUILD_GRADLE" ]; then
+            sed -i 's|ext.kotlin_version = .*|ext.kotlin_version = "2.1.0"|' $TOP_BUILD_GRADLE
+          fi
+
       - name: Setup Signing
         working-directory: ${{ env.PROJECT_DIR }}/android/app
         run: |
@@ -184,40 +230,43 @@ jobs:
           }
           EOF
 
-      - name: Update Package Name and Kotlin
+      - name: Fix Firebase Configuration
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ]; then
-            CURRENT_PKG=$(grep -o 'package="[^"]*"' $MANIFEST | head -1 | cut -d'"' -f2)
-            if [ "$CURRENT_PKG" != "$PACKAGE_NAME" ]; then
-              echo "Updating package name in AndroidManifest: $CURRENT_PKG -> $PACKAGE_NAME"
-              sed -i "s|package=\"[^\"]*\"|package=\"$PACKAGE_NAME\"|" $MANIFEST
+          # Check if main.dart imports firebase_options.dart
+          if grep -q "firebase_options.dart" lib/main.dart 2>/dev/null; then
+            if [ ! -f "lib/firebase_options.dart" ]; then
+              echo "Creating dummy firebase_options.dart..."
+              mkdir -p lib
+              cat > lib/firebase_options.dart << 'EOF'
+          // Dummy Firebase configuration for build purposes
+          import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+          
+          class DefaultFirebaseOptions {
+            static FirebaseOptions get currentPlatform {
+              return const FirebaseOptions(
+                apiKey: 'AIzaSyDummy-Key-For-Build',
+                appId: '1:123456789:android:dummy',
+                messagingSenderId: '123456789',
+                projectId: 'dummy-project',
+                storageBucket: 'dummy-project.appspot.com',
+              );
+            }
+          }
+          EOF
             fi
           fi
           
-          BUILD_GRADLE="android/app/build.gradle"
-          if [ -f "$BUILD_GRADLE" ]; then
-            sed -i "s|applicationId \".*\"|applicationId \"$PACKAGE_NAME\"|" $BUILD_GRADLE
-            sed -i "s|applicationId '.*'|applicationId '$PACKAGE_NAME'|" $BUILD_GRADLE
-            sed -i 's|minSdkVersion .*|minSdkVersion 21|' $BUILD_GRADLE
-            sed -i 's|minSdk .*|minSdk 21|' $BUILD_GRADLE
-            sed -i "s|minSdkVersion flutter.minSdkVersion|minSdkVersion 21|" $BUILD_GRADLE
-          fi
-          
-          SETTINGS_GRADLE="android/settings.gradle"
-          if [ -f "$SETTINGS_GRADLE" ]; then
-            sed -i 's|org.jetbrains.kotlin.android"] version "[^"]*"|org.jetbrains.kotlin.android"] version "2.1.0"|' $SETTINGS_GRADLE
-            sed -i "s|id \"org.jetbrains.kotlin.android\" version \".*\"|id \"org.jetbrains.kotlin.android\" version \"2.1.0\"|" $SETTINGS_GRADLE
-          fi
-          
-          TOP_BUILD_GRADLE="android/build.gradle"
-          if [ -f "$TOP_BUILD_GRADLE" ]; then
-            sed -i 's|ext.kotlin_version = .*|ext.kotlin_version = "2.1.0"|' $TOP_BUILD_GRADLE
-          fi
-          
+          # Disable Crashlytics if google-services exists
           if grep -r "google-services" android/app/build.gradle > /dev/null 2>&1; then
-             echo "Google Services plugin detected. Generating matching configuration for $PACKAGE_NAME..."
+             echo "// Auto-injected: Disable Crashlytics upload for CI build" >> android/app/build.gradle
+             echo "tasks.whenTaskAdded { task ->" >> android/app/build.gradle
+             echo "    if (task.name.startsWith('uploadCrashlyticsMappingFile')) {" >> android/app/build.gradle
+             echo "        task.enabled = false" >> android/app/build.gradle
+             echo "    }" >> android/app/build.gradle
+             echo "}" >> android/app/build.gradle
+             
+             # Create dummy google-services.json
              cat > android/app/google-services.json << EOF
           {
             "project_info": {
@@ -249,49 +298,16 @@ jobs:
             "configuration_version": "1"
           }
           EOF
-          
-            # FIX: Disable Crashlytics Mapping Upload task specifically
-            # This prevents the 400 Bad Request error when using dummy google-services.json
-            echo "" >> android/app/build.gradle
-            echo "// Auto-injected: Disable Crashlytics upload for CI build" >> android/app/build.gradle
-            echo "tasks.whenTaskAdded { task ->" >> android/app/build.gradle
-            echo "    if (task.name.startsWith('uploadCrashlyticsMappingFile')) {" >> android/app/build.gradle
-            echo "        task.enabled = false" >> android/app/build.gradle
-            echo "    }" >> android/app/build.gradle
-            echo "}" >> android/app/build.gradle
-          fi
-
-      - name: Fix Firebase Configuration
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          # Check if main.dart imports firebase_options.dart
-          if grep -q "firebase_options.dart" lib/main.dart 2>/dev/null; then
-            if [ ! -f "lib/firebase_options.dart" ]; then
-              echo "Creating dummy firebase_options.dart..."
-              mkdir -p lib
-              cat > lib/firebase_options.dart << 'EOF'
-          // Dummy Firebase configuration for build purposes
-          import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
-          
-          class DefaultFirebaseOptions {
-            static FirebaseOptions get currentPlatform {
-              return const FirebaseOptions(
-                apiKey: 'AIzaSyDummy-Key-For-Build',
-                appId: '1:123456789:android:dummy',
-                messagingSenderId: '123456789',
-                projectId: 'dummy-project',
-                storageBucket: 'dummy-project.appspot.com',
-              );
-            }
-          }
-          EOF
-            fi
           fi
 
       - name: Process Icon
         run: |
           echo "Processing app icon..."
           mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-xxxhdpi
+          mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-mdpi
+          mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-hdpi
+          mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-xhdpi
+          mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-xxhdpi
           
           wget -q -O icon_original.png "$ICON_URL"
           
@@ -330,18 +346,26 @@ jobs:
             flutter pub run build_runner build --delete-conflicting-outputs || true
           fi
 
-      - name: Build Optimized APK
+      - name: Build Universal APK (Compatible with all devices)
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          echo "Building optimized small-size APKs..."
+          echo "Building Universal APK (arm64-v8a + armeabi-v7a)..."
           
-          flutter build apk --$BUILD_MODE --split-per-abi --obfuscate --split-debug-info=symbols/
+          # Build single APK containing both architectures (fat APK)
+          # This ensures compatibility with both old (32-bit) and new (64-bit) phones
+          flutter build apk --$BUILD_MODE \
+            --target-platform=android-arm,android-arm64 \
+            --obfuscate --split-debug-info=symbols/
           
           APK_DIR="build/app/outputs/flutter-apk"
-          echo "Listing generated APKs:"
-          ls -lh $APK_DIR/*.apk
+          echo "Build complete. Listing outputs:"
+          ls -lh $APK_DIR/
+          
+          # Rename to include app name for clarity
+          mv $APK_DIR/app-$BUILD_MODE.apk $APK_DIR/${APP_NAME}-${BUILD_MODE}.apk
           
           echo "APK_DIR=$APK_DIR" >> $GITHUB_ENV
+          echo "APK_FILE=${APP_NAME}-${BUILD_MODE}.apk" >> $GITHUB_ENV
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v1
@@ -349,26 +373,20 @@ jobs:
           tag_name: build-${{ env.BUILD_ID }}
           name: "${{ env.APP_NAME }} - Build ${{ env.BUILD_ID }}"
           body: |
-            Automated Flutter Build
-            App: ${{ env.APP_NAME }}
-            Package: ${{ env.PACKAGE_NAME }}
-            Flutter Version: ${{ steps.detect_flutter.outputs.version }}
-            Built at: ${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
+            🚀 **Aite.studio Automated Build**
             
-            APKs generated per ABI (smaller size):
-            - armeabi-v7a (32-bit ARM)
-            - arm64-v8a (64-bit ARM)
-            - x86_64 (Intel)
+            **App Name:** ${{ env.APP_NAME }}
+            **Package:** ${{ env.PACKAGE_NAME }}
+            **Build ID:** ${{ env.BUILD_ID }}
+            **Flutter Version:** ${{ steps.detect_flutter.outputs.version }}
+            **Compatibility:** Universal (ARM64 + ARMv7)
+            **Size:** Optimized with obfuscation
+            
+            This APK works on all Android devices (32-bit and 64-bit).
           files: |
-            ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/*.apk
+            ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/${{ env.APK_FILE }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Cleanup
-        if: always()
-        run: |
-          rm -rf $PROJECT_DIR
-          echo "Cleanup completed"
 
       - name: Build Report
         if: always()
@@ -381,4 +399,11 @@ jobs:
           echo "Package: $PACKAGE_NAME"
           echo "Flutter Version: ${{ steps.detect_flutter.outputs.version }}"
           echo "Status: ${{ job.status }}"
+          echo "Output: ${{ env.APK_FILE }}"
           echo "=========================================="
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf $PROJECT_DIR
+          echo "Cleanup completed"

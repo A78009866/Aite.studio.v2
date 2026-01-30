@@ -150,7 +150,6 @@ jobs:
         run: |
           echo "Setting up signing configuration..."
           
-          # Create debug keystore
           if [ ! -f "debug.keystore" ]; then
             echo "Creating debug keystore..."
             keytool -genkey -v \
@@ -164,10 +163,8 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
           
-          # Create signing directory and file (the project expects this file)
           mkdir -p signing
           
-          # IMPORTANT: This file is applied INSIDE the android block, so no 'android { }' wrapper
           cat > signing/signing.gradle << 'EOF'
           signingConfigs {
               release {
@@ -186,8 +183,6 @@ jobs:
               }
           }
           EOF
-          
-          echo "Signing config created at signing/signing.gradle"
 
       - name: Update Package Name and Kotlin
         working-directory: ${{ env.PROJECT_DIR }}
@@ -225,6 +220,33 @@ jobs:
             if [ ! -f "android/app/google-services.json" ]; then
               echo "Missing google-services.json, creating dummy..."
               echo '{"project_info":{"project_id":"dummy","project_number":"123"},"client":[]}' > android/app/google-services.json
+            fi
+          fi
+
+      - name: Fix Firebase Configuration
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          # Check if main.dart imports firebase_options.dart
+          if grep -q "firebase_options.dart" lib/main.dart 2>/dev/null; then
+            if [ ! -f "lib/firebase_options.dart" ]; then
+              echo "Creating dummy firebase_options.dart..."
+              mkdir -p lib
+              cat > lib/firebase_options.dart << 'EOF'
+          // Dummy Firebase configuration for build purposes
+          import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+          
+          class DefaultFirebaseOptions {
+            static FirebaseOptions get currentPlatform {
+              return const FirebaseOptions(
+                apiKey: 'AIzaSyDummy-Key-For-Build',
+                appId: '1:123456789:android:dummy',
+                messagingSenderId: '123456789',
+                projectId: 'dummy-project',
+                storageBucket: 'dummy-project.appspot.com',
+              );
+            }
+          }
+          EOF
             fi
           fi
 

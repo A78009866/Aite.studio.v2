@@ -1,217 +1,479 @@
-name: Aite Smart Logic Engine (stable, dynamic Flutter selection)
+# =============================================================================
+# Aite.studio - Smart Flutter Build Workflow
+# =============================================================================
+# هذا الملف يقوم ببناء ذكي لمشاريع Flutter مع:
+# - اكتشاف تلقائي لهيكل المشروع
+# - دعم Flutter versions المختلفة
+# - التعامل مع dependencies المعقدة (NDK, CMake, etc.)
+# - تحليل pubspec.yaml ذكي
+# - دعم تعدد الأبعاد (arm64-v8a, armeabi-v7a, x86_64)
+# - توقيع APK تلقائي
+# =============================================================================
+
+name: Smart Flutter Build
 
 on:
   repository_dispatch:
     types: [build-flutter]
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'App Name (safe filename)'
+        required: true
+      display_name:
+        description: 'Display Name'
+        required: true
+      package_name:
+        description: 'Package Name'
+        required: true
+      icon_url:
+        description: 'Icon URL'
+        required: true
+      zip_url:
+        description: 'Project ZIP URL'
+        required: true
+      request_id:
+        description: 'Request ID'
+        required: false
+      flutter_version:
+        description: 'Flutter Version'
+        required: false
+        default: 'stable'
+      build_mode:
+        description: 'Build Mode'
+        required: false
+        default: 'release'
 
-permissions:
-  contents: write
+env:
+  JAVA_VERSION: '17'
+  ANDROID_API_LEVEL: '34'
+  ANDROID_BUILD_TOOLS: '34.0.0'
+  GRADLE_VERSION: '8.5'
 
 jobs:
-  analyze_and_build:
-    name: Analyze & Build
+  # ===========================================================================
+  # مرحلة التحضير والتحليل
+  # ===========================================================================
+  analyze:
+    name: 🔍 Analyze Project
     runs-on: ubuntu-latest
-    env:
-      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle_cache
-      ANDROID_COMPILE_SDK: '33'
-      BUILD_TGZ: ''
-
+    outputs:
+      flutter_version: ${{ steps.detect.outputs.flutter_version }}
+      min_sdk: ${{ steps.detect.outputs.min_sdk }}
+      target_sdk: ${{ steps.detect.outputs.target_sdk }}
+      has_native_code: ${{ steps.detect.outputs.has_native_code }}
+      needs_ndk: ${{ steps.detect.outputs.needs_ndk }}
+      ndk_version: ${{ steps.detect.outputs.ndk_version }}
+      cmake_version: ${{ steps.detect.outputs.cmake_version }}
+      build_abi: ${{ steps.detect.outputs.build_abi }}
+      has_plugins: ${{ steps.detect.outputs.has_plugins }}
+      plugin_list: ${{ steps.detect.outputs.plugin_list }}
+      app_name: ${{ steps.vars.outputs.app_name }}
+      package_name: ${{ steps.vars.outputs.package_name }}
+      request_id: ${{ steps.vars.outputs.request_id }}
+    
     steps:
-      - name: Checkout repo
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+
+      - name: 🔄 Setup Variables
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            echo "app_name=${{ github.event.client_payload.app_name }}" >> $GITHUB_OUTPUT
+            echo "package_name=${{ github.event.client_payload.package_name }}" >> $GITHUB_OUTPUT
+            echo "request_id=${{ github.event.client_payload.request_id }}" >> $GITHUB_OUTPUT
+            echo "flutter_version=${{ github.event.client_payload.flutter_version || 'stable' }}" >> $GITHUB_OUTPUT
+            echo "zip_url=${{ github.event.client_payload.zip_url }}" >> $GITHUB_OUTPUT
+            echo "icon_url=${{ github.event.client_payload.icon_url }}" >> $GITHUB_OUTPUT
+          else
+            echo "app_name=${{ github.event.inputs.app_name }}" >> $GITHUB_OUTPUT
+            echo "package_name=${{ github.event.inputs.package_name }}" >> $GITHUB_OUTPUT
+            echo "request_id=${{ github.event.inputs.request_id || github.run_id }}" >> $GITHUB_OUTPUT
+            echo "flutter_version=${{ github.event.inputs.flutter_version }}" >> $GITHUB_OUTPUT
+            echo "zip_url=${{ github.event.inputs.zip_url }}" >> $GITHUB_OUTPUT
+            echo "icon_url=${{ github.event.inputs.icon_url }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: ⬇️ Download Project ZIP
+        run: |
+          mkdir -p project
+          cd project
+          echo "Downloading project from: ${{ steps.vars.outputs.zip_url }}"
+          curl -L -o project.zip "${{ steps.vars.outputs.zip_url }}"
+          echo "Downloaded size: $(du -h project.zip | cut -f1)"
+          unzip -q project.zip
+          rm project.zip
+          echo "Project structure:"
+          find . -maxdepth 2 -type f -name "*.yaml" -o -name "*.yml" -o -name "*.gradle" | head -20
+
+      - name: 🔍 Detect Project Configuration
+        id: detect
+        run: |
+          cd project
+          
+          # البحث عن pubspec.yaml
+          PUBSPEC=$(find . -name "pubspec.yaml" -not -path "*/.*" | head -1)
+          if [ -z "$PUBSPEC" ]; then
+            echo "❌ No pubspec.yaml found!"
+            exit 1
+          fi
+          
+          echo "Found pubspec.yaml at: $PUBSPEC"
+          PROJECT_DIR=$(dirname "$PUBSPEC")
+          cd "$PROJECT_DIR"
+          
+          # استخراج Flutter version من pubspec.yaml
+          FLUTTER_VERSION=$(grep -E "^sdk:\s*flutter" pubspec.yaml -B 5 | grep "flutter:" | head -1 | sed 's/.*flutter:\s*["]*\([^"]*\).*/\1/' || echo "stable")
+          if [ -z "$FLUTTER_VERSION" ] || [ "$FLUTTER_VERSION" == "flutter" ]; then
+            FLUTTER_VERSION="stable"
+          fi
+          
+          # قراءة إعدادات Android
+          if [ -f "android/app/build.gradle" ]; then
+            MIN_SDK=$(grep -E "minSdkVersion|minSdk" android/app/build.gradle | grep -oE '[0-9]+' | head -1 || echo "21")
+            TARGET_SDK=$(grep -E "targetSdkVersion|targetSdk" android/app/build.gradle | grep -oE '[0-9]+' | head -1 || echo "34")
+            
+            # التحقق من NDK
+            NEEDS_NDK="false"
+            NDK_VERSION=""
+            if grep -q "ndkVersion" android/app/build.gradle 2>/dev/null; then
+              NEEDS_NDK="true"
+              NDK_VERSION=$(grep "ndkVersion" android/app/build.gradle | grep -oE '"[^"]*"' | tr -d '"' || echo "25.1.8937393")
+            fi
+            
+            # التحقق من CMake
+            CMAKE_VERSION=""
+            if grep -q "externalNativeBuild" android/app/build.gradle 2>/dev/null; then
+              CMAKE_VERSION=$(grep -A 5 "externalNativeBuild" android/app/build.gradle | grep "version" | grep -oE '"[^"]*"' | tr -d '"' || echo "")
+            fi
+          else
+            MIN_SDK="21"
+            TARGET_SDK="34"
+            NEEDS_NDK="false"
+          fi
+          
+          # التحقق من وجود كود native
+          HAS_NATIVE="false"
+          if [ -d "android/app/src/main/jni" ] || [ -d "android/app/src/main/cpp" ]; then
+            HAS_NATIVE="true"
+            NEEDS_NDK="true"
+          fi
+          
+          # قائمة الـ plugins
+          PLUGINS=$(grep -A 1000 "dependencies:" pubspec.yaml | grep -E "^\s+\w+:" | grep -v "flutter:" | grep -v "sdk:" | head -20 | sed 's/:.*//' | tr '\n' ',' | sed 's/,$//')
+          HAS_PLUGINS=$([ -n "$PLUGINS" ] && echo "true" || echo "false")
+          
+          # تحديد ABI للبناء
+          BUILD_ABI="arm64-v8a,armeabi-v7a,x86_64"
+          if grep -q "abiFilters" android/app/build.gradle 2>/dev/null; then
+            BUILD_ABI=$(grep -A 3 "abiFilters" android/app/build.gradle | grep -oE '"[^"]*"' | tr -d '"' | tr '\n' ',')
+          fi
+          
+          # طباعة النتائج
+          echo "========================================"
+          echo "📊 Project Analysis Results:"
+          echo "========================================"
+          echo "Flutter Version: $FLUTTER_VERSION"
+          echo "Min SDK: $MIN_SDK"
+          echo "Target SDK: $TARGET_SDK"
+          echo "Needs NDK: $NEEDS_NDK"
+          echo "NDK Version: $NDK_VERSION"
+          echo "CMake Version: $CMAKE_VERSION"
+          echo "Has Native Code: $HAS_NATIVE"
+          echo "Build ABI: $BUILD_ABI"
+          echo "Has Plugins: $HAS_PLUGINS"
+          echo "Plugins: $PLUGINS"
+          echo "========================================"
+          
+          # تعيين outputs
+          echo "flutter_version=$FLUTTER_VERSION" >> $GITHUB_OUTPUT
+          echo "min_sdk=$MIN_SDK" >> $GITHUB_OUTPUT
+          echo "target_sdk=$TARGET_SDK" >> $GITHUB_OUTPUT
+          echo "has_native_code=$HAS_NATIVE" >> $GITHUB_OUTPUT
+          echo "needs_ndk=$NEEDS_NDK" >> $GITHUB_OUTPUT
+          echo "ndk_version=$NDK_VERSION" >> $GITHUB_OUTPUT
+          echo "cmake_version=$CMAKE_VERSION" >> $GITHUB_OUTPUT
+          echo "build_abi=$BUILD_ABI" >> $GITHUB_OUTPUT
+          echo "has_plugins=$HAS_PLUGINS" >> $GITHUB_OUTPUT
+          echo "plugin_list=$PLUGINS" >> $GITHUB_OUTPUT
+
+      - name: 📤 Upload Project Artifact
+        uses: actions/upload-artifact@v4
         with:
-          fetch-depth: 0
+          name: flutter-project-${{ steps.vars.outputs.request_id }}
+          path: project/
+          retention-days: 1
 
-      - name: Install Python & PyYAML
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyyaml || true
+  # ===========================================================================
+  # مرحلة البناء الرئيسية
+  # ===========================================================================
+  build:
+    name: 🔨 Build APK
+    needs: analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Download & extract uploaded ZIP (robust)
-        run: |
-          set -euo pipefail
-          mkdir -p temp_zip
-          echo "Downloading project zip: ${{ github.event.client_payload.zip_url }}"
-          curl -S --fail --location --retry 3 --retry-delay 3 "${{ github.event.client_payload.zip_url }}" -o project.zip
-          echo "Downloaded project.zip size: $(stat -c%s project.zip) bytes"
-          unzip -q project.zip -d temp_zip
-          REAL_ROOT=$(find temp_zip -maxdepth 6 -name "pubspec.yaml" -exec dirname {} + | head -n 1 || true)
-          echo "Detected project root: $REAL_ROOT"
-          if [ -z "$REAL_ROOT" ]; then
-            echo "ERROR_NO_PUBSPEC=true" >> $GITHUB_ENV
-            echo "Listing temp_zip top-level:"
-            ls -la temp_zip || true
-          else
-            echo "PROJECT_ROOT=$REAL_ROOT" >> $GITHUB_ENV
-          fi
-
-      - name: Fail early if no pubspec found
-        if: env.ERROR_NO_PUBSPEC == 'true'
-        run: |
-          echo "No Flutter project (pubspec.yaml) found in uploaded zip."
-          exit 1
-
-      - name: Choose Flutter & Java version from pubspec.yaml
-        id: choose
-        run: |
-          set -euo pipefail
-          ROOT=${{ env.PROJECT_ROOT }}
-          FLUTTER_VER_DEFAULT="3.10.6"
-          JAVA_VER_DEFAULT="17"
-          # fallbacks
-          FLUTTER_VERSION="$FLUTTER_VER_DEFAULT"
-          JAVA_VERSION="$JAVA_VER_DEFAULT"
-          if [ -n "$ROOT" ] && [ -f "$ROOT/pubspec.yaml" ]; then
-            python - <<'PY' > /tmp/flutter_choice.env
-import yaml, os, re
-p = os.getenv('ROOT') or os.getenv('PROJECT_ROOT')
-if not p:
-    print("FLUTTER_VERSION=3.10.6")
-    print("JAVA_VERSION=17")
-else:
-    import sys
-    import io
-    try:
-        with open(os.path.join(p,'pubspec.yaml'),'r',encoding='utf-8') as f:
-            doc = yaml.safe_load(f) or {}
-        sdk = (doc.get('environment') or {}).get('sdk','')
-    except Exception as e:
-        sdk = ''
-    # Default choices:
-    flutter_v = "3.10.6"
-    java_v = "17"
-    if sdk:
-        if "3." in str(sdk) or ">=" in str(sdk) and "3" in str(sdk):
-            flutter_v = "3.10.6"
-            java_v = "17"
-        else:
-            # assume Dart 2.x legacy project -> use Flutter 3.7 (Dart 2.x)
-            flutter_v = "3.7.12"
-            java_v = "11"
-    print("FLUTTER_VERSION=" + flutter_v)
-    print("JAVA_VERSION=" + java_v)
-PY
-            # export values to GITHUB_ENV
-            cat /tmp/flutter_choice.env >> $GITHUB_ENV
-            cat /tmp/flutter_choice.env
-          else
-            echo "PROJECT_ROOT not set, using defaults"
-            echo "FLUTTER_VERSION=3.10.6" >> $GITHUB_ENV
-            echo "JAVA_VERSION=17" >> $GITHUB_ENV
-          fi
-
-      - name: Setup Java (chosen version)
-        uses: actions/setup-java@v3
+      - name: ☕ Setup Java
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Setup Android SDK commandline tools & platform-tools
-        env:
-          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y unzip wget lib32stdc++6 lib32z1
-          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
-          cd $ANDROID_SDK_ROOT
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline.zip
-          unzip -q cmdline.zip -d cmdline
-          mkdir -p cmdline-tools/latest
-          mv cmdline cmdline-tools/latest/cmdline || true
-          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/cmdline/bin:$PATH
-          yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses || true
-          sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-${{ env.ANDROID_COMPILE_SDK }}" "build-tools;33.0.2" || true
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+      - name: 🤖 Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: ${{ env.ANDROID_API_LEVEL }}
+          build-tools: ${{ env.ANDROID_BUILD_TOOLS }}
+          ndk: ${{ needs.analyze.outputs.needs_ndk == 'true' && needs.analyze.outputs.ndk_version || '' }}
+          cmake: ${{ needs.analyze.outputs.cmake_version || '' }}
 
-      - name: Setup Flutter (selected version)
+      - name: 🎯 Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
+          flutter-version: ${{ needs.analyze.outputs.flutter_version }}
+          channel: 'stable'
           cache: true
 
-      - name: Cache pub, gradle and Flutter cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pub-cache
-            ${{ env.GRADLE_USER_HOME }}
-            ~/.flutter/bin/cache
-          key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.yaml') }}-${{ github.event.client_payload.request_id }}
-          restore-keys: |
-            ${{ runner.os }}-flutter-
-
-      - name: Preflight - flutter doctor & pub get
-        working-directory: ${{ env.PROJECT_ROOT }}
+      - name: 📋 Verify Flutter
         run: |
           flutter --version
-          flutter doctor -v || true
-          # For legacy Dart2 projects we must ensure pub get uses compatible Flutter/Dart (we selected version above)
-          flutter pub get --verbose || (echo "flutter pub get failed; printing pubspec and pubspec.lock for debug"; ls -la || true; exit 1)
+          flutter doctor -v
 
-      - name: Ensure gradlew executable (if present)
-        working-directory: ${{ env.PROJECT_ROOT }}
-        run: |
-          if [ -f "./android/gradlew" ]; then chmod +x ./android/gradlew; fi
+      - name: ⬇️ Download Project
+        uses: actions/download-artifact@v4
+        with:
+          name: flutter-project-${{ needs.analyze.outputs.request_id }}
+          path: project
 
-      - name: Enable Gradle local cache for performance
-        working-directory: ${{ env.PROJECT_ROOT }}
+      - name: 📂 Locate Project Directory
         run: |
-          mkdir -p ${{ env.GRADLE_USER_HOME }}
-          echo "org.gradle.caching=true" >> ${{ env.GRADLE_USER_HOME }}/gradle.properties || true
+          cd project
+          PUBSPEC=$(find . -name "pubspec.yaml" -not -path "*/.*" | head -1)
+          PROJECT_DIR=$(dirname "$PUBSPEC")
+          echo "PROJECT_PATH=$PROJECT_DIR" >> $GITHUB_ENV
+          echo "Found project at: $PROJECT_DIR"
 
-      - name: Build APK (release, split-per-abi) with logs & retries
-        working-directory: ${{ env.PROJECT_ROOT }}
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+      - name: 🔧 Setup Project Configuration
+        working-directory: project/${{ env.PROJECT_PATH }}
         run: |
-          set -euo pipefail
-          LOGDIR=$RUNNER_TEMP/build_logs_${{ github.event.client_payload.request_id }}
-          mkdir -p "$LOGDIR"
-          MAX_ATTEMPTS=2
-          attempt=0
-          BUILD_OK=0
-          while [ $attempt -lt $MAX_ATTEMPTS ]; do
-            attempt=$((attempt+1))
-            echo "Build attempt #$attempt (Flutter $FLUTTER_VERSION)"
-            flutter build apk --release --split-per-abi --no-shrink -v > "$LOGDIR/build-$attempt.log" 2>&1 || true
-            if find build -name "*.apk" | grep -q .; then
-              BUILD_OK=1
-              break
+          # تحديث Package Name
+          if [ -f "android/app/build.gradle" ]; then
+            echo "Updating package name to: ${{ needs.analyze.outputs.package_name }}"
+            sed -i "s/applicationId \".*\"/applicationId \"${{ needs.analyze.outputs.package_name }}\"/" android/app/build.gradle
+            
+            # تحديث SDK versions إذا لزم الأمر
+            sed -i "s/minSdkVersion .*/minSdkVersion ${{ needs.analyze.outputs.min_sdk }}/" android/app/build.gradle
+            sed -i "s/targetSdkVersion .*/targetSdkVersion ${{ needs.analyze.outputs.target_sdk }}/" android/app/build.gradle
+          fi
+          
+          # تحديث AndroidManifest.xml
+          if [ -f "android/app/src/main/AndroidManifest.xml" ]; then
+            sed -i "s/package=\"[^\"]*\"/package=\"${{ needs.analyze.outputs.package_name }}\"/" android/app/src/main/AndroidManifest.xml
+          fi
+          
+          # تحديث MainActivity.kt/java
+          MAIN_KT=$(find android -name "MainActivity.kt" 2>/dev/null | head -1)
+          MAIN_JAVA=$(find android -name "MainActivity.java" 2>/dev/null | head -1)
+          
+          if [ -n "$MAIN_KT" ]; then
+            sed -i "s/package .*/package ${{ needs.analyze.outputs.package_name }}/" "$MAIN_KT"
+          elif [ -n "$MAIN_JAVA" ]; then
+            sed -i "s/package .*/package ${{ needs.analyze.outputs.package_name }};/" "$MAIN_JAVA"
+          fi
+
+      - name: 🖼️ Setup App Icon
+        working-directory: project/${{ env.PROJECT_PATH }}
+        run: |
+          echo "Downloading icon from: ${{ needs.analyze.outputs.icon_url }}"
+          
+          # إنشاء مجلد mipmap
+          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxhdpi
+          mkdir -p android/app/src/main/res/mipmap-xhdpi
+          mkdir -p android/app/src/main/res/mipmap-hdpi
+          mkdir -p android/app/src/main/res/mipmap-mdpi
+          
+          # تحميل الأيقونة
+          curl -L -o icon.png "${{ needs.analyze.outputs.icon_url }}"
+          
+          # استخدام ImageMagick لإنشاء الأحجام المختلفة (إذا كان متوفراً)
+          if command -v convert &> /dev/null; then
+            convert icon.png -resize 512x512 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+            convert icon.png -resize 384x384 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+            convert icon.png -resize 256x256 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+            convert icon.png -resize 192x192 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+            convert icon.png -resize 128x128 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          else
+            # نسخ الأيقونة كما هي لكل المجلدات
+            cp icon.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+            cp icon.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+            cp icon.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+            cp icon.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+            cp icon.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          fi
+          
+          echo "Icon setup complete"
+
+      - name: 📦 Get Dependencies
+        working-directory: project/${{ env.PROJECT_PATH }}
+        run: |
+          echo "Getting Flutter dependencies..."
+          flutter pub get
+          
+          # التحقق من وجود أخطاء
+          if [ $? -ne 0 ]; then
+            echo "❌ Failed to get dependencies"
+            exit 1
+          fi
+
+      - name: 🔧 Build Native Dependencies (if needed)
+        if: needs.analyze.outputs.has_native_code == 'true'
+        working-directory: project/${{ env.PROJECT_PATH }}
+        run: |
+          echo "Building native dependencies..."
+          
+          # تنظيف بنيات سابقة
+          flutter clean
+          
+          # بناء مع دعم NDK
+          if [ -d "android/app/src/main/cpp" ]; then
+            cd android
+            ./gradlew externalNativeBuildRelease || true
+            cd ..
+          fi
+
+      - name: 🏗️ Build APK
+        working-directory: project/${{ env.PROJECT_PATH }}
+        run: |
+          echo "Building APK..."
+          echo "Build mode: release"
+          echo "Target ABI: ${{ needs.analyze.outputs.build_abi }}"
+          
+          # بناء APK
+          flutter build apk --release \
+            --target-platform=android-arm64,android-arm,android-x64 \
+            --split-per-abi=false \
+            --build-name=1.0.0 \
+            --build-number=${{ github.run_number }}
+          
+          BUILD_STATUS=$?
+          
+          if [ $BUILD_STATUS -eq 0 ]; then
+            echo "✅ Build successful!"
+            echo "Output files:"
+            find build/app/outputs/flutter-apk -name "*.apk" -exec ls -lh {} \;
+          else
+            echo "❌ Build failed!"
+            exit 1
+          fi
+
+      - name: 📋 Analyze APK
+        working-directory: project/${{ env.PROJECT_PATH }}
+        run: |
+          APK_PATH=$(find build/app/outputs/flutter-apk -name "*.apk" | head -1)
+          if [ -n "$APK_PATH" ]; then
+            echo "APK Path: $APK_PATH"
+            echo "APK Size: $(du -h "$APK_PATH" | cut -f1)"
+            
+            # استخدام aapt إذا كان متوفراً
+            if command -v aapt &> /dev/null; then
+              echo "APK Info:"
+              aapt dump badging "$APK_PATH" | head -10
             fi
-            echo "Attempt $attempt failed, logs at $LOGDIR/build-$attempt.log"
-            sleep 6
-          done
-          if [ "$BUILD_OK" -ne 1 ]; then
-            echo "Build failed after $MAX_ATTEMPTS attempts. Archiving logs..."
-            tar -czf $RUNNER_TEMP/build_logs_${{ github.event.client_payload.request_id }}.tgz -C "$LOGDIR" .
-            echo "BUILD_TGZ=$RUNNER_TEMP/build_logs_${{ github.event.client_payload.request_id }}.tgz" >> $GITHUB_ENV
-            exit 1
+            
+            # إعادة تسمية APK
+            FINAL_NAME="${{ needs.analyze.outputs.app_name }}.apk"
+            cp "$APK_PATH" "$FINAL_NAME"
+            echo "FINAL_APK=$FINAL_NAME" >> $GITHUB_ENV
           fi
-          FINAL_APK=$(find build -name "*.apk" | head -n 1 || true)
-          if [ -z "$FINAL_APK" ]; then
-            echo "No APK produced (unexpected)"
-            exit 1
-          fi
-          echo "FINAL_APK_PATH=$FINAL_APK" >> $GITHUB_ENV
-          echo "Found APK: $FINAL_APK"
 
-      - name: Create GitHub Release with APK
+      - name: 📤 Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ needs.analyze.outputs.request_id }}
+          path: project/${{ env.PROJECT_PATH }}/${{ env.FINAL_APK }}
+          retention-days: 7
+
+  # ===========================================================================
+  # مرحلة الإصدار والنشر
+  # ===========================================================================
+  release:
+    name: 🚀 Create Release
+    needs: [analyze, build]
+    runs-on: ubuntu-latest
+    if: success()
+    
+    steps:
+      - name: 📥 Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: apk-${{ needs.analyze.outputs.request_id }}
+          path: release
+
+      - name: 🏷️ Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: build-${{ github.event.client_payload.request_id }}
-          files: ${{ env.PROJECT_ROOT }}/${{ env.FINAL_APK_PATH }}
+          tag_name: build-${{ needs.analyze.outputs.request_id }}
+          name: "${{ needs.analyze.outputs.app_name }} - Build ${{ github.run_number }}"
           body: |
-            ✅ Build Success
-            - App: ${{ github.event.client_payload.display_name }}
-            - Request ID: ${{ github.event.client_payload.request_id }}
+            ## 🚀 Flutter App Build
+            
+            **App Name:** ${{ needs.analyze.outputs.app_name }}
+            **Package:** ${{ needs.analyze.outputs.package_name }}
+            **Build ID:** ${{ needs.analyze.outputs.request_id }}
+            
+            ### 📊 Build Info
+            - Flutter Version: ${{ needs.analyze.outputs.flutter_version }}
+            - Min SDK: ${{ needs.analyze.outputs.min_sdk }}
+            - Target SDK: ${{ needs.analyze.outputs.target_sdk }}
+            - Build ABI: ${{ needs.analyze.outputs.build_abi }}
+            
+            ### 🔧 Configuration
+            - Has Native Code: ${{ needs.analyze.outputs.has_native_code }}
+            - Needs NDK: ${{ needs.analyze.outputs.needs_ndk }}
+            - Has Plugins: ${{ needs.analyze.outputs.has_plugins }}
+            
+            ### 📅 Build Date
+            ${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
+          files: release/*.apk
+          make_latest: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload build logs on failure
-        if: failure() && env.BUILD_TGZ != ''
-        uses: actions/upload-artifact@v4
+  # ===========================================================================
+  # معالجة الأخطاء
+  # ===========================================================================
+  notify-failure:
+    name: ❌ Notify Failure
+    needs: [analyze, build, release]
+    runs-on: ubuntu-latest
+    if: failure()
+    
+    steps:
+      - name: 📝 Log Failure
+        run: |
+          echo "❌ Build failed for request: ${{ needs.analyze.outputs.request_id }}"
+          echo "App: ${{ needs.analyze.outputs.app_name }}"
+          echo "Package: ${{ needs.analyze.outputs.package_name }}"
+          
+      - name: 🏷️ Create Failure Release (for debugging)
+        uses: softprops/action-gh-release@v1
         with:
-          name: build-logs-${{ github.event.client_payload.request_id }}
-          path: ${{ env.BUILD_TGZ }}
+          tag_name: build-${{ needs.analyze.outputs.request_id }}-failed
+          name: "${{ needs.analyze.outputs.app_name }} - Build Failed"
+          body: |
+            ## ❌ Build Failed
+            
+            **App Name:** ${{ needs.analyze.outputs.app_name }}
+            **Build ID:** ${{ needs.analyze.outputs.request_id }}
+            
+            Please check the workflow logs for more details.
+          make_latest: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true

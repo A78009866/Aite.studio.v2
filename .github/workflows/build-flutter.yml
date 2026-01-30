@@ -144,45 +144,21 @@ jobs:
               chmod +x android/gradlew
             fi
           fi
+
+      - name: Fix Signing Configuration
+        working-directory: ${{ env.PROJECT_DIR }}/android/app
+        run: |
+          echo "Setting up signing configuration..."
           
-          # Fix 1: Create dummy signing config to prevent build failure
-          mkdir -p android/app/signing
-          cat > android/app/signing/signing.gradle << 'EOF'
+          # Create signing directory
+          mkdir -p signing
+          
+          # Create the signing.gradle file that the project expects
+          cat > signing/signing.gradle << 'EOF'
           android {
               signingConfigs {
                   release {
-                      storeFile file("debug.keystore")
-                      storePassword "android"
-                      keyAlias "androiddebugkey"
-                      keyPassword "android"
-                  }
-              }
-              buildTypes {
-                  release {
-                      signingConfig signingConfigs.release
-                  }
-              }
-          }
-          EOF
-          
-          # Create debug keystore if missing
-          if [ ! -f "android/app/debug.keystore" ]; then
-            keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          fi
-          
-          # Fix 2: Remove reference to missing signing scripts or fix them
-          BUILD_GRADLE="android/app/build.gradle"
-          if [ -f "$BUILD_GRADLE" ]; then
-            # Remove any apply from signing that might fail
-            sed -i "/apply from:.*signing.*gradle/d" $BUILD_GRADLE
-            # Add our signing config at the end if not present
-            if ! grep -q "signingConfigs" $BUILD_GRADLE; then
-              cat >> $BUILD_GRADLE << 'EOF'
-          
-          android {
-              signingConfigs {
-                  release {
-                      storeFile file("debug.keystore")
+                      storeFile file("../debug.keystore")
                       storePassword "android"
                       keyAlias "androiddebugkey"
                       keyPassword "android"
@@ -193,14 +169,35 @@ jobs:
                       signingConfig signingConfigs.release
                       minifyEnabled true
                       shrinkResources true
-                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
                   }
               }
           }
           EOF
-            fi
+          
+          # Create debug keystore for signing
+          if [ ! -f "debug.keystore" ]; then
+            echo "Creating debug keystore..."
+            keytool -genkey -v \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
           fi
           
+          # Ensure build.gradle applies this file
+          if ! grep -q "apply from:.*signing/signing.gradle" build.gradle; then
+            echo "Adding signing script reference to build.gradle..."
+            # Add apply statement at the beginning of the file
+            sed -i '1s/^/apply from: "signing\/signing.gradle"\n\n/' build.gradle
+          fi
+
+      - name: Update Package Name and Kotlin
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
             CURRENT_PKG=$(grep -o 'package="[^"]*"' $MANIFEST | head -1 | cut -d'"' -f2)
@@ -210,28 +207,25 @@ jobs:
             fi
           fi
           
+          BUILD_GRADLE="android/app/build.gradle"
           if [ -f "$BUILD_GRADLE" ]; then
             sed -i "s/applicationId \".*\"/applicationId \"$PACKAGE_NAME\"/" $BUILD_GRADLE
             sed -i "s/applicationId '.*'/applicationId '$PACKAGE_NAME'/" $BUILD_GRADLE
-          fi
-          
-          if [ -f "$BUILD_GRADLE" ]; then
             sed -i 's/minSdkVersion .*/minSdkVersion 21/' $BUILD_GRADLE
             sed -i 's/minSdk .*/minSdk 21/' $BUILD_GRADLE
             sed -i "s/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/" $BUILD_GRADLE
           fi
           
-          # Fix 3: Upgrade Kotlin version in settings.gradle or build.gradle
+          # Upgrade Kotlin version
           SETTINGS_GRADLE="android/settings.gradle"
           if [ -f "$SETTINGS_GRADLE" ]; then
-            # Update Kotlin plugin version to 2.1.0 or higher
             sed -i 's/org.jetbrains.kotlin.android\"\] version \"[^\"]*\"/org.jetbrains.kotlin.android\"] version \"2.1.0\"/' $SETTINGS_GRADLE
             sed -i "s/id \"org.jetbrains.kotlin.android\" version \".*\"/id \"org.jetbrains.kotlin.android\" version \"2.1.0\"/" $SETTINGS_GRADLE
           fi
           
           TOP_BUILD_GRADLE="android/build.gradle"
           if [ -f "$TOP_BUILD_GRADLE" ]; then
-            sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "2.1.0"/' $TOP_BUILD_GRADLE
+            sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "2.1.0\"' $TOP_BUILD_GRADLE
           fi
           
           if grep -r "google-services" android/app/build.gradle > /dev/null 2>&1; then

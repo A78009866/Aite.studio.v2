@@ -30,7 +30,7 @@ on:
       flutter_version:
         description: 'Flutter Version'
         required: false
-        default: 'stable'
+        default: '3.24.0'
       build_mode:
         description: 'Build Mode'
         required: false
@@ -231,7 +231,6 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ needs.analyze.outputs.flutter_version }}
-          # إزالة channel لأننا نستخدم إصدار محدد
           cache: true
 
       - name: 📋 Verify Flutter
@@ -314,13 +313,42 @@ jobs:
           
           echo "Icon setup complete"
 
+      - name: 🔧 Fix Pubspec SDK Constraints
+        working-directory: project/${{ env.PROJECT_PATH }}
+        run: |
+          echo "Fixing SDK constraints for null safety..."
+          
+          if [ -f "pubspec.yaml" ]; then
+            # إنشاء نسخة احتياطية
+            cp pubspec.yaml pubspec.yaml.bak
+            
+            # تحديث environment sdk
+            sed -i "s/sdk: '>=2\.0\.0-dev\.68\.0 <3\.0\.0'/sdk: '>=2.12.0 <4.0.0'/" pubspec.yaml
+            sed -i "s/sdk: '>=2\.[0-9]*\.[0-9]* <3\.0\.0'/sdk: '>=2.12.0 <4.0.0'/" pubspec.yaml
+            sed -i "s/sdk: \">=2\.[0-9]*\.[0-9]* <3\.0\.0\"/sdk: '>=2.12.0 <4.0.0'/" pubspec.yaml
+            sed -i "s/sdk: '>=2\.[0-9]*\.[0-9]*-dev\.[0-9]* <3\.0\.0'/sdk: '>=2.12.0 <4.0.0'/" pubspec.yaml
+            
+            # إذا كان هناك environment section، نحدثه
+            if grep -q "environment:" pubspec.yaml; then
+              # استبدال السطر التالي لـ sdk
+              sed -i '/environment:/,/^[^ ]/{s/sdk:.*/sdk: '\''>=2.12.0 <4.0.0'\''/}' pubspec.yaml
+            else
+              # إضافة environment section
+              echo "" >> pubspec.yaml
+              echo "environment:" >> pubspec.yaml
+              echo "  sdk: '>=2.12.0 <4.0.0'" >> pubspec.yaml
+            fi
+            
+            echo "✅ Updated pubspec.yaml:"
+            grep -A 2 "environment:" pubspec.yaml || cat pubspec.yaml | head -30
+          fi
+
       - name: 📦 Get Dependencies
         working-directory: project/${{ env.PROJECT_PATH }}
         run: |
           echo "Getting Flutter dependencies..."
           flutter pub get
           
-          # التحقق من وجود أخطاء
           if [ $? -ne 0 ]; then
             echo "❌ Failed to get dependencies"
             exit 1
@@ -331,11 +359,8 @@ jobs:
         working-directory: project/${{ env.PROJECT_PATH }}
         run: |
           echo "Building native dependencies..."
-          
-          # تنظيف بنيات سابقة
           flutter clean
           
-          # بناء مع دعم NDK
           if [ -d "android/app/src/main/cpp" ]; then
             cd android
             ./gradlew externalNativeBuildRelease || true
@@ -349,7 +374,6 @@ jobs:
           echo "Build mode: release"
           echo "Target ABI: ${{ needs.analyze.outputs.build_abi }}"
           
-          # بناء APK
           flutter build apk --release \
             --target-platform=android-arm64,android-arm,android-x64 \
             --split-per-abi=false \
@@ -360,7 +384,6 @@ jobs:
           
           if [ $BUILD_STATUS -eq 0 ]; then
             echo "✅ Build successful!"
-            echo "Output files:"
             find build/app/outputs/flutter-apk -name "*.apk" -exec ls -lh {} \;
           else
             echo "❌ Build failed!"
@@ -375,13 +398,10 @@ jobs:
             echo "APK Path: $APK_PATH"
             echo "APK Size: $(du -h "$APK_PATH" | cut -f1)"
             
-            # استخدام aapt إذا كان متوفراً
             if command -v aapt &> /dev/null; then
-              echo "APK Info:"
               aapt dump badging "$APK_PATH" | head -10
             fi
             
-            # إعادة تسمية APK
             FINAL_NAME="${{ needs.analyze.outputs.app_name }}.apk"
             cp "$APK_PATH" "$FINAL_NAME"
             echo "FINAL_APK=$FINAL_NAME" >> $GITHUB_ENV

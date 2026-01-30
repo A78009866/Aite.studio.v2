@@ -47,6 +47,7 @@ jobs:
       package_name: ${{ steps.vars.outputs.package_name }}
       request_id: ${{ steps.vars.outputs.request_id }}
       icon_url: ${{ steps.vars.outputs.icon_url }}
+      project_path: ${{ steps.detect.outputs.project_path }}
     
     steps:
       - name: Checkout Repository
@@ -71,21 +72,25 @@ jobs:
             echo "icon_url=${{ github.event.inputs.icon_url }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Download Project ZIP
+      - name: Download and Extract Project
         run: |
           mkdir -p project
           cd project
           curl -L -o project.zip "${{ steps.vars.outputs.zip_url }}"
           unzip -q project.zip
           rm project.zip
-
-      - name: Detect Project Configuration
-        id: detect
-        run: |
-          cd project
+          
+          # Find pubspec.yaml and get project directory
           PUBSPEC=$(find . -name "pubspec.yaml" -not -path "*/.*" | head -1)
           PROJECT_DIR=$(dirname "$PUBSPEC")
+          PROJECT_DIR=$(realpath "$PROJECT_DIR" | sed 's|/home/runner/work/[^/]*/[^/]*/||')
+          
+          echo "PROJECT_PATH=$PROJECT_DIR" >> $GITHUB_ENV
+          echo "project_path=$PROJECT_DIR" >> $GITHUB_OUTPUT
+          
+          # Detect Flutter version from pubspec.yaml
           cd "$PROJECT_DIR"
+          CURRENT_SDK=$(grep "sdk:" pubspec.yaml | grep -o '[0-9]*\.[0-9]*\.[0-9]*' | head -1 || echo "3.24.0")
           
           FLUTTER_VERSION="${{ steps.vars.outputs.flutter_version }}"
           if [ "$FLUTTER_VERSION" == "stable" ] || [ "$FLUTTER_VERSION" == "beta" ] || [ "$FLUTTER_VERSION" == "dev" ]; then
@@ -132,30 +137,21 @@ jobs:
           name: flutter-project-${{ needs.analyze.outputs.request_id }}
           path: project
 
-      - name: Locate Project Directory
-        run: |
-          cd project
-          PUBSPEC=$(find . -name "pubspec.yaml" -not -path "*/.*" | head -1)
-          PROJECT_DIR=$(dirname "$PUBSPEC")
-          echo "PROJECT_PATH=$PROJECT_DIR" >> $GITHUB_ENV
-
-      - name: Fix Android Embedding
-        working-directory: project/${{ env.PROJECT_PATH }}
+      - name: Auto Fix Project
+        working-directory: project/${{ needs.analyze.outputs.project_path }}
         run: |
           PKG_NAME="${{ needs.analyze.outputs.package_name }}"
           PKG_PATH=$(echo "$PKG_NAME" | tr '.' '/')
           
-          # Fix AndroidManifest.xml for V2 Embedding only if needed
-          if grep -q 'android:name="io.flutter.app.FlutterApplication"' android/app/src/main/AndroidManifest.xml 2>/dev/null; then
-            sed -i 's/android:name="io.flutter.app.FlutterApplication"/android:name="${applicationName}"/' android/app/src/main/AndroidManifest.xml
+          # 1. Fix AndroidManifest.xml for V2 Embedding
+          if [ -f "android/app/src/main/AndroidManifest.xml" ]; then
+            sed -i 's/android:name="io.flutter.app.FlutterApplication"/android:name="${applicationName}"/' android/app/src/main/AndroidManifest.xml 2>/dev/null || true
+            if ! grep -q "flutterEmbedding" android/app/src/main/AndroidManifest.xml 2>/dev/null; then
+              sed -i '/<\/activity>/a\        <meta-data android:name="flutterEmbedding" android:value="2" />' android/app/src/main/AndroidManifest.xml 2>/dev/null || true
+            fi
           fi
           
-          # Add flutterEmbedding meta-data if missing
-          if ! grep -q "flutterEmbedding" android/app/src/main/AndroidManifest.xml 2>/dev/null; then
-            sed -i '/<\/activity>/a\        <meta-data android:name="flutterEmbedding" android:value="2" />' android/app/src/main/AndroidManifest.xml 2>/dev/null || true
-          fi
-          
-          # Create MainActivity.kt for V2 Embedding only if not exists
+          # 2. Create MainActivity.kt for V2 Embedding
           mkdir -p "android/app/src/main/kotlin/$PKG_PATH"
           if [ ! -f "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt" ]; then
             echo "package $PKG_NAME" > "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
@@ -164,90 +160,112 @@ jobs:
             echo "" >> "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
             echo "class MainActivity: FlutterActivity()" >> "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
           fi
-          
-          # Remove old MainActivity.java if exists
           find android -name "MainActivity.java" -delete 2>/dev/null || true
           
-          # Update package name only if different
-          CURRENT_PKG=$(grep "applicationId" android/app/build.gradle | head -1 | sed 's/.*applicationId "\(.*\)".*/\1/')
-          if [ "$CURRENT_PKG" != "$PKG_NAME" ]; then
-            sed -i "s/applicationId \".*\"/applicationId \"$PKG_NAME\"/" android/app/build.gradle
+          # 3. Update package name
+          sed -i "s/applicationId \".*\"/applicationId \"$PKG_NAME\"/" android/app/build.gradle 2>/dev/null || true
+          
+          # 4. Setup icons
+          mkdir -p android/app/src/main/res/mipmap-xxxhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-mdpi
+          curl -L -o icon.png "${{ needs.analyze.outputs.icon_url }}" 2>/dev/null && \
+          cp icon.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png 2>/dev/null || true && \
+          cp icon.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png 2>/dev/null || true && \
+          cp icon.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png 2>/dev/null || true && \
+          cp icon.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png 2>/dev/null || true && \
+          cp icon.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png 2>/dev/null || true
+          
+          # 5. Fix pubspec.yaml - Smart SDK version adjustment
+          rm -f pubspec.lock
+          
+          # Get current SDK constraint
+          CURRENT_SDK_LINE=$(grep -A 1 "^environment:" pubspec.yaml | grep "sdk:" || echo "")
+          echo "Current SDK: $CURRENT_SDK_LINE"
+          
+          # Extract version numbers
+          CURRENT_MIN=$(echo "$CURRENT_SDK_LINE" | grep -o '>=\?[0-9]*\.[0-9]*' | grep -o '[0-9]*\.[0-9]*' | head -1 || echo "2.12.0")
+          
+          # If current SDK requires Dart > 3.5.0, downgrade to compatible version
+          if [ -n "$CURRENT_MIN" ]; then
+            MAJOR=$(echo "$CURRENT_MIN" | cut -d. -f1)
+            MINOR=$(echo "$CURRENT_MIN" | cut -d. -f2)
+            
+            # If requires Dart 3.9+, use 3.0.0 instead (compatible with Flutter 3.24)
+            if [ "$MAJOR" -ge 3 ] && [ "$MINOR" -ge 9 ]; then
+              echo "Downgrading SDK requirement from $CURRENT_MIN to 3.0.0"
+              sed -i "s/sdk: .*/sdk: '>=3.0.0 <4.0.0'/" pubspec.yaml
+            elif [ "$MAJOR" -lt 2 ] || ([ "$MAJOR" -eq 2 ] && [ "$MINOR" -lt 17 ]); then
+              # If too old, upgrade to 2.17 for super-parameters support
+              echo "Upgrading SDK requirement from $CURRENT_MIN to 2.17.0"
+              sed -i "s/sdk: .*/sdk: '>=2.17.0 <4.0.0'/" pubspec.yaml
+            fi
           fi
-
-      - name: Setup App Icon
-        working-directory: project/${{ env.PROJECT_PATH }}
-        run: |
-          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
-          mkdir -p android/app/src/main/res/mipmap-xxhdpi
-          mkdir -p android/app/src/main/res/mipmap-xhdpi
-          mkdir -p android/app/src/main/res/mipmap-hdpi
-          mkdir -p android/app/src/main/res/mipmap-mdpi
           
-          curl -L -o icon.png "${{ needs.analyze.outputs.icon_url }}" 2>/dev/null || echo "Icon download failed, using default"
-          
-          if [ -f "icon.png" ]; then
-            cp icon.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png 2>/dev/null || true
-            cp icon.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png 2>/dev/null || true
-            cp icon.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png 2>/dev/null || true
-            cp icon.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png 2>/dev/null || true
-            cp icon.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png 2>/dev/null || true
+          # Ensure environment section exists
+          if ! grep -q "^environment:" pubspec.yaml; then
+            echo "" >> pubspec.yaml
+            echo "environment:" >> pubspec.yaml
+            echo "  sdk: '>=2.17.0 <4.0.0'" >> pubspec.yaml
           fi
-      - name: Fix Dart SDK Version
-        working-directory: project/${{ env.PROJECT_PATH }}
-        run: |
-          # خفض إصدار Dart SDK فقط إذا كان أعلى من المتاح
-          CURRENT_SDK=$(grep "sdk:" pubspec.yaml | grep -o "'[^']*'" | tr -d "'" | head -1)
-          echo "Current SDK: $CURRENT_SDK"
           
-          # استبدال أي إصدار >=3.9.0 بـ >=3.0.0
-          sed -i "s/sdk: '>=3\.[9-9]\.[0-9]* <4\.0\.0'/sdk: '>=3.0.0 <4.0.0'/" pubspec.yaml
-          sed -i "s/sdk: '>=3\.[5-8]\.[0-9]* <4\.0\.0'/sdk: '>=3.0.0 <4.0.0'/" pubspec.yaml
-          sed -i "s/sdk: '\^3\.[5-9]\.[0-9]*'/sdk: '>=3.0.0 <4.0.0'/" pubspec.yaml
-          
-          echo "Updated pubspec.yaml:"
-          grep -A 1 "environment:" pubspec.yaml || cat pubspec.yaml | head -20
-      - name: Get Dependencies
-        working-directory: project/${{ env.PROJECT_PATH }}
-        run: |
-          flutter config --no-analytics 2>/dev/null || true
-          
-          # Try to get dependencies without modifying pubspec.yaml
-          flutter pub get 2>&1 || {
-            echo "Initial pub get failed, trying with upgrade..."
-            flutter pub upgrade 2>&1 || {
-              echo "Upgrade failed, trying to remove lock file..."
-              rm -f pubspec.lock
-              flutter pub get 2>&1 || {
-                echo "All attempts failed, continuing anyway..."
-                exit 0
-              }
-            }
-          }
+          echo "Final pubspec.yaml:"
+          cat pubspec.yaml
 
       - name: Build APK
-        working-directory: project/${{ env.PROJECT_PATH }}
+        working-directory: project/${{ needs.analyze.outputs.project_path }}
         run: |
-          # Try build with error tolerance
+          export FLUTTER_SUPPRESS_ANALYTICS=true
+          
+          # Try multiple build strategies
+          BUILD_SUCCESS=false
+          
+          # Strategy 1: Normal build
+          echo "Trying normal build..."
+          flutter pub get 2>&1 && \
           flutter build apk --release \
             --target-platform=android-arm64,android-arm,android-x64 \
             --build-name=1.0.0 \
-            --build-number=${{ github.run_number }} 2>&1 || {
-            echo "Build failed, trying with --no-tree-shake-icons..."
+            --build-number=${{ github.run_number }} 2>&1 && BUILD_SUCCESS=true
+          
+          # Strategy 2: If failed, try with dependency override
+          if [ "$BUILD_SUCCESS" != "true" ]; then
+            echo "Trying with dependency override..."
+            rm -f pubspec.lock
+            flutter pub get --no-example 2>&1 && \
+            flutter build apk --release \
+              --target-platform=android-arm64,android-arm,android-x64 \
+              --build-name=1.0.0 \
+              --build-number=${{ github.run_number }} 2>&1 && BUILD_SUCCESS=true
+          fi
+          
+          # Strategy 3: If still failed, try without tree shake
+          if [ "$BUILD_SUCCESS" != "true" ]; then
+            echo "Trying without tree shake..."
             flutter build apk --release \
               --target-platform=android-arm64,android-arm,android-x64 \
               --build-name=1.0.0 \
               --build-number=${{ github.run_number }} \
-              --no-tree-shake-icons 2>&1 || {
-              echo "Build failed completely"
-              exit 1
-            }
-          }
+              --no-tree-shake-icons 2>&1 && BUILD_SUCCESS=true
+          fi
+          
+          # Strategy 4: Last resort - debug build
+          if [ "$BUILD_SUCCESS" != "true" ]; then
+            echo "Trying debug build as last resort..."
+            flutter build apk --debug \
+              --target-platform=android-arm64,android-arm,android-x64 2>&1 && BUILD_SUCCESS=true
+          fi
+          
+          if [ "$BUILD_SUCCESS" != "true" ]; then
+            echo "All build strategies failed"
+            exit 1
+          fi
+          
+          echo "Build successful!"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: apk-${{ needs.analyze.outputs.request_id }}
-          path: project/${{ env.PROJECT_PATH }}/build/app/outputs/flutter-apk/*.apk
+          path: project/${{ needs.analyze.outputs.project_path }}/build/app/outputs/flutter-apk/*.apk
           retention-days: 7
           if-no-files-found: ignore
 

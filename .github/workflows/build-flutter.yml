@@ -29,7 +29,6 @@ on:
 env:
   PROJECT_DIR: ${{ github.workspace }}/flutter_project
   BUILD_ID: ${{ github.event.client_payload.request_id || github.run_id }}
-  # يستخدم الاسم الحقيقي (مثال: متجري) كما تم إرساله من السيرفر
   APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name }}
   PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name }}
   ICON_URL: ${{ github.event.client_payload.icon_url || github.event.inputs.icon_url }}
@@ -45,33 +44,21 @@ jobs:
     steps:
       - name: Setup Environment
         run: |
-          echo "BUILD_ID=$BUILD_ID" >> $GITHUB_ENV
-          echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
           echo "Starting build for: $APP_NAME ($PACKAGE_NAME)"
           sudo apt-get update -qq
           sudo apt-get install -y -qq wget unzip imagemagick
 
       - name: Download and Extract Project
         run: |
-          echo "Downloading project from: $ZIP_URL"
           wget -q --show-progress -O project.zip "$ZIP_URL"
-          
-          if [ ! -f project.zip ]; then
-            echo "Failed to download project"
-            exit 1
-          fi
-          
           mkdir -p $PROJECT_DIR
           unzip -q project.zip -d temp_extract
-          
           if [ "$(ls -A temp_extract | wc -l)" == "1" ]; then
             mv temp_extract/*/* $PROJECT_DIR/ 2>/dev/null || mv temp_extract/* $PROJECT_DIR/
           else
             mv temp_extract/* $PROJECT_DIR/
           fi
-          
           rm -rf temp_extract project.zip
-          echo "Project extracted to: $PROJECT_DIR"
 
       - name: Detect Flutter Version
         id: detect_flutter
@@ -81,7 +68,6 @@ jobs:
           if [ "$FLUTTER_VERSION_INPUT" != "auto" ]; then
             DETECTED_VERSION="$FLUTTER_VERSION_INPUT"
           elif [ -f "pubspec.yaml" ]; then
-             # Simple detection logic
              VERSION=$(cat pubspec.yaml | grep -A 5 "environment:" | grep "flutter:" | head -1 | grep -oP '\d+\.\d+\.\d+' | head -1)
              if [ ! -z "$VERSION" ]; then DETECTED_VERSION="$VERSION"; fi
           fi
@@ -100,12 +86,11 @@ jobs:
           if [ ! -f "android/local.properties" ]; then echo "sdk.dir=/usr/local/lib/android/sdk" > android/local.properties; fi
 
       # -------------------------------------------------------------------------
-      # CORE FIX: Python Script to safely rename App & Package
+      # Python Script to Safely Rename App & Package
       # -------------------------------------------------------------------------
-      - name: Force Update App Name and Package (Python)
+      - name: Force Update App Name and Package
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          # Create python script to handle XML robustly
           cat <<EOF > update_project_info.py
           import os
           import xml.etree.ElementTree as ET
@@ -114,78 +99,38 @@ jobs:
           app_name = os.environ.get('APP_NAME', 'MyApp')
           package_name = os.environ.get('PACKAGE_NAME', 'com.example.app')
           
-          print(f"Applying Name: {app_name}")
-          print(f"Applying Package: {package_name}")
-
-          # 1. Update/Create strings.xml
-          # This ensures the name exists in a clean resource file
+          # 1. Update strings.xml
           strings_path = 'android/app/src/main/res/values/strings.xml'
           os.makedirs(os.path.dirname(strings_path), exist_ok=True)
-          
           xml_content = f'''<?xml version="1.0" encoding="utf-8"?>
           <resources>
               <string name="app_name">{app_name}</string>
           </resources>'''
-          
           with open(strings_path, 'w', encoding='utf-8') as f:
               f.write(xml_content)
-          print(f"Created strings.xml with: {app_name}")
 
           # 2. Update AndroidManifest.xml
           manifest_path = 'android/app/src/main/AndroidManifest.xml'
           ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
-          
           try:
               tree = ET.parse(manifest_path)
               root = tree.getroot()
-              
-              # Set package
-              if 'package' in root.attrib:
-                  root.attrib['package'] = package_name
-              
-              # Set label to @string/app_name
+              if 'package' in root.attrib: root.attrib['package'] = package_name
               application = root.find('application')
               if application is not None:
                   key = '{http://schemas.android.com/apk/res/android}label'
                   application.attrib[key] = '@string/app_name'
-                  print("Updated Manifest label to @string/app_name")
-              
               tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
-          except Exception as e:
-              print(f"Warning parsing Manifest: {e}")
+          except Exception as e: print(f"Manifest Error: {e}")
 
-          # 3. Update build.gradle (Regex)
+          # 3. Update build.gradle
           gradle_path = 'android/app/build.gradle'
           if os.path.exists(gradle_path):
-              with open(gradle_path, 'r') as f:
-                  content = f.read()
-              
-              # Replace applicationId
+              with open(gradle_path, 'r') as f: content = f.read()
               content = re.sub(r'applicationId\s+["\'].*?["\']', f'applicationId "{package_name}"', content)
-              # Replace namespace
               content = re.sub(r'namespace\s+["\'].*?["\']', f'namespace "{package_name}"', content)
-              
-              with open(gradle_path, 'w') as f:
-                  f.write(content)
-              print("Updated build.gradle")
-
-          # 4. Update MainActivity (Kotlin/Java) to match package
-          # This is a basic recursive search and replace for "package old.pkg"
-          # Only doing simple kotlin/java package declaration update
-          for root, dirs, files in os.walk("android/app/src/main"):
-              for file in files:
-                  if file.endswith(".kt") or file.endswith(".java"):
-                      fpath = os.path.join(root, file)
-                      with open(fpath, 'r') as f:
-                          s = f.read()
-                      if "package " in s and "io.flutter.embedding" not in s:
-                          # This is risky but often necessary for clean builds if package changed
-                          # We will just leave MainActivity alone as Flutter handles it mostly via gradle
-                          pass
-
+              with open(gradle_path, 'w') as f: f.write(content)
           EOF
-
-          # Execute the python script
           python3 update_project_info.py
 
       - name: Setup Signing
@@ -194,7 +139,6 @@ jobs:
           if [ ! -f "debug.keystore" ]; then
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
-          
           mkdir -p signing
           cat > signing/signing.gradle << 'EOF'
           signingConfigs {
@@ -227,31 +171,29 @@ jobs:
 
       - name: Get Dependencies
         working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          flutter pub get
+        run: flutter pub get
 
-      - name: Build Universal APK
+      - name: Build Universal APK (FIXED PATH)
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          echo "Building APK for: $APP_NAME"
-          
           flutter build apk --$BUILD_MODE --target-platform=android-arm,android-arm64 --split-debug-info=symbols/
           
-          # Locate the output file
+          # المسار الأصلي داخل مجلد المشروع
           APK_DIR="build/app/outputs/flutter-apk"
           DEFAULT_APK="$APK_DIR/app-$BUILD_MODE.apk"
           
-          # Determine final filename (Use user's App Name)
-          # We need to sanitize it slightly for filesystem (remove / or \) but keep spaces/Arabic
+          # تنظيف الاسم للملف (إزالة الرموز الممنوعة فقط)
           SAFE_FILENAME=$(echo "$APP_NAME" | sed 's/[\/\\\:*?"<>|]//g')
           FINAL_APK="$APK_DIR/${SAFE_FILENAME}.apk"
           
           echo "Renaming $DEFAULT_APK to $FINAL_APK"
           mv "$DEFAULT_APK" "$FINAL_APK"
           
-          # Set Env var for Upload step
-          echo "APK_FILE=${SAFE_FILENAME}.apk" >> $GITHUB_ENV
-          echo "APK_PATH=$FINAL_APK" >> $GITHUB_ENV
+          # التعديل الهام: حفظ المسار الكامل (Absolute Path) للملف
+          # هذا يضمن أن خطوة الرفع تجد الملف بغض النظر عن المجلد الحالي
+          FULL_PATH="$(pwd)/$FINAL_APK"
+          
+          echo "APK_PATH=$FULL_PATH" >> $GITHUB_ENV
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v1

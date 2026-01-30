@@ -145,12 +145,12 @@ jobs:
             fi
           fi
 
-      - name: Setup Signing and Build Config
+      - name: Setup Signing
         working-directory: ${{ env.PROJECT_DIR }}/android/app
         run: |
           echo "Setting up signing configuration..."
           
-          # Create debug keystore if not exists
+          # Create debug keystore
           if [ ! -f "debug.keystore" ]; then
             echo "Creating debug keystore..."
             keytool -genkey -v \
@@ -164,96 +164,30 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
           
-          # Remove any old signing references
-          rm -rf signing
-          sed -i '|apply from:.*signing.*gradle|d' build.gradle 2>/dev/null || true
+          # Create signing directory and file (the project expects this file)
+          mkdir -p signing
           
-          # Check if build.gradle has android block
-          if grep -q "^android {" build.gradle; then
-            echo "Found android block, checking for signingConfigs..."
-            
-            # If no signingConfigs, add them inside android block
-            if ! grep -q "signingConfigs" build.gradle; then
-              echo "Adding signingConfigs and buildTypes..."
-              
-              # Use python to modify the file safely
-              python3 << 'PYEOF'
-          import re
-          
-          with open('build.gradle', 'r') as f:
-              content = f.read()
-          
-          # Find the last closing brace of android block and insert before it
-          # Pattern to find android block content
-          signing_config = '''
-                  signingConfigs {
-                      release {
-                          storeFile file("debug.keystore")
-                          storePassword "android"
-                          keyAlias "androiddebugkey"
-                          keyPassword "android"
-                      }
-                  }
-                  buildTypes {
-                      release {
-                          signingConfig signingConfigs.release
-                          minifyEnabled true
-                          shrinkResources true
-                          proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-                      }
-                  }
-          '''
-          
-          # Find the last } in the android block and insert before it
-          # This regex finds the android block and inserts before its closing }
-          lines = content.split('\n')
-          android_start = -1
-          brace_count = 0
-          android_end = -1
-          
-          for i, line in enumerate(lines):
-              if android_start == -1 and 'android {' in line:
-                  android_start = i
-                  brace_count = line.count('{') - line.count('}')
-              elif android_start != -1:
-                  brace_count += line.count('{') - line.count('}')
-                  if brace_count == 0:
-                      android_end = i
-                      break
-          
-          if android_end != -1:
-              lines.insert(android_end, signing_config)
-              with open('build.gradle', 'w') as f:
-                  f.write('\n'.join(lines))
-              print("Added signing config successfully")
-          else:
-              print("Could not find android block end")
-          PYEOF
-            fi
-          else
-            echo "No android block found, creating one..."
-            cat >> build.gradle << 'EOF'
-          
-          android {
-              signingConfigs {
-                  release {
-                      storeFile file("debug.keystore")
-                      storePassword "android"
-                      keyAlias "androiddebugkey"
-                      keyPassword "android"
-                  }
+          # IMPORTANT: This file is applied INSIDE the android block, so no 'android { }' wrapper
+          cat > signing/signing.gradle << 'EOF'
+          signingConfigs {
+              release {
+                  storeFile file("../debug.keystore")
+                  storePassword "android"
+                  keyAlias "androiddebugkey"
+                  keyPassword "android"
               }
-              buildTypes {
-                  release {
-                      signingConfig signingConfigs.release
-                      minifyEnabled true
-                      shrinkResources true
-                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-                  }
+          }
+          buildTypes {
+              release {
+                  signingConfig signingConfigs.release
+                  minifyEnabled true
+                  shrinkResources true
+                  proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
               }
           }
           EOF
-          fi
+          
+          echo "Signing config created at signing/signing.gradle"
 
       - name: Update Package Name and Kotlin
         working-directory: ${{ env.PROJECT_DIR }}

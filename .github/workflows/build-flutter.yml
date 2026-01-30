@@ -1,7 +1,3 @@
-# =============================================================================
-# Aite.studio - Smart Flutter Build Workflow
-# =============================================================================
-
 name: Smart Flutter Build
 
 on:
@@ -43,29 +39,20 @@ env:
 
 jobs:
   analyze:
-    name: 🔍 Analyze Project
+    name: Analyze Project
     runs-on: ubuntu-latest
     outputs:
       flutter_version: ${{ steps.detect.outputs.flutter_version }}
-      min_sdk: ${{ steps.detect.outputs.min_sdk }}
-      target_sdk: ${{ steps.detect.outputs.target_sdk }}
-      has_native_code: ${{ steps.detect.outputs.has_native_code }}
-      needs_ndk: ${{ steps.detect.outputs.needs_ndk }}
-      ndk_version: ${{ steps.detect.outputs.ndk_version }}
-      cmake_version: ${{ steps.detect.outputs.cmake_version }}
-      build_abi: ${{ steps.detect.outputs.build_abi }}
-      has_plugins: ${{ steps.detect.outputs.has_plugins }}
-      plugin_list: ${{ steps.detect.outputs.plugin_list }}
       app_name: ${{ steps.vars.outputs.app_name }}
       package_name: ${{ steps.vars.outputs.package_name }}
       request_id: ${{ steps.vars.outputs.request_id }}
       icon_url: ${{ steps.vars.outputs.icon_url }}
     
     steps:
-      - name: 📥 Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🔄 Setup Variables
+      - name: Setup Variables
         id: vars
         run: |
           if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
@@ -84,7 +71,7 @@ jobs:
             echo "icon_url=${{ github.event.inputs.icon_url }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: ⬇️ Download Project ZIP
+      - name: Download Project ZIP
         run: |
           mkdir -p project
           cd project
@@ -92,7 +79,7 @@ jobs:
           unzip -q project.zip
           rm project.zip
 
-      - name: 🔍 Detect Project Configuration
+      - name: Detect Project Configuration
         id: detect
         run: |
           cd project
@@ -106,12 +93,8 @@ jobs:
           fi
           
           echo "flutter_version=$FLUTTER_VERSION" >> $GITHUB_OUTPUT
-          echo "app_name=${{ steps.vars.outputs.app_name }}" >> $GITHUB_OUTPUT
-          echo "package_name=${{ steps.vars.outputs.package_name }}" >> $GITHUB_OUTPUT
-          echo "request_id=${{ steps.vars.outputs.request_id }}" >> $GITHUB_OUTPUT
-          echo "icon_url=${{ steps.vars.outputs.icon_url }}" >> $GITHUB_OUTPUT
 
-      - name: 📤 Upload Project Artifact
+      - name: Upload Project Artifact
         uses: actions/upload-artifact@v4
         with:
           name: flutter-project-${{ steps.vars.outputs.request_id }}
@@ -119,53 +102,51 @@ jobs:
           retention-days: 1
 
   build:
-    name: 🔨 Build APK
+    name: Build APK
     needs: analyze
     runs-on: ubuntu-latest
     timeout-minutes: 45
     
     steps:
-      - name: 📥 Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: ☕ Setup Java
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: ${{ env.JAVA_VERSION }}
 
-      - name: 🤖 Setup Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: 🎯 Setup Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ needs.analyze.outputs.flutter_version }}
           cache: true
 
-      - name: ⬇️ Download Project
+      - name: Download Project
         uses: actions/download-artifact@v4
         with:
           name: flutter-project-${{ needs.analyze.outputs.request_id }}
           path: project
 
-      - name: 📂 Locate Project Directory
+      - name: Locate Project Directory
         run: |
           cd project
           PUBSPEC=$(find . -name "pubspec.yaml" -not -path "*/.*" | head -1)
           PROJECT_DIR=$(dirname "$PUBSPEC")
           echo "PROJECT_PATH=$PROJECT_DIR" >> $GITHUB_ENV
 
-      - name: 🔧 Fix Android Configuration
+      - name: Fix Android Configuration
         working-directory: project/${{ env.PROJECT_PATH }}
         run: |
           PKG_NAME="${{ needs.analyze.outputs.package_name }}"
           PKG_PATH=$(echo "$PKG_NAME" | tr '.' '/')
           
-          # V2 Embedding
           sed -i 's/android:name="io.flutter.app.FlutterApplication"/android:name="${applicationName}"/' android/app/src/main/AndroidManifest.xml 2>/dev/null || true
           
-          # إنشاء MainActivity.kt
           mkdir -p "android/app/src/main/kotlin/$PKG_PATH"
           echo "package $PKG_NAME" > "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
           echo "" >> "android/app/src/main/kotlin/$PKG_PATH/MainActivity.kt"
@@ -175,10 +156,9 @@ jobs:
           
           find android -name "MainActivity.java" -delete 2>/dev/null || true
           
-          # Package name
           sed -i "s/applicationId \".*\"/applicationId \"$PKG_NAME\"/" android/app/build.gradle
 
-      - name: 🖼️ Setup App Icon
+      - name: Setup App Icon
         working-directory: project/${{ env.PROJECT_PATH }}
         run: |
           mkdir -p android/app/src/main/res/mipmap-xxxhdpi
@@ -195,10 +175,11 @@ jobs:
           cp icon.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           cp icon.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png
 
-      - name: 🔧 Fix All Dependencies
+      - name: Fix Dependencies
         working-directory: project/${{ env.PROJECT_PATH }}
         run: |
-          # تحديث environment sdk
+          rm -f pubspec.lock
+          
           sed -i 's/sdk: .*/sdk: '\''>=3.0.0 <4.0.0'\''/' pubspec.yaml
           
           if ! grep -q "environment:" pubspec.yaml; then
@@ -207,12 +188,13 @@ jobs:
             echo "  sdk: '>=3.0.0 <4.0.0'" >> pubspec.yaml
           fi
 
-      - name: 📦 Get Dependencies
+      - name: Get Dependencies
         working-directory: project/${{ env.PROJECT_PATH }}
         run: |
-          flutter pub upgrade --major-versions || flutter pub get
+          flutter config --no-analytics
+          flutter pub get || flutter pub upgrade --major-versions
 
-      - name: 🏗️ Build APK
+      - name: Build APK
         working-directory: project/${{ env.PROJECT_PATH }}
         run: |
           flutter build apk --release \
@@ -220,7 +202,7 @@ jobs:
             --build-name=1.0.0 \
             --build-number=${{ github.run_number }}
 
-      - name: 📤 Upload APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: apk-${{ needs.analyze.outputs.request_id }}
@@ -228,19 +210,19 @@ jobs:
           retention-days: 7
 
   release:
-    name: 🚀 Create Release
+    name: Create Release
     needs: [analyze, build]
     runs-on: ubuntu-latest
     if: success()
     
     steps:
-      - name: 📥 Download APK
+      - name: Download APK
         uses: actions/download-artifact@v4
         with:
           name: apk-${{ needs.analyze.outputs.request_id }}
           path: release
 
-      - name: 🏷️ Create GitHub Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ needs.analyze.outputs.request_id }}

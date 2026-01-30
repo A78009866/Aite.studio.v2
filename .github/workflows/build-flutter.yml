@@ -29,6 +29,7 @@ on:
 env:
   PROJECT_DIR: ${{ github.workspace }}/flutter_project
   BUILD_ID: ${{ github.event.client_payload.request_id || github.run_id }}
+  # يستخدم الاسم الحقيقي (مثال: متجري) كما تم إرساله من السيرفر
   APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name }}
   PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name }}
   ICON_URL: ${{ github.event.client_payload.icon_url || github.event.inputs.icon_url }}
@@ -48,7 +49,7 @@ jobs:
           echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
           echo "Starting build for: $APP_NAME ($PACKAGE_NAME)"
           sudo apt-get update -qq
-          sudo apt-get install -y -qq wget unzip imagemagick xmlstarlet jq
+          sudo apt-get install -y -qq wget unzip imagemagick
 
       - name: Download and Extract Project
         run: |
@@ -71,46 +72,19 @@ jobs:
           
           rm -rf temp_extract project.zip
           echo "Project extracted to: $PROJECT_DIR"
-          ls -la $PROJECT_DIR
 
       - name: Detect Flutter Version
         id: detect_flutter
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           DETECTED_VERSION="stable"
-          
-          if [ -f ".fvm/fvm_config.json" ]; then
-            DETECTED_VERSION=$(cat .fvm/fvm_config.json | jq -r '.flutterSdkVersion // "stable"')
-            echo "Detected from FVM: $DETECTED_VERSION"
-          
-          elif [ -f "pubspec.yaml" ]; then
-            FLUTTER_CONSTRAINT=$(cat pubspec.yaml | grep -A 5 "environment:" | grep "flutter:" | head -1)
-            if [ ! -z "$FLUTTER_CONSTRAINT" ]; then
-              VERSION=$(echo $FLUTTER_CONSTRAINT | grep -oP '\d+\.\d+\.\d+' | head -1)
-              if [ ! -z "$VERSION" ]; then
-                DETECTED_VERSION="$VERSION"
-                echo "Detected from pubspec: $DETECTED_VERSION"
-              fi
-            fi
-            
-            DART_SDK=$(cat pubspec.yaml | grep -A 3 "environment:" | grep "sdk:" | head -1)
-            if echo "$DART_SDK" | grep -q '"2\.'; then
-              if echo "$DART_SDK" | grep -q '"2\.[0-7]\.'; then
-                DETECTED_VERSION="2.10.5"
-                echo "Legacy project detected (pre-2.8): $DETECTED_VERSION"
-              else
-                DETECTED_VERSION="2.10.5"
-                echo "Legacy project detected (2.8-2.10): $DETECTED_VERSION"
-              fi
-            fi
-          fi
-          
           if [ "$FLUTTER_VERSION_INPUT" != "auto" ]; then
             DETECTED_VERSION="$FLUTTER_VERSION_INPUT"
-            echo "User override: $DETECTED_VERSION"
+          elif [ -f "pubspec.yaml" ]; then
+             # Simple detection logic
+             VERSION=$(cat pubspec.yaml | grep -A 5 "environment:" | grep "flutter:" | head -1 | grep -oP '\d+\.\d+\.\d+' | head -1)
+             if [ ! -z "$VERSION" ]; then DETECTED_VERSION="$VERSION"; fi
           fi
-          
-          echo "FLUTTER_VERSION=$DETECTED_VERSION" >> $GITHUB_ENV
           echo "version=$DETECTED_VERSION" >> $GITHUB_OUTPUT
 
       - name: Setup Flutter
@@ -119,98 +93,109 @@ jobs:
           flutter-version: ${{ contains(steps.detect_flutter.outputs.version, '.') && steps.detect_flutter.outputs.version || '' }}
           channel: ${{ !contains(steps.detect_flutter.outputs.version, '.') && steps.detect_flutter.outputs.version || 'stable' }}
 
-      - name: Pre-build Diagnostics and Fixes
+      - name: Pre-build Diagnostics
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          echo "Running diagnostics..."
-          
           mkdir -p android
-          if [ ! -f "android/local.properties" ]; then
-            echo "sdk.dir=/usr/local/lib/android/sdk" > android/local.properties
-          fi
-          
-          if [ ! -d "android/gradle/wrapper" ]; then
-            echo "Missing Gradle wrapper, creating..."
-            mkdir -p android/gradle/wrapper
-            cat > android/gradle/wrapper/gradle-wrapper.properties << 'EOF'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-7.5-all.zip
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          EOF
-            
-            if [ ! -f "android/gradlew" ]; then
-              curl -sL https://raw.githubusercontent.com/flutter/flutter/stable/packages/flutter_tools/gradle/gradlew -o android/gradlew
-              chmod +x android/gradlew
-            fi
-          fi
+          if [ ! -f "android/local.properties" ]; then echo "sdk.dir=/usr/local/lib/android/sdk" > android/local.properties; fi
 
-      - name: Update App Name and Package
+      # -------------------------------------------------------------------------
+      # CORE FIX: Python Script to safely rename App & Package
+      # -------------------------------------------------------------------------
+      - name: Force Update App Name and Package (Python)
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          echo "Updating App Name to: $APP_NAME"
-          echo "Updating Package to: $PACKAGE_NAME"
+          # Create python script to handle XML robustly
+          cat <<EOF > update_project_info.py
+          import os
+          import xml.etree.ElementTree as ET
+          import re
+
+          app_name = os.environ.get('APP_NAME', 'MyApp')
+          package_name = os.environ.get('PACKAGE_NAME', 'com.example.app')
           
-          # Create or update strings.xml with app_name
-          mkdir -p android/app/src/main/res/values
-          cat > android/app/src/main/res/values/strings.xml << EOF
-          <?xml version="1.0" encoding="utf-8"?>
+          print(f"Applying Name: {app_name}")
+          print(f"Applying Package: {package_name}")
+
+          # 1. Update/Create strings.xml
+          # This ensures the name exists in a clean resource file
+          strings_path = 'android/app/src/main/res/values/strings.xml'
+          os.makedirs(os.path.dirname(strings_path), exist_ok=True)
+          
+          xml_content = f'''<?xml version="1.0" encoding="utf-8"?>
           <resources>
-              <string name="app_name">${APP_NAME}</string>
-          </resources>
+              <string name="app_name">{app_name}</string>
+          </resources>'''
+          
+          with open(strings_path, 'w', encoding='utf-8') as f:
+              f.write(xml_content)
+          print(f"Created strings.xml with: {app_name}")
+
+          # 2. Update AndroidManifest.xml
+          manifest_path = 'android/app/src/main/AndroidManifest.xml'
+          ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
+          
+          try:
+              tree = ET.parse(manifest_path)
+              root = tree.getroot()
+              
+              # Set package
+              if 'package' in root.attrib:
+                  root.attrib['package'] = package_name
+              
+              # Set label to @string/app_name
+              application = root.find('application')
+              if application is not None:
+                  key = '{http://schemas.android.com/apk/res/android}label'
+                  application.attrib[key] = '@string/app_name'
+                  print("Updated Manifest label to @string/app_name")
+              
+              tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
+          except Exception as e:
+              print(f"Warning parsing Manifest: {e}")
+
+          # 3. Update build.gradle (Regex)
+          gradle_path = 'android/app/build.gradle'
+          if os.path.exists(gradle_path):
+              with open(gradle_path, 'r') as f:
+                  content = f.read()
+              
+              # Replace applicationId
+              content = re.sub(r'applicationId\s+["\'].*?["\']', f'applicationId "{package_name}"', content)
+              # Replace namespace
+              content = re.sub(r'namespace\s+["\'].*?["\']', f'namespace "{package_name}"', content)
+              
+              with open(gradle_path, 'w') as f:
+                  f.write(content)
+              print("Updated build.gradle")
+
+          # 4. Update MainActivity (Kotlin/Java) to match package
+          # This is a basic recursive search and replace for "package old.pkg"
+          # Only doing simple kotlin/java package declaration update
+          for root, dirs, files in os.walk("android/app/src/main"):
+              for file in files:
+                  if file.endswith(".kt") or file.endswith(".java"):
+                      fpath = os.path.join(root, file)
+                      with open(fpath, 'r') as f:
+                          s = f.read()
+                      if "package " in s and "io.flutter.embedding" not in s:
+                          # This is risky but often necessary for clean builds if package changed
+                          # We will just leave MainActivity alone as Flutter handles it mostly via gradle
+                          pass
+
           EOF
-          
-          # Update AndroidManifest.xml to use @string/app_name
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ]; then
-            # Replace any existing label with @string/app_name
-            sed -i 's|android:label="[^"]*"|android:label="@string/app_name"|g' $MANIFEST
-            # Also update package name
-            sed -i "s|package=\"[^\"]*\"|package=\"$PACKAGE_NAME\"|g" $MANIFEST
-          fi
-          
-          # Update build.gradle applicationId
-          BUILD_GRADLE="android/app/build.gradle"
-          if [ -f "$BUILD_GRADLE" ]; then
-            sed -i "s|applicationId \".*\"|applicationId \"$PACKAGE_NAME\"|" $BUILD_GRADLE
-            sed -i "s|applicationId '.*'|applicationId '$PACKAGE_NAME'|" $BUILD_GRADLE
-            sed -i 's|minSdkVersion .*|minSdkVersion 21|' $BUILD_GRADLE
-            sed -i 's|minSdk .*|minSdk 21|' $BUILD_GRADLE
-            sed -i "s|minSdkVersion flutter.minSdkVersion|minSdkVersion 21|" $BUILD_GRADLE
-          fi
-          
-          SETTINGS_GRADLE="android/settings.gradle"
-          if [ -f "$SETTINGS_GRADLE" ]; then
-            sed -i 's|org.jetbrains.kotlin.android"] version "[^"]*"|org.jetbrains.kotlin.android"] version "2.1.0"|' $SETTINGS_GRADLE
-            sed -i "s|id \"org.jetbrains.kotlin.android\" version \".*\"|id \"org.jetbrains.kotlin.android\" version \"2.1.0\"|" $SETTINGS_GRADLE
-          fi
-          
-          TOP_BUILD_GRADLE="android/build.gradle"
-          if [ -f "$TOP_BUILD_GRADLE" ]; then
-            sed -i 's|ext.kotlin_version = .*|ext.kotlin_version = "2.1.0"|' $TOP_BUILD_GRADLE
-          fi
+
+          # Execute the python script
+          python3 update_project_info.py
 
       - name: Setup Signing
         working-directory: ${{ env.PROJECT_DIR }}/android/app
         run: |
-          echo "Setting up signing configuration..."
-          
           if [ ! -f "debug.keystore" ]; then
-            echo "Creating debug keystore..."
-            keytool -genkey -v \
-              -keystore debug.keystore \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
           
           mkdir -p signing
-          
           cat > signing/signing.gradle << 'EOF'
           signingConfigs {
               release {
@@ -230,180 +215,54 @@ jobs:
           }
           EOF
 
-      - name: Fix Firebase Configuration
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          # Check if main.dart imports firebase_options.dart
-          if grep -q "firebase_options.dart" lib/main.dart 2>/dev/null; then
-            if [ ! -f "lib/firebase_options.dart" ]; then
-              echo "Creating dummy firebase_options.dart..."
-              mkdir -p lib
-              cat > lib/firebase_options.dart << 'EOF'
-          // Dummy Firebase configuration for build purposes
-          import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
-          
-          class DefaultFirebaseOptions {
-            static FirebaseOptions get currentPlatform {
-              return const FirebaseOptions(
-                apiKey: 'AIzaSyDummy-Key-For-Build',
-                appId: '1:123456789:android:dummy',
-                messagingSenderId: '123456789',
-                projectId: 'dummy-project',
-                storageBucket: 'dummy-project.appspot.com',
-              );
-            }
-          }
-          EOF
-            fi
-          fi
-          
-          # Disable Crashlytics if google-services exists
-          if grep -r "google-services" android/app/build.gradle > /dev/null 2>&1; then
-             echo "// Auto-injected: Disable Crashlytics upload for CI build" >> android/app/build.gradle
-             echo "tasks.whenTaskAdded { task ->" >> android/app/build.gradle
-             echo "    if (task.name.startsWith('uploadCrashlyticsMappingFile')) {" >> android/app/build.gradle
-             echo "        task.enabled = false" >> android/app/build.gradle
-             echo "    }" >> android/app/build.gradle
-             echo "}" >> android/app/build.gradle
-             
-             # Create dummy google-services.json
-             cat > android/app/google-services.json << EOF
-          {
-            "project_info": {
-              "project_number": "123456789012",
-              "project_id": "dummy-project",
-              "storage_bucket": "dummy-project.appspot.com"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:123456789012:android:dummy",
-                  "android_client_info": {
-                    "package_name": "$PACKAGE_NAME"
-                  }
-                },
-                "oauth_client": [],
-                "api_key": [
-                  {
-                    "current_key": "AIzaSyDummyKeyForBuild"
-                  }
-                ],
-                "services": {
-                  "appinvite_service": {
-                    "other_platform_oauth_client": []
-                  }
-                }
-              }
-            ],
-            "configuration_version": "1"
-          }
-          EOF
-          fi
-
       - name: Process Icon
         run: |
-          echo "Processing app icon..."
           mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-xxxhdpi
-          mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-mdpi
-          mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-hdpi
-          mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-xhdpi
-          mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-xxhdpi
-          
           wget -q -O icon_original.png "$ICON_URL"
-          
           convert icon_original.png -resize 48x48 $PROJECT_DIR/android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           convert icon_original.png -resize 72x72 $PROJECT_DIR/android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           convert icon_original.png -resize 96x96 $PROJECT_DIR/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
           convert icon_original.png -resize 144x144 $PROJECT_DIR/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           convert icon_original.png -resize 192x192 $PROJECT_DIR/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          
-          if [ -d "$PROJECT_DIR/android/app/src/main/res/mipmap-anydpi-v26" ]; then
-            convert icon_original.png -resize 108x108 $PROJECT_DIR/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_foreground.png
-          fi
-          
-          rm icon_original.png
-          echo "Icons generated successfully"
 
       - name: Get Dependencies
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          flutter pub get || {
-            echo "First attempt failed, trying fixes..."
-            flutter pub upgrade --major-versions || true
-            flutter pub cache repair || true
-            flutter pub get
-          }
+          flutter pub get
 
-      - name: Code Generation
+      - name: Build Universal APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          if grep -q "build_runner:" pubspec.yaml; then
-            echo "Running build_runner..."
-            flutter pub run build_runner build --delete-conflicting-outputs || true
-          fi
+          echo "Building APK for: $APP_NAME"
           
-          if grep -q "json_serializable:" pubspec.yaml || grep -q "freezed:" pubspec.yaml; then
-            flutter pub run build_runner build --delete-conflicting-outputs || true
-          fi
-
-      - name: Build Universal APK (Compatible with all devices)
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          echo "Building Universal APK (arm64-v8a + armeabi-v7a)..."
+          flutter build apk --$BUILD_MODE --target-platform=android-arm,android-arm64 --split-debug-info=symbols/
           
-          # Build single APK containing both architectures (fat APK)
-          # This ensures compatibility with both old (32-bit) and new (64-bit) phones
-          flutter build apk --$BUILD_MODE \
-            --target-platform=android-arm,android-arm64 \
-            --obfuscate --split-debug-info=symbols/
-          
+          # Locate the output file
           APK_DIR="build/app/outputs/flutter-apk"
-          echo "Build complete. Listing outputs:"
-          ls -lh $APK_DIR/
+          DEFAULT_APK="$APK_DIR/app-$BUILD_MODE.apk"
           
-          # Rename to include app name for clarity
-          mv $APK_DIR/app-$BUILD_MODE.apk $APK_DIR/${APP_NAME}-${BUILD_MODE}.apk
+          # Determine final filename (Use user's App Name)
+          # We need to sanitize it slightly for filesystem (remove / or \) but keep spaces/Arabic
+          SAFE_FILENAME=$(echo "$APP_NAME" | sed 's/[\/\\\:*?"<>|]//g')
+          FINAL_APK="$APK_DIR/${SAFE_FILENAME}.apk"
           
-          echo "APK_DIR=$APK_DIR" >> $GITHUB_ENV
-          echo "APK_FILE=${APP_NAME}-${BUILD_MODE}.apk" >> $GITHUB_ENV
+          echo "Renaming $DEFAULT_APK to $FINAL_APK"
+          mv "$DEFAULT_APK" "$FINAL_APK"
+          
+          # Set Env var for Upload step
+          echo "APK_FILE=${SAFE_FILENAME}.apk" >> $GITHUB_ENV
+          echo "APK_PATH=$FINAL_APK" >> $GITHUB_ENV
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ env.BUILD_ID }}
-          name: "${{ env.APP_NAME }} - Build ${{ env.BUILD_ID }}"
+          name: "${{ env.APP_NAME }}"
           body: |
-            🚀 **Aite.studio Automated Build**
-            
-            **App Name:** ${{ env.APP_NAME }}
+            ✅ **Build Success**
+            **App:** ${{ env.APP_NAME }}
             **Package:** ${{ env.PACKAGE_NAME }}
-            **Build ID:** ${{ env.BUILD_ID }}
-            **Flutter Version:** ${{ steps.detect_flutter.outputs.version }}
-            **Compatibility:** Universal (ARM64 + ARMv7)
-            **Size:** Optimized with obfuscation
-            
-            This APK works on all Android devices (32-bit and 64-bit).
           files: |
-            ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/${{ env.APK_FILE }}
+            ${{ env.APK_PATH }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build Report
-        if: always()
-        run: |
-          echo "=========================================="
-          echo "BUILD REPORT"
-          echo "=========================================="
-          echo "Build ID: $BUILD_ID"
-          echo "App Name: $APP_NAME"
-          echo "Package: $PACKAGE_NAME"
-          echo "Flutter Version: ${{ steps.detect_flutter.outputs.version }}"
-          echo "Status: ${{ job.status }}"
-          echo "Output: ${{ env.APK_FILE }}"
-          echo "=========================================="
-
-      - name: Cleanup
-        if: always()
-        run: |
-          rm -rf $PROJECT_DIR
-          echo "Cleanup completed"

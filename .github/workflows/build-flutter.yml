@@ -67,7 +67,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: 🔧 Fix Firebase & Resources
+      - name: Fix Firebase & Resources
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           # Firebase Options
@@ -128,7 +128,7 @@ jobs:
             sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$MANIFEST"
           fi
 
-            - name: 🔧 Replace build.gradle (Clean)
+      - name: Replace build.gradle (Clean)
         working-directory: ${{ env.PROJECT_DIR }}/android/app
         run: |
           cp build.gradle build.gradle.backup
@@ -208,8 +208,8 @@ jobs:
           GRADLE_EOF
           
           sed -i "s/PLACEHOLDER_PACKAGE/${PACKAGE_NAME}/g" build.gradle
-          
-      - name: 🔧 Fix Gradle Settings
+
+      - name: Fix Gradle Settings
         working-directory: ${{ env.PROJECT_DIR }}/android
         run: |
           sed -i 's/gradle-[0-9.]*-/gradle-8.9-/' gradle/wrapper/gradle-wrapper.properties 2>/dev/null || true
@@ -219,10 +219,9 @@ jobs:
             sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '1.9.20'/g" settings.gradle || true
           fi
 
-      - name: 🔑 Setup Signing Key (FIXED PATH)
-        working-directory: ${{ env.PROJECT_DIR }}/android  # ⬅️ تغيير المسار إلى android/ وليس android/app/
+      - name: Setup Signing Key
+        working-directory: ${{ env.PROJECT_DIR }}/android
         run: |
-          # إنشاء Keystore في android/debug.keystore
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           ls -la debug.keystore
 
@@ -261,7 +260,7 @@ jobs:
             echo "✅ Build Successful: $FINAL_APK"
             echo "APK_PATH=$PWD/$FINAL_APK" >> $GITHUB_ENV
           else
-            echo "❌ Build Failed"
+            echo "❌ Build Failed: APK not found"
             exit 1
           fi
 

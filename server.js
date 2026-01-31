@@ -1,11 +1,4 @@
 
-# Now let's create an improved server.js with better file handling intelligence
-
-improved_server = '''// =============================================================================
-// Aite.studio - Web to APK Builder Server (Intelligent v2)
-// Smart file structure detection and handling
-// =============================================================================
-
 require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
@@ -947,13 +940,3 @@ app.listen(PORT, '0.0.0.0', () => {
 });
 
 module.exports = app;
-'''
-
-print("✅ Improved Server.js created!")
-print("\nKey improvements:")
-print("1. ProjectAnalyzer class - detects structure types automatically")
-print("2. Handles: single HTML, flat folders, nested folders, build outputs (www/dist/build)")
-print("3. Smart entry point detection with fallbacks")
-print("4. Auto-creates index.html if missing")
-print("5. Optimized ZIP creation for faster uploads")
-print("6. Better logging and error handling")

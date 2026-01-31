@@ -1,5 +1,5 @@
 // =============================================================================
-// Aite.studio - Smart Flutter Cloud Build Server (Fixed Names)
+// Aite.studio - Web to APK Builder Server (Capacitor)
 // =============================================================================
 
 require('dotenv').config();
@@ -11,7 +11,6 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
-const { createWriteStream } = require('fs');
 const crypto = require('crypto');
 
 const app = express();
@@ -198,9 +197,10 @@ const upload = multer({
 app.get('/health', (req, res) => {
   res.json(makeSuccessResponse({
     status: 'healthy',
-    version: '2.2.0-fixed-names',
+    version: '3.0.0-web2apk',
     features: {
-      universalApk: true,
+      webToApk: true,
+      capacitorBuild: true,
       exactAppName: true,
       firebaseSave: true
     }
@@ -208,10 +208,10 @@ app.get('/health', (req, res) => {
 });
 
 // =============================================================================
-// Main Build Endpoint
+// Main Build Endpoint - Web to APK using Capacitor
 // =============================================================================
 
-app.post('/build-flutter', 
+app.post('/build-web2apk', 
   upload.fields([
     { name: 'icon', maxCount: 1 },
     { name: 'projectZip', maxCount: 1 }
@@ -220,7 +220,7 @@ app.post('/build-flutter',
     const requestId = generateBuildId();
     const tempDir = req.tempDir;
     
-    console.log(`[${requestId}] New build request started`);
+    console.log(`[${requestId}] New Web-to-APK build request started`);
     
     try {
       const owner = process.env.GITHUB_REPO_OWNER;
@@ -275,7 +275,6 @@ app.post('/build-flutter',
         ));
       }
 
-      // We still need a safe name for internal IDs, but we will send the REAL name to GitHub
       const safeAppName = sanitizeFilename(appName);
 
       // Upload Icon
@@ -309,7 +308,7 @@ app.post('/build-flutter',
       try {
         if (zipFile.size > 50 * 1024 * 1024) {
           zipUpload = await uploadLargeFileToCloudinary(zipFile.path, {
-            folder: 'aite_studio/projects',
+            folder: 'aite_studio/web-projects',
             public_id: `${sanitizeFilename(packageName)}_source_${requestId}`,
             resource_type: 'raw',
             overwrite: true
@@ -317,7 +316,7 @@ app.post('/build-flutter',
         } else {
           const zipBuffer = await fs.readFile(zipFile.path);
           zipUpload = await uploadToCloudinaryBuffer(zipBuffer, {
-            folder: 'aite_studio/projects',
+            folder: 'aite_studio/web-projects',
             public_id: `${sanitizeFilename(packageName)}_source_${requestId}`,
             resource_type: 'raw',
             overwrite: true
@@ -333,15 +332,13 @@ app.post('/build-flutter',
         ));
       }
 
-      // Dispatch to GitHub Actions
-      console.log(`[${requestId}] Dispatching to GitHub...`);
+      // Dispatch to GitHub Actions for Capacitor Build
+      console.log(`[${requestId}] Dispatching to GitHub for Capacitor build...`);
       
       const githubPayload = {
-        event_type: 'build-flutter',
+        event_type: 'build-web2apk',
         client_payload: {
-          // FIX: Send the REAL appName (e.g., "متجري") instead of safeAppName
           app_name: appName,
-          // We also send safe name if needed for other things, but app_name is priority
           safe_name: safeAppName,
           display_name: appName,
           package_name: packageName,
@@ -378,7 +375,7 @@ app.post('/build-flutter',
           package_name: packageName,
           icon_url: iconUpload.secure_url,
           zip_url: zipUpload.secure_url,
-          message: 'Build started successfully',
+          message: 'Web-to-APK build started successfully',
           check_status_url: `/check-status/${requestId}`
         }));
       } else {
@@ -583,7 +580,7 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log('='.repeat(60));
-  console.log('🚀 Aite.studio - Fixed Cloud Build Server');
+  console.log('🚀 Aite.studio - Web to APK Builder (Capacitor)');
   console.log('='.repeat(60));
   console.log(`📡 Port: ${PORT}`);
   console.log(`📁 Temp: ${CONFIG.TEMP_DIR}`);

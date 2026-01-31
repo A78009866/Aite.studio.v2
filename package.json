@@ -1,6 +1,7 @@
 {
-  "name": "aite-flutter-studio",
-  "version": "2.0.0",
+  "name": "aite-web2apk-studio",
+  "version": "3.0.0",
+  "description": "Web to APK Builder - Convert HTML/CSS/JS projects to Android apps using Capacitor",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -19,5 +20,16 @@
   },
   "engines": {
     "node": ">=16.0.0"
-  }
+  },
+  "keywords": [
+    "web-to-apk",
+    "capacitor",
+    "android",
+    "app-builder",
+    "html",
+    "css",
+    "js"
+  ],
+  "author": "Aite Studio",
+  "license": "MIT"
 }

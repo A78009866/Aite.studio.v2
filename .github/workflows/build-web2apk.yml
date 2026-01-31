@@ -1,5 +1,9 @@
-# =============================================================================
-# Aite.studio - Web to APK Builder (Simplified)
+
+# Let's create an improved version of the build workflow that handles any file structure intelligently
+
+improved_yml = '''# =============================================================================
+# Aite.studio - Web to APK Builder (Intelligent v2)
+# Auto-detects and handles any file structure: HTML, folders, nested projects
 # =============================================================================
 
 name: Build Web to APK
@@ -36,14 +40,177 @@ jobs:
       - name: Download Project
         run: |
           mkdir -p project && cd project
+          echo "📥 Downloading project archive..."
           curl -sL "${{ github.event.client_payload.zip_url || github.event.inputs.zip_url }}" -o project.zip
-          unzip -q project.zip && rm project.zip
+          
+          echo "📦 Extracting archive..."
+          unzip -q project.zip
+          rm project.zip
+          
+          echo "📂 Initial structure:"
+          find . -type f -name "*.html" -o -name "*.htm" | head -20
           ls -la
+
+      - name: Intelligent Project Structure Detection
+        id: detect
+        run: |
+          cd project
+          
+          echo "🔍 Analyzing project structure..."
+          
+          # Function to find the best HTML entry point
+          find_entry_point() {
+            local search_dirs=("$@")
+            
+            # Priority 1: index.html in root or direct subdirs
+            for dir in "${search_dirs[@]}"; do
+              if [ -f "$dir/index.html" ]; then
+                echo "$dir/index.html"
+                return 0
+              fi
+              if [ -f "$dir/index.htm" ]; then
+                echo "$dir/index.htm"
+                return 0
+              fi
+            done
+            
+            # Priority 2: Any HTML file with "index" in name
+            for dir in "${search_dirs[@]}"; do
+              local index_file=$(find "$dir" -maxdepth 1 -type f \( -iname "*index*.html" -o -iname "*index*.htm" -o -iname "*home*.html" -o -iname "*main*.html" \) | head -1)
+              if [ -n "$index_file" ]; then
+                echo "$index_file"
+                return 0
+              fi
+            done
+            
+            # Priority 3: First HTML file found
+            for dir in "${search_dirs[@]}"; do
+              local first_html=$(find "$dir" -maxdepth 2 -type f \( -iname "*.html" -o -iname "*.htm" \) | head -1)
+              if [ -n "$first_html" ]; then
+                echo "$first_html"
+                return 0
+              fi
+            done
+            
+            return 1
+          }
+          
+          # Detect project structure type
+          HTML_COUNT=$(find . -type f \( -name "*.html" -o -name "*.htm" \) | wc -l)
+          SUBDIRS=$(find . -maxdepth 1 -type d | wc -l)
+          
+          echo "Found $HTML_COUNT HTML files in $SUBDIRS directories"
+          
+          # Case 1: Single HTML file at root
+          if [ "$HTML_COUNT" -eq 1 ] && [ -f *.html ]; then
+            echo "✅ Detected: Single HTML file at root"
+            mkdir -p www
+            cp -r ./* www/
+            echo "entry_point=index.html" >> $GITHUB_OUTPUT
+            
+          # Case 2: Proper www/ or dist/ folder already exists
+          elif [ -d "www" ] && [ -f "www/index.html" ]; then
+            echo "✅ Detected: Pre-built www folder"
+            echo "entry_point=www/index.html" >> $GITHUB_OUTPUT
+            
+          elif [ -d "dist" ] && [ -f "dist/index.html" ]; then
+            echo "✅ Detected: dist folder (common for build tools)"
+            mkdir -p www
+            cp -r dist/* www/
+            echo "entry_point=www/index.html" >> $GITHUB_OUTPUT
+            
+          elif [ -d "build" ] && [ -f "build/index.html" ]; then
+            echo "✅ Detected: build folder"
+            mkdir -p www
+            cp -r build/* www/
+            echo "entry_point=www/index.html" >> $GITHUB_OUTPUT
+            
+          # Case 3: Nested single folder (user zipped a folder instead of contents)
+          elif [ "$SUBDIRS" -eq 2 ] && [ -z "$(ls -A *.html 2>/dev/null)" ]; then
+            # Only one subdir, no files at root
+            NESTED_DIR=$(find . -maxdepth 1 -type d ! -path . | head -1)
+            echo "📁 Detected nested structure in: $NESTED_DIR"
+            
+            if [ -f "$NESTED_DIR/index.html" ]; then
+              mkdir -p www
+              cp -r "$NESTED_DIR"/* www/
+              echo "entry_point=www/index.html" >> $GITHUB_OUTPUT
+            else
+              # Find entry point in nested dir
+              ENTRY=$(find_entry_point "$NESTED_DIR")
+              if [ -n "$ENTRY" ]; then
+                mkdir -p www
+                cp -r "$NESTED_DIR"/* www/
+                # Rename entry to index.html if needed
+                if [ "$(basename "$ENTRY")" != "index.html" ]; then
+                  mv "www/$(basename "$ENTRY")" www/index.html 2>/dev/null || true
+                fi
+                echo "entry_point=www/index.html" >> $GITHUB_OUTPUT
+              fi
+            fi
+            
+          # Case 4: Multiple files at root (flat structure)
+          elif [ -f "index.html" ]; then
+            echo "✅ Detected: Flat structure with index.html"
+            mkdir -p www
+            cp -r ./* www/
+            echo "entry_point=www/index.html" >> $GITHUB_OUTPUT
+            
+          # Case 5: No index.html, find best candidate
+          else
+            echo "🔍 Searching for entry point..."
+            ENTRY=$(find_entry_point ".")
+            
+            if [ -n "$ENTRY" ]; then
+              echo "✅ Found entry point: $ENTRY"
+              mkdir -p www
+              
+              # Copy all files maintaining structure
+              cp -r ./* www/ 2>/dev/null || cp -r ./*/* www/ 2>/dev/null
+              
+              # Ensure we have index.html as entry point
+              ENTRY_NAME=$(basename "$ENTRY")
+              if [ "$ENTRY_NAME" != "index.html" ]; then
+                cd www
+                # Create index.html that redirects or copies content
+                if [ -f "$ENTRY_NAME" ]; then
+                  # If entry is at root of www, rename it
+                  mv "$ENTRY_NAME" index.html 2>/dev/null || cp "$ENTRY_NAME" index.html
+                else
+                  # Search for it in subdirs
+                  FOUND_ENTRY=$(find . -name "$ENTRY_NAME" -type f | head -1)
+                  if [ -n "$FOUND_ENTRY" ]; then
+                    cp "$FOUND_ENTRY" index.html
+                  fi
+                fi
+                cd ..
+              fi
+              echo "entry_point=www/index.html" >> $GITHUB_OUTPUT
+            else
+              echo "❌ No HTML files found!"
+              exit 1
+            fi
+          fi
+          
+          echo "📂 Final www structure:"
+          ls -la www/
+          echo ""
+          echo "📄 HTML files in www:"
+          find www/ -name "*.html" -o -name "*.htm"
 
       - name: Download Icon
         run: |
           mkdir -p project/icon
+          echo "🎨 Downloading icon..."
           curl -sL "${{ github.event.client_payload.icon_url || github.event.inputs.icon_url }}" -o project/icon/icon.png
+          
+          # Verify icon exists and convert if needed
+          if [ -f "project/icon/icon.png" ]; then
+            echo "✅ Icon downloaded successfully"
+            file project/icon/icon.png
+          else
+            echo "⚠️ Icon download failed, will use default"
+          fi
 
       - name: Setup Environment
         uses: actions/setup-node@v4
@@ -59,50 +226,115 @@ jobs:
       - name: Install Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build APK
+      - name: Build APK with Capacitor
         run: |
-          # Create Capacitor project
+          echo "🏗️ Setting up Capacitor project..."
           mkdir -p build && cd build
+          
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
-
-          # Create config
+          
+          # Create intelligent capacitor config
           cat > capacitor.config.json <<EOF
           {
             "appId": "${{ github.event.client_payload.package_name || github.event.inputs.package_name }}",
             "appName": "${{ github.event.client_payload.app_name || github.event.inputs.app_name }}",
-            "webDir": "www"
+            "webDir": "www",
+            "bundledWebRuntime": false,
+            "server": {
+              "androidScheme": "https"
+            }
           }
           EOF
-
-          # Setup www folder
-          mkdir -p www
-          if [ -f "../project/index.html" ]; then
-            cp -r ../project/* www/
-          else
-            cp -r ../project/*/* www/ 2>/dev/null || cp -r ../project/* www/
-          fi
-
-          # Add Android and build
+          
+          echo "📋 Capacitor config:"
+          cat capacitor.config.json
+          
+          # Copy www folder
+          echo "📂 Copying web assets..."
+          cp -r ../project/www ./
+          
+          # Verify www contents
+          echo "✅ www contents:"
+          ls -la www/
+          
+          # Add Android platform
+          echo "🤖 Adding Android platform..."
           npx cap add android
+          
+          # Sync web assets
+          echo "🔄 Syncing assets..."
+          npx cap sync
+          
+          # Copy icon to Android resources
+          if [ -f "../project/icon/icon.png" ]; then
+            echo "🎨 Setting up app icon..."
+            mkdir -p android/app/src/main/res/mipmap-{hdpi,mdpi,xhdpi,xxhdpi,xxxhdpi}
+            
+            # Use ImageMagick if available, otherwise copy directly
+            if command -v convert &> /dev/null; then
+              convert ../project/icon/icon.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+              convert ../project/icon/icon.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+              convert ../project/icon/icon.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+              convert ../project/icon/icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+              convert ../project/icon/icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+            else
+              # Copy same icon to all densities (Android will scale)
+              for dir in hdpi mdpi xhdpi xxhdpi xxxhdpi; do
+                cp ../project/icon/icon.png android/app/src/main/res/mipmap-${dir}/ic_launcher.png
+              done
+            fi
+            
+            # Also update foreground icon if exists
+            for dir in hdpi mdpi xhdpi xxhdpi xxxhdpi; do
+              if [ -f "android/app/src/main/res/mipmap-${dir}/ic_launcher_foreground.png" ]; then
+                cp ../project/icon/icon.png android/app/src/main/res/mipmap-${dir}/ic_launcher_foreground.png
+              fi
+            done
+          fi
+          
+          # Build APK
+          echo "🔨 Building APK..."
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon --stacktrace
+          
+          echo "✅ Build complete!"
+          find app/build/outputs -name "*.apk" -type f
 
       - name: Sign APK
         run: |
           cd build/android
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -1)
+          APK=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+          
+          if [ -z "$APK" ]; then
+            echo "❌ No APK found!"
+            exit 1
+          fi
+          
+          echo "🔐 Signing APK: $APK"
           
           # Create keystore
           keytool -genkey -v -keystore key.jks -alias key -storepass 123456 -keypass 123456 \
-            -keyalg RSA -validity 10000 -dname "CN=Android" 2>/dev/null
+            -keyalg RSA -validity 10000 -dname "CN=Android,O=Android,C=US" 2>/dev/null
           
-          # Sign
-          jarsigner -keystore key.jks -storepass 123456 -keypass 123456 \
-            -sigalg SHA256withRSA -digestalg SHA-256 "$APK" key 2>/dev/null
+          # Sign with apksigner if available (Android 7.0+), else jarsigner
+          if [ -f "$ANDROID_HOME/build-tools/*/apksigner" ]; then
+            APKSIGNER=$(find $ANDROID_HOME/build-tools -name "apksigner" | sort -V | tail -1)
+            $APKSIGNER sign --ks key.jks --ks-pass pass:123456 --key-pass pass:123456 "$APK"
+          else
+            jarsigner -keystore key.jks -storepass 123456 -keypass 123456 \
+              -sigalg SHA256withRSA -digestalg SHA-256 "$APK" key
+          fi
           
+          # Verify signature
+          if [ -f "$ANDROID_HOME/build-tools/*/apksigner" ]; then
+            $APKSIGNER verify "$APK"
+          fi
+          
+          # Copy to root with nice name
           cp "$APK" ../../app.apk
+          echo "✅ Signed APK ready: app.apk"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -110,5 +342,17 @@ jobs:
           tag_name: build-${{ github.event.client_payload.request_id || github.event.inputs.request_id }}
           name: "${{ github.event.client_payload.app_name || github.event.inputs.app_name }}"
           files: app.apk
+          generate_release_notes: false
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+'''
+
+print("✅ Improved GitHub Actions workflow created!")
+print("\nKey improvements:")
+print("1. Smart project structure detection (handles nested folders, flat structures, etc.)")
+print("2. Auto-finds entry point (index.html, home.html, or any HTML)")
+print("3. Handles build folders (www/, dist/, build/)")
+print("4. Proper icon handling with multiple densities")
+print("5. Modern apksigner support with jarsigner fallback")
+print("6. Better error handling and logging")

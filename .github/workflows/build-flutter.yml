@@ -67,7 +67,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: 🛠️ Smart Auto-Fix & Upgrade Tools
+      - name: 🛠️ Fix Project Structure & Dependencies
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           # --- 1. Fix Missing Firebase Options ---
@@ -96,6 +96,7 @@ jobs:
           # --- 2. Fix Missing Google Services JSON ---
           if [ ! -f "android/app/google-services.json" ]; then
             echo "⚠️ google-services.json missing. Generating dummy file."
+            mkdir -p android/app
             cat <<EOF > android/app/google-services.json
           {
             "project_info": {
@@ -121,21 +122,41 @@ jobs:
           EOF
           fi
 
-          # --- 3. Upgrade Gradle & Kotlin ---
-          echo "🔄 Upgrading Gradle Wrapper..."
-          if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
-             sed -i 's/gradle-.*-all.zip/gradle-8.9-all.zip/' android/gradle/wrapper/gradle-wrapper.properties || true
+      - name: 🔧 Upgrade Gradle & Kotlin (Modern Approach)
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        run: |
+          echo "🔄 Upgrading Gradle wrapper..."
+          if [ -f "gradle/wrapper/gradle-wrapper.properties" ]; then
+             sed -i 's/gradle-.*-all.zip/gradle-8.9-all.zip/' gradle/wrapper/gradle-wrapper.properties
+             cat gradle/wrapper/gradle-wrapper.properties
           fi
           
-          sed -i 's/com.android.tools.build:gradle:[3-7].*/com.android.tools.build:gradle:8.2.1"/' android/build.gradle || true
-          sed -i 's/ext.kotlin_version\s*=\s*.*/ext.kotlin_version = "1.9.20"/' android/build.gradle || true
+          # --- تحديث settings.gradle (الطريقة الحديثة للإضافات) ---
+          if [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
+            SETTINGS_FILE=$(ls settings.gradle* | head -n 1)
+            echo "Updating $SETTINGS_FILE..."
+            
+            # إذا كان الملف يستخدم plugins DSL (الطريقة الجديدة)
+            if grep -q "pluginManagement" "$SETTINGS_FILE" 2>/dev/null || grep -q "plugins {" "$SETTINGS_FILE" 2>/dev/null; then
+              # تحديث إصدار Kotlin في plugins block
+              sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.20"/' "$SETTINGS_FILE" || true
+              sed -i "s/id 'org.jetbrains.kotlin.android' version '.*'/id 'org.jetbrains.kotlin.android' version '1.9.20'/" "$SETTINGS_FILE" || true
+              sed -i 's/kotlin("android") version ".*"/kotlin("android") version "1.9.20"/' "$SETTINGS_FILE" || true
+            fi
+          fi
+          
+          # --- تحديث build.gradle القديم (إذا لم يكن يستخدم settings.gradle) ---
+          if [ -f "build.gradle" ]; then
+            sed -i 's/ext.kotlin_version\s*=\s*.*/ext.kotlin_version = "1.9.20"/' build.gradle || true
+            sed -i 's/com.android.tools.build:gradle:[0-9.]\+/com.android.tools.build:gradle:8.2.1/' build.gradle || true
+          fi
 
-      - name: 🔧 Fix App Name & Package (Robust Method)
+      - name: 🔧 Fix App Name & Package
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           echo "🔧 Configuring App: $APP_NAME | Package: $PACKAGE_NAME"
           
-          # Update strings.xml (الاسم الأساسي)
+          # Update strings.xml
           strings_path='android/app/src/main/res/values/strings.xml'
           mkdir -p "$(dirname "$strings_path")"
           cat > "$strings_path" <<EOF
@@ -145,74 +166,56 @@ jobs:
           </resources>
           EOF
 
-          # تحديث AndroidManifest.xml مباشرة باستخدام xmlstarlet (أكثر موثوقية)
+          # Update AndroidManifest.xml
           manifest_path='android/app/src/main/AndroidManifest.xml'
           if [ -f "$manifest_path" ]; then
-            # استبدال label في application tag
             xmlstarlet ed --inplace -u "//application/@android:label" -v "@string/app_name" "$manifest_path" 2>/dev/null || \
             sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$manifest_path"
-            
-            # التأكد من وجود namespace للـ android
-            if ! grep -q "xmlns:android" "$manifest_path"; then
-              sed -i 's/<manifest /<manifest xmlns:android="http:\/\/schemas.android.com\/apk\/res\/android" /' "$manifest_path"
-            fi
           fi
 
-          # تحديث build.gradle (Package & SDK)
+          # Update build.gradle (App Level)
           gradle_path='android/app/build.gradle'
           if [ -f "$gradle_path" ]; then
             # تحديث applicationId
             sed -i "s/applicationId \".*\"/applicationId \"${PACKAGE_NAME}\"/g" "$gradle_path"
-            # تحديث namespace (للأندرويد جرادل الجديد)
+            sed -i "s/applicationId '.*'/applicationId '${PACKAGE_NAME}'/g" "$gradle_path"
+            
+            # تحديث namespace
             sed -i "s/namespace \".*\"/namespace \"${PACKAGE_NAME}\"/g" "$gradle_path"
-            # التأكد من minSdk 21 على الأقل (للتوافق)
+            sed -i "s/namespace '.*'/namespace '${PACKAGE_NAME}'/g" "$gradle_path"
+            
+            # minSdk
             sed -i 's/minSdkVersion.*/minSdkVersion 21/g' "$gradle_path"
             sed -i 's/minSdk\s*=.*/minSdk = 21/g' "$gradle_path"
+            
+            # إضافة التوقيع مباشرة في build.gradle بدلاً من ملف خارجي (لتجنب مشاكل المسار)
+            if ! grep -q "signingConfigs" "$gradle_path"; then
+              # نبحث عن buildTypes ونضيف signingConfigs قبله
+              sed -i '/buildTypes {/i\
+          \
+          signingConfigs {\
+              release {\
+                  storeFile file("../debug.keystore")\
+                  storePassword "android"\
+                  keyAlias "androiddebugkey"\
+                  keyPassword "android"\
+              }\
+          }' "$gradle_path"
+              
+              # تحديث buildTypes.release لاستخدام التوقيع
+              sed -i 's/buildTypes {/buildTypes {/g' "$gradle_path"
+              sed -i '/signingConfig signingConfigs.debug/a\                signingConfig signingConfigs.release' "$gradle_path" || true
+            fi
+            
+            cat "$gradle_path" | head -50
           fi
 
-          # التحقق من النتيجة
-          echo "✅ strings.xml content:"
-          cat "$strings_path"
-          echo "✅ Manifest application label:"
-          grep -o 'android:label="[^"]*"' "$manifest_path" || echo "Not found"
-
-      - name: Setup Signing Key (Debug for Universal Compatibility)
+      - name: Setup Signing Key
         working-directory: ${{ env.PROJECT_DIR }}/android/app
         run: |
-          # إنشاء مفتاح توقيع موحد
+          # إنشاء keystore
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
-          
-          # إنشاء ملف signing.gradle في المكان الصحيح
-          mkdir -p signing
-          cat > signing.gradle << 'EOF'
-          android {
-              signingConfigs {
-                  release {
-                      storeFile file("debug.keystore")
-                      storePassword "android"
-                      keyAlias "androiddebugkey"
-                      keyPassword "android"
-                  }
-              }
-              buildTypes {
-                  release {
-                      signingConfig signingConfigs.release
-                      minifyEnabled false
-                      shrinkResources false
-                      proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-                  }
-                  debug {
-                      signingConfig signingConfigs.debug
-                  }
-              }
-          }
-          EOF
-          
-          # استيراد ملف التوقيع في build.gradle الرئيسي للتطبيق
-          app_gradle="../../android/app/build.gradle"
-          if ! grep -q "signing.gradle" "$app_gradle"; then
-            echo "apply from: 'signing/signing.gradle'" >> "$app_gradle"
-          fi
+          ls -la debug.keystore
 
       - name: Process Icon
         run: |
@@ -226,16 +229,15 @@ jobs:
              convert icon.png -resize $px $PROJECT_DIR/android/app/src/main/res/mipmap-$name/ic_launcher.png
           done
 
-      - name: Get Dependencies & Clean
+      - name: Get Dependencies
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           flutter clean
           flutter pub get
 
-      - name: Build APK (Universal - All Architectures)
+      - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          # بناء لجميع المعماريات (للتوافق مع الهواتف القديمة والمحاكيات)
           flutter build apk --$BUILD_MODE \
             --target-platform=android-arm,android-arm64,android-x64 \
             --no-android-gradle-daemon
@@ -257,7 +259,7 @@ jobs:
       - name: Verify APK
         run: |
           echo "📱 APK Info:"
-          aapt dump badging ${{ env.APK_PATH }} | grep -E "package|application-label" || true
+          aapt dump badging ${{ env.APK_PATH }} 2>/dev/null | grep -E "package|application-label|version" || echo "aapt not available"
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v1
@@ -268,7 +270,6 @@ jobs:
             ✅ **تم البناء بنجاح**
             📱 **التطبيق:** ${{ env.APP_NAME }}
             📦 **الحزمة:** ${{ env.PACKAGE_NAME }}
-            🏗️ **النوع:** ${{ env.BUILD_MODE }}
           files: |
             ${{ env.APK_PATH }}
         env:

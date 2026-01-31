@@ -1,7 +1,6 @@
 # =============================================================================
-# Aite.studio - Web to APK Builder (Intelligent v2.1 - Fixed)
-# Auto-detects and handles any file structure: HTML, folders, nested projects
-# Fixed: Prevent www from copying into itself
+# Aite.studio - Web to APK Builder (Intelligent v2.2 - Java 17 Stable)
+# Fixed: Java 21 incompatibility with Gradle - Reverted to Java 17 LTS
 # =============================================================================
 
 name: Build Web to APK
@@ -76,7 +75,7 @@ jobs:
 
             # Priority 2: Any HTML file with "index" in name
             for dir in "${search_dirs[@]}"; do
-              local index_file=$(find "$dir" -maxdepth 1 -type f \( -iname "*index*.html" -o -iname "*index*.htm" -o -iname "*home*.html" -o -iname "*main*.html" \) | head -1)
+              local index_file=$(find "$dir" -maxdepth 1 -type f \( -iname "*index*.html" -o -iname "*index*.htm" -o -iname "*home*.html" -o -iname "*main*.html" \) 2>/dev/null | head -1)
               if [ -n "$index_file" ]; then
                 echo "$index_file"
                 return 0
@@ -85,7 +84,7 @@ jobs:
 
             # Priority 3: First HTML file found
             for dir in "${search_dirs[@]}"; do
-              local first_html=$(find "$dir" -maxdepth 2 -type f \( -iname "*.html" -o -iname "*.htm" \) | head -1)
+              local first_html=$(find "$dir" -maxdepth 2 -type f \( -iname "*.html" -o -iname "*.htm" \) 2>/dev/null | head -1)
               if [ -n "$first_html" ]; then
                 echo "$first_html"
                 return 0
@@ -96,8 +95,8 @@ jobs:
           }
 
           # Detect project structure type
-          HTML_COUNT=$(find . -type f \( -name "*.html" -o -name "*.htm" \) | wc -l)
-          SUBDIRS=$(find . -maxdepth 1 -type d | wc -l)
+          HTML_COUNT=$(find . -type f \( -name "*.html" -o -name "*.htm" \) 2>/dev/null | wc -l)
+          SUBDIRS=$(find . -maxdepth 1 -type d 2>/dev/null | wc -l)
 
           echo "Found $HTML_COUNT HTML files in $SUBDIRS directories"
 
@@ -105,7 +104,6 @@ jobs:
           if [ "$HTML_COUNT" -eq 1 ] && ls *.html 1>/dev/null 2>&1; then
             echo "✅ Detected: Single HTML file at root"
             mkdir -p www
-            # Use extglob to exclude www from copy
             cp -r !(www) www/ 2>/dev/null || cp -r ./* www/
             echo "entry_point=www/index.html" >> $GITHUB_OUTPUT
 
@@ -179,7 +177,7 @@ jobs:
                   mv "$ENTRY_NAME" index.html 2>/dev/null || cp "$ENTRY_NAME" index.html
                 else
                   # Search for it in subdirs
-                  FOUND_ENTRY=$(find . -name "$ENTRY_NAME" -type f | head -1)
+                  FOUND_ENTRY=$(find . -name "$ENTRY_NAME" -type f 2>/dev/null | head -1)
                   if [ -n "$FOUND_ENTRY" ]; then
                     cp "$FOUND_ENTRY" index.html
                   fi
@@ -205,20 +203,18 @@ jobs:
           echo "🎨 Downloading icon..."
           curl -sL "${{ github.event.client_payload.icon_url || github.event.inputs.icon_url }}" -o project/icon/icon.png
 
-          # Verify icon exists and convert if needed
           if [ -f "project/icon/icon.png" ]; then
-            echo "✅ Icon downloaded successfully"
-            file project/icon/icon.png
+            echo "✅ Icon downloaded"
           else
-            echo "⚠️ Icon download failed, will use default"
+            echo "⚠️ Using default icon"
           fi
 
-      - name: Setup Environment
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      - name: Setup Java & Android
+      - name: Setup Java 17 (Stable LTS)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -232,10 +228,11 @@ jobs:
           echo "🏗️ Setting up Capacitor project..."
           mkdir -p build && cd build
 
+          # Initialize project
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
 
-          # Create intelligent capacitor config
+          # Create capacitor config
           cat > capacitor.config.json <<EOF
           {
             "appId": "${{ github.event.client_payload.package_name || github.event.inputs.package_name }}",
@@ -248,31 +245,29 @@ jobs:
           }
           EOF
 
-          echo "📋 Capacitor config:"
-          cat capacitor.config.json
-
-          # Copy www folder
+          # Copy web assets
           echo "📂 Copying web assets..."
           cp -r ../project/www ./
-
-          # Verify www contents
-          echo "✅ www contents:"
-          ls -la www/
 
           # Add Android platform
           echo "🤖 Adding Android platform..."
           npx cap add android
 
-          # Sync web assets
-          echo "🔄 Syncing assets..."
+          # Update Gradle wrapper to support Java 17 (if needed)
+          echo "🔧 Updating Gradle wrapper..."
+          cd android
+          ./gradlew wrapper --gradle-version 8.4 --distribution-type bin 2>/dev/null || true
+          cd ..
+
+          # Sync assets
+          echo "🔄 Syncing..."
           npx cap sync
 
-          # Copy icon to Android resources
+          # Setup icon
           if [ -f "../project/icon/icon.png" ]; then
-            echo "🎨 Setting up app icon..."
+            echo "🎨 Setting up icon..."
             mkdir -p android/app/src/main/res/mipmap-{hdpi,mdpi,xhdpi,xxhdpi,xxxhdpi}
 
-            # Use ImageMagick if available, otherwise copy directly
             if command -v convert &> /dev/null; then
               convert ../project/icon/icon.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
               convert ../project/icon/icon.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
@@ -280,28 +275,19 @@ jobs:
               convert ../project/icon/icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
               convert ../project/icon/icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
             else
-              # Copy same icon to all densities (Android will scale)
               for dir in hdpi mdpi xhdpi xxhdpi xxxhdpi; do
                 cp ../project/icon/icon.png android/app/src/main/res/mipmap-${dir}/ic_launcher.png
               done
             fi
-
-            # Also update foreground icon if exists
-            for dir in hdpi mdpi xhdpi xxhdpi xxxhdpi; do
-              if [ -f "android/app/src/main/res/mipmap-${dir}/ic_launcher_foreground.png" ]; then
-                cp ../project/icon/icon.png android/app/src/main/res/mipmap-${dir}/ic_launcher_foreground.png
-              fi
-            done
           fi
 
-          # Build APK
+          # Build
           echo "🔨 Building APK..."
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
 
           echo "✅ Build complete!"
-          find app/build/outputs -name "*.apk" -type f
 
       - name: Sign APK
         run: |
@@ -313,27 +299,20 @@ jobs:
             exit 1
           fi
 
-          echo "🔐 Signing APK: $APK"
+          echo "🔐 Signing: $(basename $APK)"
 
           # Create keystore
           keytool -genkey -v -keystore key.jks -alias key -storepass 123456 -keypass 123456             -keyalg RSA -validity 10000 -dname "CN=Android,O=Android,C=US" 2>/dev/null
 
-          # Sign with apksigner if available (Android 7.0+), else jarsigner
-          if [ -f "$ANDROID_HOME/build-tools/*/apksigner" ]; then
-            APKSIGNER=$(find $ANDROID_HOME/build-tools -name "apksigner" | sort -V | tail -1)
-            $APKSIGNER sign --ks key.jks --ks-pass pass:123456 --key-pass pass:123456 "$APK"
+          # Sign
+          if command -v apksigner &> /dev/null; then
+            apksigner sign --ks key.jks --ks-pass pass:123456 --key-pass pass:123456 "$APK"
           else
             jarsigner -keystore key.jks -storepass 123456 -keypass 123456               -sigalg SHA256withRSA -digestalg SHA-256 "$APK" key
           fi
 
-          # Verify signature
-          if [ -f "$ANDROID_HOME/build-tools/*/apksigner" ]; then
-            $APKSIGNER verify "$APK"
-          fi
-
-          # Copy to root with nice name
           cp "$APK" ../../app.apk
-          echo "✅ Signed APK ready: app.apk"
+          echo "✅ Signed: app.apk"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

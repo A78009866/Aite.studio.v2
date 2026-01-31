@@ -70,9 +70,7 @@ jobs:
       - name: Smart Fix Legacy Projects (Pubspec)
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          # 1. Force update SDK constraints if they are too old
           if [ -f "pubspec.yaml" ]; then
-            echo "Checking pubspec.yaml for legacy SDK constraints..."
             sed -i 's/sdk: ">=2.0.[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
             sed -i 's/sdk: ">=2.[1-9].[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
             sed -i "s/sdk: '>=2.0.[0-9].*'/sdk: '>=2.12.0 <4.0.0'/" pubspec.yaml || true
@@ -81,7 +79,7 @@ jobs:
       - name: Fix Firebase & Resources
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          # Firebase Options Generation
+          # Firebase Options
           if [ ! -f "lib/firebase_options.dart" ]; then
             mkdir -p lib
             cat > lib/firebase_options.dart << 'EOF'
@@ -117,13 +115,10 @@ jobs:
           EOF
           fi
 
-          # AndroidManifest fixes (Exported Activity & Label)
+          # AndroidManifest fixes
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
-            # Fix Label
             sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$MANIFEST"
-            
-            # Ensure android:exported="true" exists for MainActivity (Required for Android 12+)
             if ! grep -q 'android:exported="true"' "$MANIFEST"; then
                sed -i 's/<activity/<activity android:exported="true"/g' "$MANIFEST"
             fi
@@ -143,7 +138,9 @@ jobs:
         run: |
           cp build.gradle build.gradle.backup
           
-          # CRITICAL FIX: Added google-services plugin to the plugins block below
+          # We add google-services plugin here. 
+          # Note: If the project uses the new "plugins DSL" in settings.gradle, this is fine.
+          # If it uses the old "apply plugin" method, this is also fine as we replaced the whole file.
           cat > build.gradle << 'GRADLE_EOF'
           plugins {
               id "com.android.application"
@@ -226,24 +223,25 @@ jobs:
           
           sed -i "s/PLACEHOLDER_PACKAGE/${PACKAGE_NAME}/g" build.gradle
 
-      - name: Fix Gradle Settings & Root
+      - name: Fix Gradle Settings & Root (Smart)
         working-directory: ${{ env.PROJECT_DIR }}/android
         run: |
-          # Upgrade Gradle Wrapper
           sed -i 's/gradle-[0-9.]*-/gradle-8.9-/' gradle/wrapper/gradle-wrapper.properties 2>/dev/null || true
           
-          # Fix Settings.gradle for Kotlin & Plugins
           if [ -f "settings.gradle" ]; then
-             # Try to force a modern google services plugin version in settings
+             # ONLY inject if plugins block exists AND google-services is NOT present
              if grep -q "plugins {" "settings.gradle"; then
-                sed -i '/plugins {/a \    id "com.google.gms.google-services" version "4.4.0" apply false' settings.gradle
+                if ! grep -q "com.google.gms.google-services" "settings.gradle"; then
+                   sed -i '/plugins {/a \    id "com.google.gms.google-services" version "4.4.0" apply false' settings.gradle
+                fi
              fi
              
+             # Kotlin fixes
              sed -i "s/kotlin(\"android\") version \"[^\"]*\"/kotlin(\"android\") version \"1.9.20\"/g" settings.gradle || true
              sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '1.9.20'/g" settings.gradle || true
           fi
           
-          # Ensure Google Services classpath exists in root build.gradle (Legacy method)
+          # Legacy build.gradle check (if settings.gradle doesn't use plugins block)
           if [ -f "build.gradle" ]; then
              if grep -q "buildscript" "build.gradle"; then
                 if ! grep -q "google-services" "build.gradle"; then
@@ -273,13 +271,11 @@ jobs:
         run: |
           flutter clean
           
-          # Try to migrate legacy code automatically
-          echo "Attempting to fix legacy code issues..."
+          # Fix legacy issues
           dart fix --apply || true
           
           flutter pub get
           
-          echo "Building APK..."
           flutter build apk --$BUILD_MODE \
             --target-platform=android-arm,android-arm64,android-x64 \
             --no-android-gradle-daemon \
@@ -311,7 +307,7 @@ jobs:
             ✅ **تم البناء بنجاح**
             📱 **التطبيق:** ${{ env.APP_NAME }}
             📦 **الحزمة:** ${{ env.PACKAGE_NAME }}
-            ⚠️ **ملاحظة هامة:** إذا كان لديك نسخة سابقة مثبتة، يجب حذفها أولاً قبل تثبيت هذه النسخة.
+            ⚠️ **هام:** يجب حذف أي نسخة سابقة من الهاتف قبل تثبيت هذه النسخة.
           files: |
             ${{ env.APK_PATH }}
         env:

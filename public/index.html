@@ -103,6 +103,7 @@
             overflow: hidden; margin-bottom: 1.5rem;
         }
         .upload-card:hover { border-color: var(--primary); background: var(--primary-dim); }
+        .upload-card.dragover { border-color: var(--primary); background: var(--primary-dim); transform: scale(1.02); }
         .upload-icon { font-size: 2.5rem; color: #555; margin-bottom: 15px; transition: 0.3s; }
         .upload-card:hover .upload-icon { color: var(--primary); transform: scale(1.1); }
 
@@ -128,6 +129,25 @@
         }
         .file-remove-btn:hover { transform: scale(1.2); }
 
+        /* --- Files List for Folder Upload --- */
+        .files-list {
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+        .files-list-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.85rem;
+        }
+        .files-list-item:last-child { border-bottom: none; }
+        .files-list-item i { color: var(--primary); }
 
         /* --- Phone Preview --- */
         .preview-panel { flex: 1 1 350px; display: flex; justify-content: center; padding-top: 20px; perspective: 1000px; }
@@ -182,7 +202,7 @@
         .glass-btn.secondary { background: rgba(255,255,255,0.1); color: #fff; }
         .glass-btn:hover { opacity: 0.9; transform: scale(1.02); }
 
-        /* --- Action Button (Updated for Disabled/Loading State) --- */
+        /* --- Action Button --- */
         .action-btn {
             width: 100%; background: var(--primary); color: #000; padding: 18px; border-radius: 14px;
             font-weight: 700; font-size: 1.1rem; border: none; cursor: pointer;
@@ -191,7 +211,6 @@
         }
         .action-btn:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(0, 230, 118, 0.3); }
         
-        /* حالة الزر عندما يكون غير جاهز */
         .action-btn.not-ready {
             opacity: 0.4;
             cursor: not-allowed;
@@ -201,7 +220,6 @@
             transform: none !important;
         }
         
-        /* حالة الزر أثناء التحميل */
         .action-btn.loading {
             opacity: 0.7;
             cursor: wait;
@@ -218,6 +236,33 @@
         }
         .app-item:hover { border-color: var(--primary); transform: translateX(5px); }
 
+        /* --- Upload Type Selector --- */
+        .upload-type-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .upload-type-btn {
+            flex: 1;
+            padding: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: #888;
+            cursor: pointer;
+            transition: 0.3s;
+            font-family: inherit;
+        }
+        .upload-type-btn.active {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: var(--primary-dim);
+        }
+        .upload-type-btn:hover:not(.active) {
+            border-color: #444;
+            color: #aaa;
+        }
+
         @keyframes popIn { to { transform: scale(1); } }
         @keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
         @keyframes slideIn { from{opacity:0; transform:translateX(-20px);} to{opacity:1; transform:translateX(0);} }
@@ -230,6 +275,7 @@
             .config-panel { width: 100%; }
         }
     </style>
+<base target="_blank">
 </head>
 
 <body>
@@ -296,7 +342,7 @@
              
             <div class="config-panel">
                 <h1 id="t_welcome" style="font-size: 2rem; margin-bottom: 10px;">حوّل موقعك لتطبيق APK!</h1>
-                <p id="t_sub" style="color: #888; margin-bottom: 30px; line-height: 1.6;">منصة تحويل مواقع الويب (HTML/CSS/JS) إلى تطبيقات Android أصلية باستخدام Capacitor.</p>
+                <p id="t_sub" style="color: #888; margin-bottom: 30px; line-height: 1.6;">منصة تحويل مواقع الويب إلى تطبيقات Android أصلية.</p>
 
                 <div class="tabs-container">
                     <button class="tab-btn active" onclick="switchTab('build')" id="t_tab_build">بناء تطبيق</button>
@@ -320,39 +366,75 @@
                             <div class="upload-card" onclick="document.getElementById('iconInput').click()">
                                 <div id="iconUploadContent">
                                     <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
-                                    <p id="t_click_icon" style="color:#aaa;">اضغط هنا لاختيار الصورة (PNG)</p>
+                                    <p id="t_click_icon" style="color:#aaa;">اضغط هنا لاختيار الصورة</p>
                                 </div>
                                 <input type="file" id="iconInput" accept="image/*" style="display:none">
                             </div>
                         </div>
 
                         <div class="input-group">
-                            <label class="input-label" id="t_zip">ملف المشروع (ZIP)</label>
+                            <label class="input-label" id="t_project">ملفات المشروع</label>
                             
-                            <div class="upload-card" id="zipUploadCard" onclick="document.getElementById('zipInput').click()">
-                                <div id="zipUploadContent">
-                                    <i class="fa-solid fa-file-zipper upload-icon"></i>
-                                    <p id="t_click_zip" style="color:#aaa;">اضغط لرفع ملف موقعك (HTML/CSS/JS)</p>
-                                </div>
-                                <input type="file" id="zipInput" accept=".zip,application/zip,application/x-zip,application/x-zip-compressed" style="display:none">
+                            <!-- Upload Type Selector -->
+                            <div class="upload-type-selector">
+                                <button type="button" class="upload-type-btn active" onclick="setUploadType('html')" id="btnTypeHtml">
+                                    <i class="fa-brands fa-html5"></i> ملف HTML
+                                </button>
+                                <button type="button" class="upload-type-btn" onclick="setUploadType('folder')" id="btnTypeFolder">
+                                    <i class="fa-solid fa-folder-open"></i> مجلد
+                                </button>
+                                <button type="button" class="upload-type-btn" onclick="setUploadType('zip')" id="btnTypeZip">
+                                    <i class="fa-solid fa-file-zipper"></i> ZIP
+                                </button>
                             </div>
 
-                            <div id="zipFilePreview" class="file-preview-card">
-                                <div class="file-icon-box">
+                            <!-- HTML File Upload -->
+                            <div id="htmlUploadArea" class="upload-card" onclick="document.getElementById('htmlInput').click()">
+                                <div id="htmlUploadContent">
+                                    <i class="fa-brands fa-html5 upload-icon" style="color: #E34F26;"></i>
+                                    <p id="t_click_html" style="color:#aaa;">اضغط لرفع ملف HTML واحد</p>
+                                </div>
+                                <input type="file" id="htmlInput" accept=".html,.htm" style="display:none">
+                            </div>
+
+                            <!-- Folder Upload -->
+                            <div id="folderUploadArea" class="upload-card" style="display:none;" onclick="document.getElementById('folderInput').click()">
+                                <div id="folderUploadContent">
+                                    <i class="fa-solid fa-folder-open upload-icon" style="color: #F4D03F;"></i>
+                                    <p id="t_click_folder" style="color:#aaa;">اضغط لاختيار مجلد المشروع</p>
+                                </div>
+                                <input type="file" id="folderInput" webkitdirectory directory multiple style="display:none">
+                            </div>
+
+                            <!-- ZIP Upload -->
+                            <div id="zipUploadArea" class="upload-card" style="display:none;" onclick="document.getElementById('zipInput').click()">
+                                <div id="zipUploadContent">
+                                    <i class="fa-solid fa-file-zipper upload-icon" style="color: #9B59B6;"></i>
+                                    <p id="t_click_zip" style="color:#aaa;">اضغط لرفع ملف ZIP</p>
+                                </div>
+                                <input type="file" id="zipInput" accept=".zip,application/zip" style="display:none">
+                            </div>
+
+                            <!-- File Preview -->
+                            <div id="filePreview" class="file-preview-card">
+                                <div class="file-icon-box" id="previewIconBox">
                                     <i class="fa-brands fa-html5"></i>
                                 </div>
                                 <div class="file-info">
-                                    <div id="zipFileNameDisplay" class="file-name">Project.zip</div>
+                                    <div id="fileNameDisplay" class="file-name">project.html</div>
                                     <div class="file-meta">
-                                        <span id="zipFileSizeDisplay">0 MB</span>
+                                        <span id="fileSizeDisplay">0 KB</span>
                                         <span>•</span>
-                                        <span style="color:var(--primary);">Web Project</span>
+                                        <span id="fileTypeDisplay" style="color:var(--primary);">HTML</span>
                                     </div>
                                 </div>
-                                <button type="button" class="file-remove-btn" onclick="removeZipFile()">
+                                <button type="button" class="file-remove-btn" onclick="removeProjectFiles()">
                                     <i class="fa-solid fa-trash-can"></i>
                                 </button>
                             </div>
+
+                            <!-- Folder Files List -->
+                            <div id="folderFilesList" class="files-list" style="display:none;"></div>
                         </div>
 
                         <button type="submit" id="submitBtn" class="action-btn not-ready">
@@ -434,6 +516,26 @@
         setInterval(updateClock, 1000);
         updateClock();
 
+        // --- Upload Type Selector ---
+        let currentUploadType = 'html';
+        let projectFiles = [];
+
+        function setUploadType(type) {
+            currentUploadType = type;
+            
+            // Update buttons
+            document.querySelectorAll('.upload-type-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`btnType${type.charAt(0).toUpperCase() + type.slice(1)}`).classList.add('active');
+            
+            // Show/hide upload areas
+            document.getElementById('htmlUploadArea').style.display = type === 'html' ? 'block' : 'none';
+            document.getElementById('folderUploadArea').style.display = type === 'folder' ? 'block' : 'none';
+            document.getElementById('zipUploadArea').style.display = type === 'zip' ? 'block' : 'none';
+            
+            // Clear previous selection
+            removeProjectFiles();
+        }
+
         // --- Translations ---
         const translations = {
             ar: {
@@ -443,16 +545,17 @@
                 confirm: "تأكيد",
                 cancel: "إلغاء",
                 welcome: "حوّل موقعك لتطبيق APK!",
-                sub: "منصة تحويل مواقع الويب (HTML/CSS/JS) إلى تطبيقات Android أصلية باستخدام Capacitor.",
+                sub: "منصة تحويل مواقع الويب إلى تطبيقات Android أصلية.",
                 app_name: "اسم التطبيق",
                 pkg_name: "معرف الحزمة",
                 icon: "أيقونة التطبيق",
-                zip: "ملف المشروع (ZIP)",
+                project: "ملفات المشروع",
                 click_icon: "اضغط هنا لاختيار الصورة",
-                click_zip: "اضغط لرفع ملف موقعك (HTML/CSS/JS)",
+                click_html: "اضغط لرفع ملف HTML واحد",
+                click_folder: "اضغط لاختيار مجلد المشروع",
+                click_zip: "اضغط لرفع ملف ZIP",
                 btn_build: "بدء البناء السحابي",
                 status: "الحالة:",
-                struct: "تم التحقق من الملف:",
                 ready_title: "تطبيقك جاهز للتحميل",
                 download: "تحميل APK",
                 tab_build: "بناء تطبيق",
@@ -460,7 +563,8 @@
                 logout_title: "تسجيل الخروج؟",
                 logout_desc: "هل أنت متأكد أنك تريد الخروج؟",
                 confirm_logout: "نعم، خروج",
-                close: "إغلاق"
+                close: "إغلاق",
+                files_selected: "ملفات محددة"
             },
             en: {
                 login_desc: "Please sign in to convert your websites to apps",
@@ -469,16 +573,17 @@
                 confirm: "Confirm",
                 cancel: "Cancel",
                 welcome: "Convert Your Website to APK!",
-                sub: "Platform to convert web projects (HTML/CSS/JS) to native Android apps using Capacitor.",
+                sub: "Platform to convert web projects to native Android apps.",
                 app_name: "App Name",
                 pkg_name: "Package Name",
                 icon: "App Icon",
-                zip: "Project ZIP",
+                project: "Project Files",
                 click_icon: "Click to upload Image",
-                click_zip: "Click to upload your website (HTML/CSS/JS)",
+                click_html: "Click to upload HTML file",
+                click_folder: "Click to select project folder",
+                click_zip: "Click to upload ZIP file",
                 btn_build: "Start Cloud Build",
                 status: "Status:",
-                struct: "Verified File:",
                 ready_title: "App Ready",
                 download: "Download APK",
                 tab_build: "New Build",
@@ -486,7 +591,8 @@
                 logout_title: "Log out?",
                 logout_desc: "Are you sure you want to exit?",
                 confirm_logout: "Yes, Logout",
-                close: "Close"
+                close: "Close",
+                files_selected: "files selected"
             }
         };
 
@@ -501,9 +607,10 @@
             const map = {
                 t_login_desc: 'login_desc', t_signin: 'signin', t_crop_title: 'crop_title',
                 t_confirm: 'confirm', t_cancel: 'cancel', t_welcome: 'welcome', t_sub: 'sub',
-                t_app_name: 'app_name', t_pkg_name: 'pkg_name', t_icon: 'icon', t_zip: 'zip',
-                t_click_icon: 'click_icon', t_click_zip: 'click_zip', t_btn_build: 'btn_build',
-                t_status: 'status', t_tab_build: 'tab_build', t_tab_apps: 'tab_apps',
+                t_app_name: 'app_name', t_pkg_name: 'pkg_name', t_icon: 'icon', t_project: 'project',
+                t_click_icon: 'click_icon', t_click_html: 'click_html', t_click_folder: 'click_folder',
+                t_click_zip: 'click_zip', t_btn_build: 'btn_build', t_status: 'status',
+                t_tab_build: 'tab_build', t_tab_apps: 'tab_apps',
                 t_logout_title: 'logout_title', t_logout_desc: 'logout_desc', t_confirm_logout: 'confirm_logout',
                 t_close: 'close'
             };
@@ -555,18 +662,20 @@
             const name = document.getElementById('appName').value.trim();
             const pkg = document.getElementById('packageName').value.trim();
             const hasIcon = finalIconBlob !== null;
-            const hasZip = document.getElementById('zipInput').files.length > 0;
+            const hasFiles = projectFiles.length > 0;
             
             const btn = document.getElementById('submitBtn');
             
-            if(name && pkg && hasIcon && hasZip) {
+            if(name && pkg && hasIcon && hasFiles) {
                 btn.classList.remove('not-ready');
             } else {
                 btn.classList.add('not-ready');
             }
         }
 
-        let cropper = null; let finalIconBlob = null;
+        let cropper = null; 
+        let finalIconBlob = null;
+        
         document.getElementById('iconInput').addEventListener('change', function(e) {
             if(e.target.files[0]) {
                 const reader = new FileReader();
@@ -588,58 +697,137 @@
                 document.getElementById('iconPlaceholder').style.display = 'none';
                 document.getElementById('cropModal').style.display = 'none';
                 document.getElementById('iconUploadContent').innerHTML = '<i class="fa-solid fa-check-circle" style="color:var(--primary); font-size:3rem;"></i>';
-                checkFormValidity(); // Check validity after cropping
+                checkFormValidity();
             });
         }
 
-        // --- LOGIC FOR ZIP FILE PREVIEW ---
-        const zipInput = document.getElementById('zipInput');
+        // --- FILE UPLOAD HANDLERS ---
         
-        zipInput.addEventListener('change', function(e) {
+        // HTML File Upload
+        document.getElementById('htmlInput').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if(file) {
-                const fileName = file.name.toLowerCase();
-                if(!fileName.endsWith('.zip')) {
-                    alert(currentLang === 'ar' ? "عذراً، يسمح فقط بملفات ZIP" : "Sorry, only ZIP files are allowed.");
-                    this.value = '';
-                    checkFormValidity();
-                    return;
-                }
-
-                document.getElementById('zipUploadCard').style.display = 'none';
-                const previewCard = document.getElementById('zipFilePreview');
-                previewCard.style.display = 'flex';
-                
-                document.getElementById('zipFileNameDisplay').innerText = file.name;
-                const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
-                document.getElementById('zipFileSizeDisplay').innerText = `${sizeInMB} MB`;
-                checkFormValidity(); // Check validity after zip upload
+                projectFiles = [file];
+                showFilePreview(file.name, file.size, 'HTML', 'fa-brands fa-html5', '#E34F26');
+                checkFormValidity();
             }
         });
 
-        function removeZipFile() {
-            document.getElementById('zipInput').value = '';
-            document.getElementById('zipFilePreview').style.display = 'none';
-            document.getElementById('zipUploadCard').style.display = 'block';
-            checkFormValidity(); // Check validity after remove
+        // Folder Upload
+        document.getElementById('folderInput').addEventListener('change', function(e) {
+            const files = Array.from(e.target.files);
+            if(files.length > 0) {
+                projectFiles = files;
+                const mainFile = files.find(f => f.name.toLowerCase().endsWith('.html') || f.name.toLowerCase().endsWith('.htm')) || files[0];
+                const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+                showFilePreview(mainFile.name, totalSize, 'Folder', 'fa-solid fa-folder', '#F4D03F');
+                showFolderFilesList(files);
+                checkFormValidity();
+            }
+        });
+
+        // ZIP Upload
+        document.getElementById('zipInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if(file) {
+                projectFiles = [file];
+                showFilePreview(file.name, file.size, 'ZIP', 'fa-solid fa-file-zipper', '#9B59B6');
+                checkFormValidity();
+            }
+        });
+
+        function showFilePreview(name, size, type, iconClass, iconColor) {
+            // Hide all upload areas
+            document.getElementById('htmlUploadArea').style.display = 'none';
+            document.getElementById('folderUploadArea').style.display = 'none';
+            document.getElementById('zipUploadArea').style.display = 'none';
+            
+            // Show preview
+            const preview = document.getElementById('filePreview');
+            preview.style.display = 'flex';
+            
+            document.getElementById('fileNameDisplay').innerText = name;
+            document.getElementById('fileSizeDisplay').innerText = formatFileSize(size);
+            document.getElementById('fileTypeDisplay').innerText = type;
+            
+            const iconBox = document.getElementById('previewIconBox');
+            iconBox.innerHTML = `<i class="${iconClass}"></i>`;
+            iconBox.style.color = iconColor;
         }
 
-        // Submit Logic
+        function showFolderFilesList(files) {
+            const list = document.getElementById('folderFilesList');
+            list.style.display = 'block';
+            
+            const htmlFiles = files.filter(f => f.name.toLowerCase().endsWith('.html') || f.name.toLowerCase().endsWith('.htm'));
+            const cssFiles = files.filter(f => f.name.toLowerCase().endsWith('.css'));
+            const jsFiles = files.filter(f => f.name.toLowerCase().endsWith('.js'));
+            const otherFiles = files.filter(f => !f.name.match(/\.(html|htm|css|js)$/i));
+            
+            let html = `<div style="color:#888; margin-bottom:8px; font-size:0.8rem;">${files.length} ${translations[currentLang].files_selected}</div>`;
+            
+            [...htmlFiles, ...cssFiles, ...jsFiles, ...otherFiles].slice(0, 20).forEach(file => {
+                let icon = 'fa-file';
+                let color = '#888';
+                if(file.name.endsWith('.html') || file.name.endsWith('.htm')) { icon = 'fa-brands fa-html5'; color = '#E34F26'; }
+                else if(file.name.endsWith('.css')) { icon = 'fa-brands fa-css3-alt'; color = '#1572B6'; }
+                else if(file.name.endsWith('.js')) { icon = 'fa-brands fa-js'; color = '#F7DF1E'; }
+                
+                html += `
+                    <div class="files-list-item">
+                        <i class="${icon}" style="color:${color};"></i>
+                        <span style="flex:1; overflow:hidden; text-overflow:ellipsis;">${file.name}</span>
+                        <span style="color:#666; font-size:0.75rem;">${formatFileSize(file.size)}</span>
+                    </div>
+                `;
+            });
+            
+            if(files.length > 20) {
+                html += `<div style="text-align:center; color:#666; padding:8px;">... و ${files.length - 20} ملفات أخرى</div>`;
+            }
+            
+            list.innerHTML = html;
+        }
+
+        function removeProjectFiles() {
+            projectFiles = [];
+            
+            // Reset inputs
+            document.getElementById('htmlInput').value = '';
+            document.getElementById('folderInput').value = '';
+            document.getElementById('zipInput').value = '';
+            
+            // Hide preview and list
+            document.getElementById('filePreview').style.display = 'none';
+            document.getElementById('folderFilesList').style.display = 'none';
+            
+            // Show current upload area
+            setUploadType(currentUploadType);
+            
+            checkFormValidity();
+        }
+
+        function formatFileSize(bytes) {
+            if(bytes === 0) return '0 B';
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
+        }
+
+        // --- Submit Logic ---
         let pollingInterval = null;
+        
         document.getElementById('buildForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            // تحقق نهائي قبل الإرسال
-            if(!finalIconBlob || !document.getElementById('zipInput').files[0]) return;
+            if(!finalIconBlob || projectFiles.length === 0) return;
 
             const btn = document.getElementById('submitBtn');
             const btnIcon = document.getElementById('btnIcon');
-            const btnText = document.getElementById('t_btn_build');
             
-            // تفعيل حالة التحميل
             btn.classList.add('loading');
             const originalIconClass = btnIcon.className;
-            btnIcon.className = "fa-solid fa-circle-notch fa-spin"; // Spinner
+            btnIcon.className = "fa-solid fa-circle-notch fa-spin";
             
             document.getElementById('statusContainer').style.display = 'block';
             document.getElementById('progressBar').style.width = '5%';
@@ -649,7 +837,12 @@
             fd.append('appName', document.getElementById('appName').value);
             fd.append('packageName', document.getElementById('packageName').value);
             fd.append('icon', finalIconBlob, 'icon.png');
-            fd.append('projectZip', document.getElementById('zipInput').files[0]);
+            fd.append('uploadType', currentUploadType);
+            
+            // Append files
+            projectFiles.forEach((file, index) => {
+                fd.append('projectFiles', file, file.name);
+            });
 
             try {
                 const res = await fetch('/build-web2apk', { method: 'POST', body: fd });
@@ -659,7 +852,6 @@
                 } else { throw new Error(data.error); }
             } catch(err) {
                 handleError(err.message);
-                // Reset button on immediate error
                 btn.classList.remove('loading');
                 btnIcon.className = originalIconClass;
             }
@@ -675,10 +867,10 @@
                 
                 if(currentLang === 'ar') {
                     if(elapsed < 20) label.innerText = "رفع الملفات...";
-                    else if(elapsed < 60) label.innerText = "تحضير بيئة Capacitor...";
+                    else if(elapsed < 60) label.innerText = "تحضير بيئة البناء...";
                     else label.innerText = "بناء وتوقيع APK...";
                 } else {
-                    label.innerText = elapsed < 60 ? "Setting up Capacitor..." : "Building APK...";
+                    label.innerText = elapsed < 60 ? "Setting up build environment..." : "Building APK...";
                 }
 
                 let progress = Math.min(10 + (elapsed / 2.5), 90);
@@ -700,7 +892,6 @@
             document.getElementById('progressBar').style.width = '100%';
             document.getElementById('statusLabel').innerText = "Done! 🎉";
             
-            // Reset Button
             const btn = document.getElementById('submitBtn');
             const btnIcon = document.getElementById('btnIcon');
             btn.classList.remove('loading');
@@ -731,7 +922,6 @@
             document.getElementById('statusLabel').innerText = "Error: " + msg;
             document.getElementById('statusLabel').style.color = "#ff4444";
             
-            // Reset Button
             const btn = document.getElementById('submitBtn');
             const btnIcon = document.getElementById('btnIcon');
             btn.classList.remove('loading');
@@ -765,7 +955,7 @@
         
         // Init
         setLanguage('ar');
-        checkFormValidity(); // Initial check
+        checkFormValidity();
     </script>
 </body>
 </html>

@@ -43,7 +43,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq wget unzip imagemagick
           
-      # إعداد جافا 17 ضروري لإصدارات فلاتر الحديثة والقديمة المعدلة
+      # نستخدم Java 17 وهي المعيار الأساسي لنسخ Flutter و Gradle الحديثة
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -55,7 +55,7 @@ jobs:
           wget -q --show-progress -O project.zip "$ZIP_URL"
           mkdir -p $PROJECT_DIR
           unzip -q project.zip -d temp_extract
-          # نقل ذكي للملفات (سواء كانت في الجذر أو مجلد فرعي)
+          # نقل ذكي للملفات
           if [ "$(ls -A temp_extract | wc -l)" == "1" ] && [ -d "temp_extract/$(ls -A temp_extract)" ]; then
             mv temp_extract/*/* $PROJECT_DIR/
           else
@@ -63,15 +63,14 @@ jobs:
           fi
           rm -rf temp_extract project.zip
 
-      # هنا التعديل الجذري: استخدام قناة stable للحصول على أحدث إصدار دائماً
       - name: Setup Flutter (Universal)
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
-          # تم إزالة flutter-version للسماح للسيرفر بجلب الأحدث تلقائياً (لحل مشكلة SDK 3.7.2)
+          # نترك الإصدار مفتوحاً ليجلب الأحدث (3.38+)
 
-      - name: 🛠️ Smart Auto-Fix & Configuration
+      - name: 🛠️ Smart Auto-Fix & Upgrade Tools
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           # --- 1. Fix Missing Firebase Options (Dummy File) ---
@@ -86,8 +85,8 @@ jobs:
               if (kIsWeb) return android;
               switch (defaultTargetPlatform) {
                 case TargetPlatform.android: return android;
-                case TargetPlatform.iOS: throw UnsupportedError('DefaultFirebaseOptions have not been configured for ios.');
-                default: throw UnsupportedError('DefaultFirebaseOptions are not supported for this platform.');
+                case TargetPlatform.iOS: throw UnsupportedError('iOS not configured');
+                default: throw UnsupportedError('Platform not supported');
               }
             }
             static const FirebaseOptions android = FirebaseOptions(
@@ -97,21 +96,30 @@ jobs:
           EOF
           fi
 
-          # --- 2. Smart Project Migrator (Upgrade Gradle/Kotlin if old) ---
-          # هذا السكربت يضمن عمل المشاريع القديمة مع بيئة فلاتر الجديدة
+          # --- 2. Smart Project Migrator (Upgrade to Gradle 8) ---
+          # هذا هو الحل للخطأ السابق: الترقية إلى Gradle 8.2+ و AGP 8.1+
           
-          # تحديث Kotlin Version في build.gradle
-          sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.9.10"/' android/build.gradle || true
-          
-          # تحديث Gradle Distribution (أهم خطوة للتوافق)
+          echo "🔄 Upgrading Gradle Wrapper to 8.4..."
           if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
-             sed -i 's/gradle-.*-all.zip/gradle-7.6.3-all.zip/' android/gradle/wrapper/gradle-wrapper.properties || true
+             sed -i 's/gradle-.*-all.zip/gradle-8.4-all.zip/' android/gradle/wrapper/gradle-wrapper.properties || true
           fi
           
-          # تحديث AGP (Android Gradle Plugin) إذا كان قديماً جداً
-          sed -i 's/com.android.tools.build:gradle:[3-6].*/com.android.tools.build:gradle:7.4.2"/' android/build.gradle || true
+          echo "🔄 Upgrading Android Gradle Plugin to 8.1.1..."
+          # استبدال الإصدارات القديمة (3.x إلى 7.x) بـ 8.1.1
+          sed -i 's/com.android.tools.build:gradle:[3-7].*/com.android.tools.build:gradle:8.1.1"/' android/build.gradle || true
+          # في حال كان المشروع يستخدم بالفعل 8.x ولكنه قديم
+          sed -i 's/com.android.tools.build:gradle:8.0.*/com.android.tools.build:gradle:8.1.1"/' android/build.gradle || true
 
-          # --- 3. Update App Name, Package & Icon (Python) ---
+          echo "🔄 Upgrading Kotlin to 1.9.20..."
+          sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.9.20"/' android/build.gradle || true
+          
+          # إجبار Java 17 في خصائص Gradle
+          mkdir -p android
+          if [ -f "android/gradle.properties" ]; then
+             echo "org.gradle.java.home=$JAVA_HOME_17_X64" >> android/gradle.properties
+          fi
+
+          # --- 3. Update App Name, Package & Icon ---
           cat <<EOF > update_project_info.py
           import os
           import xml.etree.ElementTree as ET
@@ -122,7 +130,7 @@ jobs:
           
           print(f"🔧 Configuring: {app_name} | {package_name}")
 
-          # Update strings.xml (utf-8 enforced for Arabic)
+          # Update strings.xml
           strings_path = 'android/app/src/main/res/values/strings.xml'
           os.makedirs(os.path.dirname(strings_path), exist_ok=True)
           xml_content = f'''<?xml version="1.0" encoding="utf-8"?>
@@ -142,7 +150,6 @@ jobs:
               application = root.find('application')
               if application is not None:
                   application.attrib[f'{android_ns}label'] = '@string/app_name'
-                  # Force Icon
                   application.attrib[f'{android_ns}icon'] = '@mipmap/ic_launcher'
                   application.attrib[f'{android_ns}roundIcon'] = '@mipmap/ic_launcher'
                   
@@ -155,8 +162,7 @@ jobs:
               with open(gradle_path, 'r') as f: content = f.read()
               content = re.sub(r'applicationId\s+["\'].*?["\']', f'applicationId "{package_name}"', content)
               content = re.sub(r'namespace\s+["\'].*?["\']', f'namespace "{package_name}"', content)
-              # Ensure MinSDK is decent (21+) for modern Flutter
-              content = re.sub(r'minSdkVersion\s+\d+', 'minSdkVersion 21', content)
+              content = re.sub(r'minSdkVersion\s+\d+', 'minSdkVersion 23', content)
               with open(gradle_path, 'w') as f: f.write(content)
           EOF
           python3 update_project_info.py
@@ -168,7 +174,6 @@ jobs:
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
           
-          # تكوين التوقيع + تفعيل تقليل الحجم (Optimization)
           cat > signing/signing.gradle << 'EOF'
           signingConfigs {
               release {
@@ -181,8 +186,8 @@ jobs:
           buildTypes {
               release {
                   signingConfig signingConfigs.release
-                  minifyEnabled true   // تفعيل ضغط الكود
-                  shrinkResources true // حذف الموارد غير المستخدمة
+                  minifyEnabled true
+                  shrinkResources true
                   proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
               }
           }
@@ -190,7 +195,6 @@ jobs:
 
       - name: Process Icon
         run: |
-          # تنظيف ثم توليد الأيقونات بجميع المقاسات
           rm -rf $PROJECT_DIR/android/app/src/main/res/mipmap-*
           declare -a sizes=("48x48:mdpi" "72x72:hdpi" "96x96:xhdpi" "144x144:xxhdpi" "192x192:xxxhdpi")
           wget -q -O icon.png "$ICON_URL"
@@ -208,11 +212,10 @@ jobs:
       - name: Build Optimized APK (Universal)
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          # استخدام --obfuscate لتقليل الحجم وتصعيب الهندسة العكسية
-          flutter build apk --$BUILD_MODE --target-platform=android-arm,android-arm64 --obfuscate --split-debug-info=symbols/
+          # إضافة --no-android-gradle-daemon لتجنب مشاكل الذاكرة في السحابة
+          flutter build apk --$BUILD_MODE --target-platform=android-arm,android-arm64 --obfuscate --split-debug-info=symbols/ --no-android-gradle-daemon
           
           APK_DIR="build/app/outputs/flutter-apk"
-          # البحث عن ملف الـ APK الناتج بغض النظر عن الاسم الافتراضي
           GENERATED_APK=$(find $APK_DIR -name "*.apk" | head -n 1)
           FINAL_APK="$APK_DIR/${SAFE_NAME}.apk"
           
@@ -231,7 +234,7 @@ jobs:
           tag_name: build-${{ env.BUILD_ID }}
           name: "${{ env.APP_NAME }}"
           body: |
-            ✅ **تم البناء بنجاح (Universal Engine)**
+            ✅ **تم البناء بنجاح (Universal 2.0)**
             📱 **التطبيق:** ${{ env.APP_NAME }}
             📦 **الحزمة:** ${{ env.PACKAGE_NAME }}
           files: |

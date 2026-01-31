@@ -41,7 +41,7 @@ jobs:
       - name: Setup System Environment
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq wget unzip imagemagick
+          sudo apt-get install -y -qq wget unzip imagemagick sed
           
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -67,10 +67,21 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Smart Fix Legacy Projects (Pubspec)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          # 1. Force update SDK constraints if they are too old
+          if [ -f "pubspec.yaml" ]; then
+            echo "Checking pubspec.yaml for legacy SDK constraints..."
+            sed -i 's/sdk: ">=2.0.[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
+            sed -i 's/sdk: ">=2.[1-9].[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
+            sed -i "s/sdk: '>=2.0.[0-9].*'/sdk: '>=2.12.0 <4.0.0'/" pubspec.yaml || true
+          fi
+
       - name: Fix Firebase & Resources
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          # Firebase Options
+          # Firebase Options Generation
           if [ ! -f "lib/firebase_options.dart" ]; then
             mkdir -p lib
             cat > lib/firebase_options.dart << 'EOF'
@@ -96,24 +107,29 @@ jobs:
           if [ ! -f "android/app/google-services.json" ]; then
             cat > android/app/google-services.json << EOF
           {
-            "project_info": {
-              "project_number": "123456789",
-              "project_id": "dummy-project",
-              "storage_bucket": "dummy-project.appspot.com"
-            },
+            "project_info": { "project_number": "123", "project_id": "dummy", "storage_bucket": "dummy" },
             "client": [{
-              "client_info": {
-                "mobilesdk_app_id": "1:123456789:android:abc123",
-                "android_client_info": { "package_name": "${PACKAGE_NAME}" }
-              },
-              "api_key": [{ "current_key": "AIzaSyDummyKey" }],
+              "client_info": { "mobilesdk_app_id": "1:123:android:123", "android_client_info": { "package_name": "${PACKAGE_NAME}" } },
+              "api_key": [{ "current_key": "dummy" }],
               "services": { "appinvite_service": { "status": 1 } }
             }]
           }
           EOF
           fi
 
-          # strings.xml
+          # AndroidManifest fixes (Exported Activity & Label)
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            # Fix Label
+            sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$MANIFEST"
+            
+            # Ensure android:exported="true" exists for MainActivity (Required for Android 12+)
+            if ! grep -q 'android:exported="true"' "$MANIFEST"; then
+               sed -i 's/<activity/<activity android:exported="true"/g' "$MANIFEST"
+            fi
+          fi
+          
+          # Strings.xml
           mkdir -p android/app/src/main/res/values
           cat > android/app/src/main/res/values/strings.xml << EOF
           <?xml version="1.0" encoding="utf-8"?>
@@ -122,22 +138,18 @@ jobs:
           </resources>
           EOF
 
-          # AndroidManifest.xml
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ]; then
-            sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$MANIFEST"
-          fi
-
-      - name: Replace build.gradle (Clean)
+      - name: Replace build.gradle (Clean & Fixed)
         working-directory: ${{ env.PROJECT_DIR }}/android/app
         run: |
           cp build.gradle build.gradle.backup
           
+          # CRITICAL FIX: Added google-services plugin to the plugins block below
           cat > build.gradle << 'GRADLE_EOF'
           plugins {
               id "com.android.application"
               id "kotlin-android"
               id "dev.flutter.flutter-gradle-plugin"
+              id "com.google.gms.google-services"
           }
           
           def localProperties = new Properties()
@@ -182,6 +194,7 @@ jobs:
                   targetSdkVersion flutter.targetSdkVersion
                   versionCode flutterVersionCode.toInteger()
                   versionName flutterVersionName
+                  multiDexEnabled true
               }
               
               signingConfigs {
@@ -202,6 +215,10 @@ jobs:
               }
           }
           
+          dependencies {
+              implementation platform('com.google.firebase:firebase-bom:32.7.0')
+          }
+          
           flutter {
               source '../..'
           }
@@ -209,43 +226,64 @@ jobs:
           
           sed -i "s/PLACEHOLDER_PACKAGE/${PACKAGE_NAME}/g" build.gradle
 
-      - name: Fix Gradle Settings
+      - name: Fix Gradle Settings & Root
         working-directory: ${{ env.PROJECT_DIR }}/android
         run: |
+          # Upgrade Gradle Wrapper
           sed -i 's/gradle-[0-9.]*-/gradle-8.9-/' gradle/wrapper/gradle-wrapper.properties 2>/dev/null || true
           
+          # Fix Settings.gradle for Kotlin & Plugins
           if [ -f "settings.gradle" ]; then
-            sed -i "s/kotlin(\"android\") version \"[^\"]*\"/kotlin(\"android\") version \"1.9.20\"/g" settings.gradle || true
-            sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '1.9.20'/g" settings.gradle || true
+             # Try to force a modern google services plugin version in settings
+             if grep -q "plugins {" "settings.gradle"; then
+                sed -i '/plugins {/a \    id "com.google.gms.google-services" version "4.4.0" apply false' settings.gradle
+             fi
+             
+             sed -i "s/kotlin(\"android\") version \"[^\"]*\"/kotlin(\"android\") version \"1.9.20\"/g" settings.gradle || true
+             sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '1.9.20'/g" settings.gradle || true
+          fi
+          
+          # Ensure Google Services classpath exists in root build.gradle (Legacy method)
+          if [ -f "build.gradle" ]; then
+             if grep -q "buildscript" "build.gradle"; then
+                if ! grep -q "google-services" "build.gradle"; then
+                   sed -i '/dependencies {/a \        classpath "com.google.gms:google-services:4.4.0"' build.gradle
+                fi
+             fi
           fi
 
       - name: Setup Signing Key
         working-directory: ${{ env.PROJECT_DIR }}/android
         run: |
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          ls -la debug.keystore
 
       - name: Process Icon
         run: |
           rm -rf $PROJECT_DIR/android/app/src/main/res/mipmap-*
           declare -a sizes=("48x48:mdpi" "72x72:hdpi" "96x96:xhdpi" "144x144:xxhdpi" "192x192:xxxhdpi")
           wget -q -O icon.png "$ICON_URL"
-          
           for size in "${sizes[@]}"; do
              IFS=":" read -r px name <<< "$size"
              mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-$name
              convert icon.png -resize $px $PROJECT_DIR/android/app/src/main/res/mipmap-$name/ic_launcher.png
           done
 
-      - name: Build APK
+      - name: Build APK (with Auto Fix)
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           flutter clean
+          
+          # Try to migrate legacy code automatically
+          echo "Attempting to fix legacy code issues..."
+          dart fix --apply || true
+          
           flutter pub get
           
+          echo "Building APK..."
           flutter build apk --$BUILD_MODE \
             --target-platform=android-arm,android-arm64,android-x64 \
-            --no-android-gradle-daemon || \
+            --no-android-gradle-daemon \
+            --release || \
           flutter build apk --$BUILD_MODE \
             --target-platform=android-arm,android-arm64,android-x64 \
             --no-android-gradle-daemon \
@@ -273,6 +311,7 @@ jobs:
             ✅ **تم البناء بنجاح**
             📱 **التطبيق:** ${{ env.APP_NAME }}
             📦 **الحزمة:** ${{ env.PACKAGE_NAME }}
+            ⚠️ **ملاحظة هامة:** إذا كان لديك نسخة سابقة مثبتة، يجب حذفها أولاً قبل تثبيت هذه النسخة.
           files: |
             ${{ env.APK_PATH }}
         env:

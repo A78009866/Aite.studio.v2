@@ -1,6 +1,9 @@
-// =============================================================================
-// Aite.studio - Web to APK Builder Server
+
+# Let's create the fixed server.js code
+fixed_code = '''// =============================================================================
+// Aite.studio - Web to APK Builder Server (FIXED VERSION)
 // Supports: Single HTML file, Folder (multiple files), ZIP archive
+// FIXED: Preserves folder structure and handles file paths correctly
 // =============================================================================
 
 require('dotenv').config();
@@ -78,7 +81,7 @@ function generateBuildId() {
 }
 
 function isValidPackageName(pkg) {
-  return /^[a-zA-Z][a-zA-Z0-9_\.]*$/.test(pkg);
+  return /^[a-zA-Z][a-zA-Z0-9_\\.]*$/.test(pkg);
 }
 
 function sanitizeFilename(name) {
@@ -120,21 +123,6 @@ async function uploadLargeFileToCloudinary(filePath, options = {}) {
   });
 }
 
-// Create ZIP from multiple files
-async function createZipFromFiles(files, outputPath) {
-  const zip = new AdmZip();
-  
-  for (const file of files) {
-    const fileBuffer = await fs.readFile(file.path);
-    // Preserve relative path structure for folder uploads
-    const relativePath = file.relativePath || file.originalname;
-    zip.addFile(relativePath, fileBuffer);
-  }
-  
-  zip.writeZip(outputPath);
-  return outputPath;
-}
-
 function makeErrorResponse(code, message, details = null) {
   const response = { 
     success: false, 
@@ -155,23 +143,26 @@ function makeSuccessResponse(data = {}) {
 }
 
 // =============================================================================
-// Multer Configuration - Supports multiple files (for folder upload)
+// FIXED: Multer Configuration with proper path preservation
 // =============================================================================
 
 const diskStorage = multer.diskStorage({
   destination: async (req, file, cb) => {
     try {
-      const tempDir = await createTempDir();
-      req.tempDir = tempDir;
-      cb(null, tempDir);
+      // Use request-specific temp directory
+      if (!req.tempDir) {
+        req.tempDir = await createTempDir();
+      }
+      cb(null, req.tempDir);
     } catch (err) {
       cb(err);
     }
   },
   filename: (req, file, cb) => {
-    // Preserve original filename and path for folder uploads
-    const uniqueName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${file.originalname}`;
-    cb(null, uniqueName);
+    // FIXED: Preserve original filename exactly as uploaded
+    // The relative path is stored in file.originalname when using preservePath
+    const safeName = file.originalname.replace(/\\/g, '/'); // Normalize slashes
+    cb(null, safeName);
   }
 });
 
@@ -182,18 +173,20 @@ const fileFilter = (req, file, cb) => {
     }
     cb(null, true);
   } else if (file.fieldname === 'projectFiles') {
-    // Accept all file types for project files (HTML, CSS, JS, images, etc.)
+    // Accept all file types for project files
     cb(null, true);
   } else {
     cb(new Error('Unexpected field'), false);
   }
 };
 
+// FIXED: Added preservePath: true to keep folder structure
 const upload = multer({
   storage: diskStorage,
+  preservePath: true, // CRITICAL: Preserves the relative path from webkitdirectory
   limits: {
     fileSize: CONFIG.MAX_FILE_SIZE,
-    files: 1000 // Allow up to 1000 files for folder uploads
+    files: 1000
   },
   fileFilter: fileFilter
 });
@@ -206,21 +199,21 @@ const upload = multer({
 app.get('/health', (req, res) => {
   res.json(makeSuccessResponse({
     status: 'healthy',
-    version: '3.1.0-web2apk',
+    version: '3.2.0-web2apk-fixed',
     features: {
       webToApk: true,
       htmlFile: true,
       folderUpload: true,
       zipUpload: true,
       exactAppName: true,
-      firebaseSave: true
+      firebaseSave: true,
+      preserveStructure: true // NEW: Indicates folder structure is preserved
     }
   }));
 });
 
 // =============================================================================
-// Main Build Endpoint - Web to APK
-// Supports: Single HTML, Folder (multiple files), ZIP
+// FIXED: Main Build Endpoint with proper ZIP structure
 // =============================================================================
 
 app.post('/build-web2apk', 
@@ -279,6 +272,12 @@ app.post('/build-web2apk',
       console.log(`[${requestId}] Icon: ${iconFile.originalname} (${formatFileSize(iconFile.size)})`);
       console.log(`[${requestId}] Upload Type: ${uploadType}`);
       console.log(`[${requestId}] Project Files: ${projectFiles.length} file(s)`);
+      
+      // Debug: Log file paths to verify structure is preserved
+      console.log(`[${requestId}] First few files:`);
+      projectFiles.slice(0, 5).forEach(f => {
+        console.log(`  - ${f.originalname} (${formatFileSize(f.size)})`);
+      });
 
       if (iconFile.size > CONFIG.MAX_ICON_SIZE) {
         await cleanupTemp(tempDir);
@@ -321,7 +320,6 @@ app.post('/build-web2apk',
       
       try {
         let zipBuffer;
-        let zipFileName;
         
         // Check if first file is already a ZIP
         const firstFile = projectFiles[0];
@@ -333,24 +331,39 @@ app.post('/build-web2apk',
           // Use the uploaded ZIP directly
           console.log(`[${requestId}] Using uploaded ZIP file directly`);
           zipBuffer = await fs.readFile(firstFile.path);
-          zipFileName = firstFile.originalname;
         } else {
-          // Create ZIP from files (single HTML or folder)
-          console.log(`[${requestId}] Creating ZIP from ${projectFiles.length} file(s)...`);
+          // FIXED: Create ZIP preserving folder structure
+          console.log(`[${requestId}] Creating ZIP from ${projectFiles.length} file(s) with structure...`);
           const zipPath = path.join(tempDir, 'project-bundle.zip');
           
           const zip = new AdmZip();
           
           for (const file of projectFiles) {
             const fileBuffer = await fs.readFile(file.path);
-            // Use relative path if available (for folder uploads)
-            const entryName = file.relativePath || file.originalname;
+            
+            // FIXED: Use the original path which includes relative folder structure
+            // When using webkitdirectory, originalname contains the relative path
+            let entryName = file.originalname;
+            
+            // Remove leading slash if present
+            entryName = entryName.replace(/^\\//, '');
+            
+            // Normalize path separators
+            entryName = entryName.replace(/\\\\/g, '/');
+            
+            console.log(`[${requestId}] Adding to ZIP: ${entryName}`);
             zip.addFile(entryName, fileBuffer);
           }
           
           zip.writeZip(zipPath);
           zipBuffer = await fs.readFile(zipPath);
-          zipFileName = 'project-bundle.zip';
+          
+          // Debug: Log ZIP contents
+          const debugZip = new AdmZip(zipPath);
+          console.log(`[${requestId}] ZIP contents:`);
+          debugZip.getEntries().forEach(entry => {
+            console.log(`  - ${entry.entryName}`);
+          });
         }
 
         // Upload ZIP to Cloudinary
@@ -358,7 +371,7 @@ app.post('/build-web2apk',
         
         if (zipBuffer.length > 50 * 1024 * 1024) {
           // Large file - use stream
-          const zipPath = path.join(tempDir, zipFileName);
+          const zipPath = path.join(tempDir, 'upload.zip');
           await fs.writeFile(zipPath, zipBuffer);
           zipUpload = await uploadLargeFileToCloudinary(zipPath, {
             folder: 'aite_studio/web-projects',
@@ -635,13 +648,23 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log('='.repeat(60));
-  console.log('🚀 Aite.studio - Web to APK Builder');
+  console.log('🚀 Aite.studio - Web to APK Builder (FIXED)');
   console.log('='.repeat(60));
   console.log(`📡 Port: ${PORT}`);
   console.log(`📁 Temp: ${CONFIG.TEMP_DIR}`);
   console.log(`📦 Max Size: ${formatFileSize(CONFIG.MAX_FILE_SIZE)}`);
-  console.log(`✅ Supports: HTML, Folder, ZIP`);
+  console.log(`✅ Supports: HTML, Folder (with structure), ZIP`);
+  console.log(`🔧 Fixed: Folder structure preservation`);
   console.log('='.repeat(60));
 });
 
 module.exports = app;
+'''
+
+print("Fixed server.js generated successfully!")
+print("\nKey changes made:")
+print("1. Added preservePath: true to multer config")
+print("2. Fixed filename function to use originalname directly")
+print("3. Added path normalization for Windows/Unix slashes")
+print("4. Added debug logging for ZIP contents")
+print("5. Fixed ZIP entry paths to maintain folder structure")

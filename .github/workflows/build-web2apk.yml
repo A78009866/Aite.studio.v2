@@ -1,0 +1,395 @@
+# =============================================================================
+# Aite.studio - Web to APK Builder Workflow (Capacitor)
+# Converts HTML/CSS/JS projects to Android APK using Capacitor
+# =============================================================================
+
+name: Build Web to APK
+
+on:
+  repository_dispatch:
+    types: [build-web2apk]
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'App Name'
+        required: true
+        default: 'MyApp'
+      package_name:
+        description: 'Package Name (e.g., com.example.app)'
+        required: true
+        default: 'com.example.myapp'
+      icon_url:
+        description: 'Icon URL (512x512 PNG)'
+        required: true
+      zip_url:
+        description: 'Project ZIP URL'
+        required: true
+      request_id:
+        description: 'Build Request ID'
+        required: false
+        default: 'manual'
+
+env:
+  NODE_VERSION: '18'
+  JAVA_VERSION: '17'
+  ANDROID_API_LEVEL: '34'
+  BUILD_TOOLS_VERSION: '34.0.0'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    
+    steps:
+      # =========================================================================
+      # Setup & Checkout
+      # =========================================================================
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        
+      - name: Install Android Build Tools
+        run: |
+          sdkmanager "build-tools;${{ env.BUILD_TOOLS_VERSION }}"
+          sdkmanager "platforms;android-${{ env.ANDROID_API_LEVEL }}"
+          sdkmanager "platform-tools"
+
+      # =========================================================================
+      # Extract Payload Data
+      # =========================================================================
+      - name: Extract Payload
+        id: payload
+        run: |
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            echo "app_name=${{ github.event.client_payload.app_name }}" >> $GITHUB_OUTPUT
+            echo "package_name=${{ github.event.client_payload.package_name }}" >> $GITHUB_OUTPUT
+            echo "icon_url=${{ github.event.client_payload.icon_url }}" >> $GITHUB_OUTPUT
+            echo "zip_url=${{ github.event.client_payload.zip_url }}" >> $GITHUB_OUTPUT
+            echo "request_id=${{ github.event.client_payload.request_id }}" >> $GITHUB_OUTPUT
+          else
+            echo "app_name=${{ github.event.inputs.app_name }}" >> $GITHUB_OUTPUT
+            echo "package_name=${{ github.event.inputs.package_name }}" >> $GITHUB_OUTPUT
+            echo "icon_url=${{ github.event.inputs.icon_url }}" >> $GITHUB_OUTPUT
+            echo "zip_url=${{ github.event.inputs.zip_url }}" >> $GITHUB_OUTPUT
+            echo "request_id=${{ github.event.inputs.request_id }}" >> $GITHUB_OUTPUT
+          fi
+
+      # =========================================================================
+      # Download Project Files
+      # =========================================================================
+      - name: Download Web Project
+        run: |
+          mkdir -p project-files
+          cd project-files
+          echo "Downloading project ZIP..."
+          curl -L -o project.zip "${{ steps.payload.outputs.zip_url }}"
+          echo "Extracting project..."
+          unzip -q project.zip
+          ls -la
+          
+      - name: Download Icon
+        run: |
+          mkdir -p project-files/icon
+          cd project-files/icon
+          echo "Downloading icon..."
+          curl -L -o icon.png "${{ steps.payload.outputs.icon_url }}"
+          file icon.png
+          ls -la
+
+      # =========================================================================
+      # Setup Capacitor Project
+      # =========================================================================
+      - name: Initialize Capacitor Project
+        run: |
+          mkdir -p capacitor-project
+          cd capacitor-project
+          
+          # Initialize npm project
+          npm init -y
+          
+          # Install Capacitor dependencies
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          
+          # Create capacitor.config.json
+          cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "${{ steps.payload.outputs.package_name }}",
+            "appName": "${{ steps.payload.outputs.app_name }}",
+            "webDir": "www",
+            "bundledWebRuntime": false,
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 2000,
+                "backgroundColor": "#000000"
+              }
+            }
+          }
+          EOF
+          
+          # Create www directory and copy web files
+          mkdir -p www
+          
+          # Copy extracted web files to www
+          if [ -d "../project-files/www" ]; then
+            cp -r ../project-files/www/* www/
+          elif [ -f "../project-files/index.html" ]; then
+            cp -r ../project-files/* www/
+          else
+            # Find the directory containing index.html
+            WWW_DIR=$(find ../project-files -name "index.html" -type f | head -1 | xargs dirname)
+            if [ -n "$WWW_DIR" ]; then
+              cp -r "$WWW_DIR"/* www/
+            else
+              echo "Error: Could not find index.html in project"
+              exit 1
+            fi
+          fi
+          
+          echo "WWW directory contents:"
+          ls -la www/
+
+      # =========================================================================
+      # Generate Icons
+      # =========================================================================
+      - name: Generate Android Icons
+        run: |
+          cd capacitor-project
+          
+          # Install sharp for image processing
+          npm install sharp
+          
+          # Create icon generation script
+          cat > generate-icons.js << 'EOF'
+          const sharp = require('sharp');
+          const fs = require('fs');
+          const path = require('path');
+          
+          const sizes = {
+            'mipmap-xxxhdpi': 192,
+            'mipmap-xxhdpi': 144,
+            'mipmap-xhdpi': 96,
+            'mipmap-hdpi': 72,
+            'mipmap-mdpi': 48,
+            'mipmap-ldpi': 36
+          };
+          
+          const iconDir = path.join(__dirname, 'icon');
+          const resDir = path.join(__dirname, 'android', 'app', 'src', 'main', 'res');
+          
+          async function generateIcons() {
+            const iconBuffer = fs.readFileSync(path.join(iconDir, 'icon.png'));
+            
+            for (const [folder, size] of Object.entries(sizes)) {
+              const folderPath = path.join(resDir, folder);
+              fs.mkdirSync(folderPath, { recursive: true });
+              
+              // Foreground icon
+              await sharp(iconBuffer)
+                .resize(size, size)
+                .png()
+                .toFile(path.join(folderPath, 'ic_launcher_foreground.png'));
+              
+              // Background icon (solid color)
+              await sharp({
+                create: {
+                  width: size,
+                  height: size,
+                  channels: 4,
+                  background: { r: 0, g: 0, b: 0, alpha: 1 }
+                }
+              })
+              .png()
+              .toFile(path.join(folderPath, 'ic_launcher_background.png'));
+              
+              // Round icon
+              await sharp(iconBuffer)
+                .resize(size, size)
+                .png()
+                .toFile(path.join(folderPath, 'ic_launcher_round.png'));
+              
+              // Square icon
+              await sharp(iconBuffer)
+                .resize(size, size)
+                .png()
+                .toFile(path.join(folderPath, 'ic_launcher.png'));
+            }
+            
+            console.log('Icons generated successfully!');
+          }
+          
+          generateIcons().catch(console.error);
+          EOF
+          
+          # Copy icon to project
+          mkdir -p icon
+          cp ../project-files/icon/icon.png icon/
+
+      # =========================================================================
+      # Add Android Platform
+      # =========================================================================
+      - name: Add Android Platform
+        run: |
+          cd capacitor-project
+          npx cap add android
+
+      # =========================================================================
+      # Generate Icons (After Android Platform Added)
+      # =========================================================================
+      - name: Generate Icons for Android
+        run: |
+          cd capacitor-project
+          node generate-icons.js
+
+      # =========================================================================
+      # Update Android Project Configuration
+      # =========================================================================
+      - name: Update Android Configuration
+        run: |
+          cd capacitor-project/android
+          
+          # Update build.gradle for APK signing
+          cat > app/build.gradle << 'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+          
+          android {
+              namespace "${{ steps.payload.outputs.package_name }}"
+              compileSdk 34
+              
+              defaultConfig {
+                  applicationId "${{ steps.payload.outputs.package_name }}"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode ${{ github.run_number }}
+                  versionName "1.0.0"
+              }
+              
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          
+          dependencies {
+              implementation fileTree(dir: 'libs', include: ['*.jar'])
+              implementation project(':capacitor-android')
+          }
+          EOF
+
+      # =========================================================================
+      # Build APK
+      # =========================================================================
+      - name: Build Release APK
+        run: |
+          cd capacitor-project/android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+          
+      - name: Locate APK
+        id: locate_apk
+        run: |
+          cd capacitor-project/android
+          APK_PATH=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+          echo "APK found at: $APK_PATH"
+          ls -la "$APK_PATH"
+
+      # =========================================================================
+      # Sign APK (Optional - with debug keystore for now)
+      # =========================================================================
+      - name: Sign APK
+        run: |
+          cd capacitor-project/android
+          
+          # Generate debug keystore if not exists
+          if [ ! -f debug.keystore ]; then
+            keytool -genkey -v \
+              -keystore debug.keystore \
+              -alias androiddebugkey \
+              -storepass android \
+              -keypass android \
+              -keyalg RSA \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          
+          APK_PATH="${{ steps.locate_apk.outputs.apk_path }}"
+          SIGNED_APK="app/build/outputs/apk/release/app-signed.apk"
+          
+          # Sign the APK
+          jarsigner -verbose \
+            -sigalg SHA256withRSA \
+            -digestalg SHA-256 \
+            -keystore debug.keystore \
+            -storepass android \
+            -keypass android \
+            "$APK_PATH" \
+            androiddebugkey
+          
+          # Zip align
+          zipalign -v 4 "$APK_PATH" "$SIGNED_APK" || cp "$APK_PATH" "$SIGNED_APK"
+          
+          echo "Final APK:"
+          ls -la "$SIGNED_APK"
+
+      # =========================================================================
+      # Create GitHub Release
+      # =========================================================================
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: build-${{ steps.payload.outputs.request_id }}
+          release_name: "${{ steps.payload.outputs.app_name }} - Build ${{ steps.payload.outputs.request_id }}"
+          body: |
+            ## Web to APK Build
+            
+            - **App Name:** ${{ steps.payload.outputs.app_name }}
+            - **Package:** ${{ steps.payload.outputs.package_name }}
+            - **Build ID:** ${{ steps.payload.outputs.request_id }}
+            - **Built with:** Capacitor
+            
+            Download the APK below.
+          draft: false
+          prerelease: false
+
+      - name: Upload APK to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: capacitor-project/android/app/build/outputs/apk/release/app-signed.apk
+          asset_name: "${{ steps.payload.outputs.app_name }}.apk"
+          asset_content_type: application/vnd.android.package-archive
+
+      # =========================================================================
+      # Cleanup
+      # =========================================================================
+      - name: Cleanup Build Files
+        if: always()
+        run: |
+          rm -rf capacitor-project
+          rm -rf project-files

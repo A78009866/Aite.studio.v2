@@ -26,6 +26,9 @@
             --font-en: 'Outfit', sans-serif;
             --glass-bg: rgba(22, 22, 22, 0.6);
             --glass-border: rgba(255, 255, 255, 0.1);
+            --success: #00E676;
+            --warning: #FFC107;
+            --error: #FF5252;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; outline: none; -webkit-tap-highlight-color: transparent; }
@@ -128,6 +131,40 @@
             padding: 8px; font-size: 1.1rem; transition: 0.3s;
         }
         .file-remove-btn:hover { transform: scale(1.2); }
+
+        /* --- Structure Analysis Display --- */
+        .structure-analysis {
+            background: rgba(0, 230, 118, 0.05);
+            border: 1px solid rgba(0, 230, 118, 0.2);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: none;
+            animation: slideIn 0.4s ease;
+        }
+        .structure-analysis.show { display: block; }
+        .structure-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            color: var(--primary);
+            font-weight: 600;
+        }
+        .structure-tree {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #aaa;
+            max-height: 150px;
+            overflow-y: auto;
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-radius: 8px;
+            line-height: 1.6;
+        }
+        .tree-entry { color: var(--primary); font-weight: bold; }
+        .tree-folder { color: #F4D03F; }
+        .tree-file { color: #42A5F5; }
 
         /* --- Files List for Folder Upload --- */
         .files-list {
@@ -263,6 +300,20 @@
             color: #aaa;
         }
 
+        /* --- Smart Detection Badge --- */
+        .smart-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(0, 230, 118, 0.1);
+            color: var(--primary);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-right: 10px;
+        }
+
         @keyframes popIn { to { transform: scale(1); } }
         @keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
         @keyframes slideIn { from{opacity:0; transform:translateX(-20px);} to{opacity:1; transform:translateX(0);} }
@@ -341,8 +392,11 @@
         <div class="main-container">
              
             <div class="config-panel">
-                <h1 id="t_welcome" style="font-size: 2rem; margin-bottom: 10px;">حوّل موقعك لتطبيق APK!</h1>
-                <p id="t_sub" style="color: #888; margin-bottom: 30px; line-height: 1.6;">منصة تحويل مواقع الويب إلى تطبيقات Android أصلية.</p>
+                <h1 id="t_welcome" style="font-size: 2rem; margin-bottom: 10px;">
+                    حوّل موقعك لتطبيق APK!
+                    <span class="smart-badge"><i class="fa-solid fa-wand-magic-sparkles"></i> <span id="t_smart">ذكي</span></span>
+                </h1>
+                <p id="t_sub" style="color: #888; margin-bottom: 30px; line-height: 1.6;">منصة ذكية لتحويل مواقع الويب إلى تطبيقات Android أصلية. تدعم أي هيكلة ملفات!</p>
 
                 <div class="tabs-container">
                     <button class="tab-btn active" onclick="switchTab('build')" id="t_tab_build">بناء تطبيق</button>
@@ -359,6 +413,7 @@
                         <div class="input-group">
                             <label class="input-label" id="t_pkg_name">معرف الحزمة (Package Name)</label>
                             <input type="text" class="input-field" id="packageName" placeholder="com.company.app" oninput="checkFormValidity()" required>
+                            <small style="color: #666; margin-top: 5px; display: block;">مثال: com.yourcompany.appname</small>
                         </div>
 
                         <div class="input-group">
@@ -378,13 +433,13 @@
                             <!-- Upload Type Selector -->
                             <div class="upload-type-selector">
                                 <button type="button" class="upload-type-btn active" onclick="setUploadType('html')" id="btnTypeHtml">
-                                    <i class="fa-brands fa-html5"></i> ملف HTML
+                                    <i class="fa-brands fa-html5"></i> <span id="t_type_html">ملف HTML</span>
                                 </button>
                                 <button type="button" class="upload-type-btn" onclick="setUploadType('folder')" id="btnTypeFolder">
-                                    <i class="fa-solid fa-folder-open"></i> مجلد
+                                    <i class="fa-solid fa-folder-open"></i> <span id="t_type_folder">مجلد</span>
                                 </button>
                                 <button type="button" class="upload-type-btn" onclick="setUploadType('zip')" id="btnTypeZip">
-                                    <i class="fa-solid fa-file-zipper"></i> ZIP
+                                    <i class="fa-solid fa-file-zipper"></i> <span id="t_type_zip">ZIP</span>
                                 </button>
                             </div>
 
@@ -402,6 +457,7 @@
                                 <div id="folderUploadContent">
                                     <i class="fa-solid fa-folder-open upload-icon" style="color: #F4D03F;"></i>
                                     <p id="t_click_folder" style="color:#aaa;">اضغط لاختيار مجلد المشروع</p>
+                                    <small style="color: #666; display: block; margin-top: 8px;">يدعم المجلدات المتداخلة تلقائياً</small>
                                 </div>
                                 <input type="file" id="folderInput" webkitdirectory directory multiple style="display:none">
                             </div>
@@ -411,8 +467,19 @@
                                 <div id="zipUploadContent">
                                     <i class="fa-solid fa-file-zipper upload-icon" style="color: #9B59B6;"></i>
                                     <p id="t_click_zip" style="color:#aaa;">اضغط لرفع ملف ZIP</p>
+                                    <small style="color: #666; display: block; margin-top: 8px;">يدعم أي هيكلة داخل ZIP</small>
                                 </div>
                                 <input type="file" id="zipInput" accept=".zip,application/zip" style="display:none">
+                            </div>
+
+                            <!-- Structure Analysis Display -->
+                            <div id="structureAnalysis" class="structure-analysis">
+                                <div class="structure-header">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                    <span id="t_detected">تم الكشف عن الهيكلة:</span>
+                                    <span id="structureType" style="margin-right: auto; background: rgba(0,230,118,0.2); padding: 2px 8px; border-radius: 4px;">Flat</span>
+                                </div>
+                                <div id="structureTree" class="structure-tree"></div>
                             </div>
 
                             <!-- File Preview -->
@@ -426,6 +493,8 @@
                                         <span id="fileSizeDisplay">0 KB</span>
                                         <span>•</span>
                                         <span id="fileTypeDisplay" style="color:var(--primary);">HTML</span>
+                                        <span>•</span>
+                                        <span id="fileCountDisplay" style="color:var(--warning);"></span>
                                     </div>
                                 </div>
                                 <button type="button" class="file-remove-btn" onclick="removeProjectFiles()">
@@ -438,7 +507,7 @@
                         </div>
 
                         <button type="submit" id="submitBtn" class="action-btn not-ready">
-                            <i class="fa-solid fa-hammer" id="btnIcon"></i> <span id="t_btn_build">بدء البناء </span>
+                            <i class="fa-solid fa-hammer" id="btnIcon"></i> <span id="t_btn_build">بدء البناء السحابي</span>
                         </button>
                     </form>
 
@@ -536,6 +605,114 @@
             removeProjectFiles();
         }
 
+        // --- Intelligent Structure Analyzer ---
+        function analyzeStructure(files) {
+            const paths = files.map(f => f.webkitRelativePath || f.name);
+            const htmlFiles = paths.filter(p => p.toLowerCase().endsWith('.html') || p.toLowerCase().endsWith('.htm'));
+            
+            // Detect nested structure
+            const firstParts = paths[0]?.split('/') || [];
+            let isNested = false;
+            let rootFolder = null;
+            
+            if (firstParts.length > 1) {
+                const potentialRoot = firstParts[0];
+                const allInSameRoot = paths.every(p => p.startsWith(potentialRoot + '/'));
+                if (allInSameRoot && paths.length > 1) {
+                    isNested = true;
+                    rootFolder = potentialRoot;
+                }
+            }
+            
+            // Find entry point
+            let entryPoint = null;
+            let structureType = 'flat';
+            
+            // Check for build folders
+            const buildFolders = ['www', 'dist', 'build', 'public'];
+            for (const folder of buildFolders) {
+                const hasIndexInFolder = paths.some(p => 
+                    p.startsWith(folder + '/') && p.toLowerCase().endsWith('index.html')
+                );
+                if (hasIndexInFolder) {
+                    structureType = 'build_output';
+                    entryPoint = `${folder}/index.html`;
+                    break;
+                }
+            }
+            
+            // Check for root index
+            if (!entryPoint) {
+                const rootIndex = htmlFiles.find(p => {
+                    const parts = p.split('/');
+                    return parts[parts.length - 1].toLowerCase().startsWith('index') && parts.length <= 2;
+                });
+                if (rootIndex) {
+                    entryPoint = rootIndex;
+                    structureType = isNested ? 'nested' : 'flat';
+                }
+            }
+            
+            // Any index or first HTML
+            if (!entryPoint) {
+                entryPoint = htmlFiles.find(p => p.toLowerCase().includes('index')) || 
+                            htmlFiles.find(p => p.toLowerCase().includes('home')) || 
+                            htmlFiles[0];
+                structureType = isNested ? 'nested' : (htmlFiles.length === 1 ? 'single_html' : 'flat');
+            }
+            
+            // Display analysis
+            displayStructureAnalysis(structureType, entryPoint, paths, htmlFiles, isNested, rootFolder);
+            
+            return { structureType, entryPoint, isNested, rootFolder };
+        }
+        
+        function displayStructureAnalysis(type, entryPoint, allPaths, htmlFiles, isNested, rootFolder) {
+            const analysisDiv = document.getElementById('structureAnalysis');
+            const treeDiv = document.getElementById('structureTree');
+            const typeSpan = document.getElementById('structureType');
+            
+            // Type labels
+            const typeLabels = {
+                'single_html': 'ملف HTML واحد',
+                'flat': 'مجلد مسطح',
+                'nested': 'مجلد متداخل',
+                'build_output': 'مخرجات بناء (Build)'
+            };
+            
+            typeSpan.textContent = typeLabels[type] || type;
+            
+            // Build tree visualization
+            let treeHtml = '';
+            
+            if (type === 'nested' && rootFolder) {
+                treeHtml += `<div><span class="tree-folder">📁 ${rootFolder}/</span></div>`;
+            }
+            
+            // Show HTML files first
+            const uniqueFolders = new Set();
+            htmlFiles.slice(0, 5).forEach(file => {
+                const parts = file.split('/');
+                const fileName = parts.pop();
+                const folder = parts.join('/');
+                
+                if (folder && !uniqueFolders.has(folder)) {
+                    uniqueFolders.add(folder);
+                    treeHtml += `<div style="padding-right: 20px;"><span class="tree-folder">📁 ${folder}/</span></div>`;
+                }
+                
+                const isEntry = file === entryPoint;
+                treeHtml += `<div style="padding-right: ${folder ? '40px' : '20px'};">${isEntry ? '👉 ' : ''}<span class="tree-entry">${fileName}</span></div>`;
+            });
+            
+            if (htmlFiles.length > 5) {
+                treeHtml += `<div style="padding-right: 20px; color: #666;">... و ${htmlFiles.length - 5} ملفات أخرى</div>`;
+            }
+            
+            treeDiv.innerHTML = treeHtml;
+            analysisDiv.classList.add('show');
+        }
+
         // --- Translations ---
         const translations = {
             ar: {
@@ -545,17 +722,22 @@
                 confirm: "تأكيد",
                 cancel: "إلغاء",
                 welcome: "حوّل موقعك لتطبيق APK!",
-                sub: "منصة تحويل مواقع الويب إلى تطبيقات Android أصلية.",
+                smart: "ذكي",
+                sub: "منصة ذكية لتحويل مواقع الويب إلى تطبيقات Android أصلية. تدعم أي هيكلة ملفات!",
                 app_name: "اسم التطبيق",
-                pkg_name: "معرف الحزمة",
+                pkg_name: "معرف الحزمة (Package Name)",
                 icon: "أيقونة التطبيق",
                 project: "ملفات المشروع",
                 click_icon: "اضغط هنا لاختيار الصورة",
                 click_html: "اضغط لرفع ملف HTML واحد",
                 click_folder: "اضغط لاختيار مجلد المشروع",
                 click_zip: "اضغط لرفع ملف ZIP",
+                type_html: "ملف HTML",
+                type_folder: "مجلد",
+                type_zip: "ZIP",
                 btn_build: "بدء البناء السحابي",
                 status: "الحالة:",
+                detected: "تم الكشف عن الهيكلة:",
                 ready_title: "تطبيقك جاهز للتحميل",
                 download: "تحميل APK",
                 tab_build: "بناء تطبيق",
@@ -573,7 +755,8 @@
                 confirm: "Confirm",
                 cancel: "Cancel",
                 welcome: "Convert Your Website to APK!",
-                sub: "Platform to convert web projects to native Android apps.",
+                smart: "Smart",
+                sub: "Intelligent platform to convert web projects to native Android apps. Supports any file structure!",
                 app_name: "App Name",
                 pkg_name: "Package Name",
                 icon: "App Icon",
@@ -582,8 +765,12 @@
                 click_html: "Click to upload HTML file",
                 click_folder: "Click to select project folder",
                 click_zip: "Click to upload ZIP file",
+                type_html: "HTML File",
+                type_folder: "Folder",
+                type_zip: "ZIP",
                 btn_build: "Start Cloud Build",
                 status: "Status:",
+                detected: "Detected Structure:",
                 ready_title: "App Ready",
                 download: "Download APK",
                 tab_build: "New Build",
@@ -606,10 +793,13 @@
             
             const map = {
                 t_login_desc: 'login_desc', t_signin: 'signin', t_crop_title: 'crop_title',
-                t_confirm: 'confirm', t_cancel: 'cancel', t_welcome: 'welcome', t_sub: 'sub',
+                t_confirm: 'confirm', t_cancel: 'cancel', t_welcome: 'welcome', 
+                t_smart: 'smart', t_sub: 'sub',
                 t_app_name: 'app_name', t_pkg_name: 'pkg_name', t_icon: 'icon', t_project: 'project',
                 t_click_icon: 'click_icon', t_click_html: 'click_html', t_click_folder: 'click_folder',
-                t_click_zip: 'click_zip', t_btn_build: 'btn_build', t_status: 'status',
+                t_click_zip: 'click_zip', t_type_html: 'type_html', t_type_folder: 'type_folder', 
+                t_type_zip: 'type_zip', t_btn_build: 'btn_build', t_status: 'status', 
+                t_detected: 'detected',
                 t_tab_build: 'tab_build', t_tab_apps: 'tab_apps',
                 t_logout_title: 'logout_title', t_logout_desc: 'logout_desc', t_confirm_logout: 'confirm_logout',
                 t_close: 'close'
@@ -709,6 +899,8 @@
             if(file) {
                 projectFiles = [file];
                 showFilePreview(file.name, file.size, 'HTML', 'fa-brands fa-html5', '#E34F26');
+                document.getElementById('fileCountDisplay').textContent = '';
+                document.getElementById('structureAnalysis').classList.remove('show');
                 checkFormValidity();
             }
         });
@@ -720,7 +912,12 @@
                 projectFiles = files;
                 const mainFile = files.find(f => f.name.toLowerCase().endsWith('.html') || f.name.toLowerCase().endsWith('.htm')) || files[0];
                 const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+                
                 showFilePreview(mainFile.name, totalSize, 'Folder', 'fa-solid fa-folder', '#F4D03F');
+                document.getElementById('fileCountDisplay').textContent = `${files.length} ${translations[currentLang].files_selected}`;
+                
+                // Run intelligent analysis
+                analyzeStructure(files);
                 showFolderFilesList(files);
                 checkFormValidity();
             }
@@ -732,6 +929,8 @@
             if(file) {
                 projectFiles = [file];
                 showFilePreview(file.name, file.size, 'ZIP', 'fa-solid fa-file-zipper', '#9B59B6');
+                document.getElementById('fileCountDisplay').textContent = '';
+                document.getElementById('structureAnalysis').classList.remove('show');
                 checkFormValidity();
             }
         });
@@ -762,7 +961,7 @@
             const htmlFiles = files.filter(f => f.name.toLowerCase().endsWith('.html') || f.name.toLowerCase().endsWith('.htm'));
             const cssFiles = files.filter(f => f.name.toLowerCase().endsWith('.css'));
             const jsFiles = files.filter(f => f.name.toLowerCase().endsWith('.js'));
-            const otherFiles = files.filter(f => !f.name.match(/\.(html|htm|css|js)$/i));
+            const otherFiles = files.filter(f => !f.name.match(/\\.(html|htm|css|js)$/i));
             
             let html = `<div style="color:#888; margin-bottom:8px; font-size:0.8rem;">${files.length} ${translations[currentLang].files_selected}</div>`;
             
@@ -773,10 +972,12 @@
                 else if(file.name.endsWith('.css')) { icon = 'fa-brands fa-css3-alt'; color = '#1572B6'; }
                 else if(file.name.endsWith('.js')) { icon = 'fa-brands fa-js'; color = '#F7DF1E'; }
                 
+                const relativePath = file.webkitRelativePath || file.name;
+                
                 html += `
                     <div class="files-list-item">
                         <i class="${icon}" style="color:${color};"></i>
-                        <span style="flex:1; overflow:hidden; text-overflow:ellipsis;">${file.name}</span>
+                        <span style="flex:1; overflow:hidden; text-overflow:ellipsis;" title="${relativePath}">${relativePath}</span>
                         <span style="color:#666; font-size:0.75rem;">${formatFileSize(file.size)}</span>
                     </div>
                 `;
@@ -800,6 +1001,7 @@
             // Hide preview and list
             document.getElementById('filePreview').style.display = 'none';
             document.getElementById('folderFilesList').style.display = 'none';
+            document.getElementById('structureAnalysis').classList.remove('show');
             
             // Show current upload area
             setUploadType(currentUploadType);

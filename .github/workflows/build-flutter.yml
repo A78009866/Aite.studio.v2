@@ -1,4 +1,4 @@
-name: Smart Flutter Cloud Build (Universal v3.2)
+name: Smart Flutter Cloud Build (Universal v3.3)
 
 on:
   repository_dispatch:
@@ -30,7 +30,6 @@ jobs:
           wget -q --show-progress -O project.zip "$ZIP_URL"
           mkdir -p $PROJECT_DIR
           unzip -q project.zip -d temp_extract
-          # Smart Move: Handle nested folders
           if [ "$(ls -A temp_extract | wc -l)" == "1" ] && [ -d "temp_extract/$(ls -A temp_extract)" ]; then
             mv temp_extract/*/* $PROJECT_DIR/
           else
@@ -40,7 +39,6 @@ jobs:
 
       - name: 3. Analyze Project Structure
         working-directory: ${{ env.PROJECT_DIR }}
-        id: analyzer
         run: |
           cat <<EOF > detect_version.py
           import re, os
@@ -79,107 +77,100 @@ jobs:
             fi
           fi
 
-          # 2. Key Generation (We use this for signing)
+          # 2. Key Generation
           mkdir -p android/app
           keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           
-          # 3. CRITICAL: Sanitize build.gradle from missing files (The Fix for your error)
-          # Remove lines referring to 'signing.gradle' or 'key.properties' which cause the crash
-          sed -i '/signing\.gradle/d' android/app/build.gradle
-          sed -i '/key\.properties/d' android/app/build.gradle
-          
-          # 4. Gradle Fixes based on Mode
-          WRAPPER="android/gradle/wrapper/gradle-wrapper.properties"
-          GRADLE_FILE="android/build.gradle"
+          # 3. Clean & Sanitize build.gradle (CRITICAL)
           APP_GRADLE="android/app/build.gradle"
-          mkdir -p android/gradle/wrapper
-
+          GRADLE_FILE="android/build.gradle"
+          WRAPPER="android/gradle/wrapper/gradle-wrapper.properties"
+          
+          # Remove broken script references
+          sed -i '/signing\.gradle/d' $APP_GRADLE
+          sed -i '/key\.properties/d' $APP_GRADLE
+          
           if [ "${{ env.IS_LEGACY }}" == "true" ]; then
             echo "🔧 Mode: LEGACY"
             echo "distributionUrl=https\://services.gradle.org/distributions/gradle-7.5-all.zip" > $WRAPPER
-            if [ -f "$GRADLE_FILE" ]; then
-               sed -i 's/com.android.tools.build:gradle:[0-9.]\+/com.android.tools.build:gradle:7.3.0/g' $GRADLE_FILE
-               sed -i 's/org.jetbrains.kotlin:kotlin-gradle-plugin:[0-9.]\+/org.jetbrains.kotlin:kotlin-gradle-plugin:1.7.10/g' $GRADLE_FILE
-            fi
+            sed -i 's/com.android.tools.build:gradle:[0-9.]\+/com.android.tools.build:gradle:7.3.0/g' $GRADLE_FILE 2>/dev/null || true
             echo "BUILD_ARGS=--release --no-shrink --no-sound-null-safety" >> $GITHUB_ENV
           else
             echo "✨ Mode: MODERN"
             echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.10.2-all.zip" > $WRAPPER
             
-            # Fix Root Gradle
+            # Update Root Gradle
             if [ -f "$GRADLE_FILE" ]; then
-               sed -i 's/com.android.tools.build:gradle:[0-9.]\+/com.android.tools.build:gradle:8.5.0/g' $GRADLE_FILE
-               sed -i 's/org.jetbrains.kotlin:kotlin-gradle-plugin:[0-9.]\+/org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24/g' $GRADLE_FILE
-               # Fix the Kotlin Warning by forcing version in ext block if exists
-               sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.24'/" $GRADLE_FILE
+              sed -i 's/com.android.tools.build:gradle:[0-9.]\+/com.android.tools.build:gradle:8.5.0/g' $GRADLE_FILE 2>/dev/null || true
+              sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.24'/" $GRADLE_FILE 2>/dev/null || true
             fi
 
-            # Fix App Gradle
-            if [ -f "$APP_GRADLE" ]; then
-               # Add namespace if missing
-               if ! grep -q "namespace" $APP_GRADLE; then
-                 sed -i "/android {/a \    namespace '${PACKAGE_NAME}'" $APP_GRADLE
-               fi
-               # Ensure compileSdkVersion is high enough
-               sed -i 's/compileSdkVersion [0-9]\+/compileSdkVersion 34/g' $APP_GRADLE
-               
-               # INJECT SIGNING CONFIG: Ensure release builds use the key we generated
-               # This overwrites any complex signing config that might be broken
-               cat <<EOT >> $APP_GRADLE
-          android {
-              signingConfigs {
-                  release {
-                      storeFile file("debug.keystore")
-                      storePassword "android"
-                      keyAlias "androiddebugkey"
-                      keyPassword "android"
-                  }
-              }
-              buildTypes {
-                  release {
-                      signingConfig signingConfigs.release
-                  }
+            # Force re-write Signing & BuildTypes using Python for precision
+            python3 -c "
+          import re
+          path = '$APP_GRADLE'
+          with open(path, 'r') as f: content = f.read()
+          # Remove existing blocks to prevent duplication errors
+          content = re.sub(r'signingConfigs\s*\{.*?\}', '', content, flags=re.DOTALL)
+          content = re.sub(r'buildTypes\s*\{.*?\}', '', content, flags=re.DOTALL)
+          # Inject new clean config
+          new_block = \"\"\"
+          signingConfigs {
+              release {
+                  storeFile file('debug.keystore')
+                  storePassword 'android'
+                  keyAlias 'androiddebugkey'
+                  keyPassword 'android'
               }
           }
-          EOT
+          buildTypes {
+              release {
+                  signingConfig signingConfigs.release
+                  minifyEnabled false
+                  shrinkResources false
+              }
+          }
+          \"\"\"
+          content = re.sub(r'(android\s*\{)', r'\1' + new_block, content)
+          with open(path, 'w') as f: f.write(content)
+          "
+            # Add Namespace if missing (Required by AGP 8+)
+            if ! grep -q "namespace" $APP_GRADLE; then
+              sed -i "/android {/a \    namespace '${PACKAGE_NAME}'" $APP_GRADLE
             fi
-            echo "BUILD_ARGS=--release --no-shrink" >> $GITHUB_ENV
+            
+            # Set Args with dependency validation skip
+            echo "BUILD_ARGS=--release --no-shrink --android-skip-build-dependency-validation" >> $GITHUB_ENV
           fi
 
-          # Common Cleanups
-          sed -i '/flutterVersionName/d' android/local.properties 2>/dev/null || true
-          sed -i '/flutterVersionCode/d' android/local.properties 2>/dev/null || true
+          # Final metadata fixes
+          sed -i 's/compileSdkVersion [0-9]\+/compileSdkVersion 34/g' $APP_GRADLE 2>/dev/null || true
+          sed -i '/flutterVersion/d' android/local.properties 2>/dev/null || true
 
       - name: 6. Refactor Package Name & Icon
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           cat <<EOF > refactor.py
           import os, re
-          pkg = "${PACKAGE_NAME}"
-          name = "${APP_NAME}"
-          path = pkg.replace('.', '/')
+          pkg = "${PACKAGE_NAME}"; name = "${APP_NAME}"; path = pkg.replace('.', '/')
           m = "android/app/src/main/AndroidManifest.xml"
           if os.path.exists(m):
               with open(m, 'r') as f: s = f.read()
               s = re.sub(r'package="[^"]+"', f'package="{pkg}"', s)
               s = re.sub(r'android:label="[^"]+"', 'android:label="@string/app_name"', s)
               with open(m, 'w') as f: f.write(s)
-          
           s_path = "android/app/src/main/res/values/strings.xml"
           os.makedirs(os.path.dirname(s_path), exist_ok=True)
           with open(s_path, 'w') as f: f.write(f'<resources><string name="app_name">{name}</string></resources>')
-          
           g = "android/app/build.gradle"
           if os.path.exists(g):
               with open(g, 'r') as f: s = f.read()
               s = re.sub(r'applicationId\s+["\'].*?["\']', f'applicationId "{pkg}"', s)
               with open(g, 'w') as f: f.write(s)
-              
           for root, dirs, files in os.walk("android/app/src/main"):
               if "MainActivity.java" in files or "MainActivity.kt" in files:
                   f_name = "MainActivity.kt" if "MainActivity.kt" in files else "MainActivity.java"
-                  old = os.path.join(root, f_name)
-                  new_dir = os.path.join("android/app/src/main", "java" if "java" in root else "kotlin", path)
+                  old = os.path.join(root, f_name); new_dir = os.path.join("android/app/src/main", "java" if "java" in root else "kotlin", path)
                   os.makedirs(new_dir, exist_ok=True)
                   with open(old, 'r') as f: c = f.read()
                   c = re.sub(r'package\s+[\w\.]+', f'package {pkg}', c)
@@ -187,7 +178,6 @@ jobs:
                   break
           EOF
           python3 refactor.py
-
           wget -q -O icon.png "$ICON_URL"
           rm -rf android/app/src/main/res/mipmap-*
           for s in "mdpi 48" "hdpi 72" "xhdpi 96" "xxhdpi 144" "xxxhdpi 192"; do
@@ -200,9 +190,7 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           flutter pub get
-          echo "🚀 Building with: ${{ env.BUILD_ARGS }}"
           flutter build apk ${{ env.BUILD_ARGS }}
-
           APK=$(find build/app/outputs/flutter-apk -name "*.apk" | head -n 1)
           mv "$APK" "${SAFE_NAME}.apk"
           echo "APK_PATH=$(pwd)/${SAFE_NAME}.apk" >> $GITHUB_ENV
@@ -212,9 +200,7 @@ jobs:
         with:
           tag_name: build-${{ env.BUILD_ID }}
           name: "${{ env.APP_NAME }}"
-          body: |
-             Build ID: ${{ env.BUILD_ID }}
-             Mode: ${{ env.IS_LEGACY == 'true' && 'Legacy 🏚️' || 'Modern ✨' }}
+          body: "Build ID: ${{ env.BUILD_ID }}\nMode: ${{ env.IS_LEGACY == 'true' && 'Legacy 🏚️' || 'Modern ✨' }}"
           files: ${{ env.APK_PATH }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

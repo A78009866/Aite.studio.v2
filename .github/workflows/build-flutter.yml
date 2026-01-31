@@ -41,7 +41,7 @@ jobs:
       - name: Setup System Environment
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq wget unzip imagemagick
+          sudo apt-get install -y -qq wget unzip imagemagick xmlstarlet
           
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -54,7 +54,6 @@ jobs:
           wget -q --show-progress -O project.zip "$ZIP_URL"
           mkdir -p $PROJECT_DIR
           unzip -q project.zip -d temp_extract
-          # نقل ذكي للملفات
           if [ "$(ls -A temp_extract | wc -l)" == "1" ] && [ -d "temp_extract/$(ls -A temp_extract)" ]; then
             mv temp_extract/*/* $PROJECT_DIR/
           else
@@ -71,7 +70,7 @@ jobs:
       - name: 🛠️ Smart Auto-Fix & Upgrade Tools
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          # --- 1. Fix Missing Firebase Options (Dart Side) ---
+          # --- 1. Fix Missing Firebase Options ---
           if [ ! -f "lib/firebase_options.dart" ]; then
             echo "⚠️ firebase_options.dart missing. Generating dummy file."
             mkdir -p lib
@@ -94,7 +93,7 @@ jobs:
           EOF
           fi
 
-          # --- 2. Fix Missing Google Services JSON (Android Side) ---
+          # --- 2. Fix Missing Google Services JSON ---
           if [ ! -f "android/app/google-services.json" ]; then
             echo "⚠️ google-services.json missing. Generating dummy file."
             cat <<EOF > android/app/google-services.json
@@ -104,121 +103,116 @@ jobs:
               "project_id": "dummy-project",
               "storage_bucket": "dummy-project.appspot.com"
             },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:123456789012:android:321abc456def7890",
-                  "android_client_info": {
-                    "package_name": "${PACKAGE_NAME}"
-                  }
-                },
-                "oauth_client": [],
-                "api_key": [ { "current_key": "AIzaSyDummyKey" } ],
-                "services": {
-                  "analytics_service": { "status": 1 },
-                  "appinvite_service": { "status": 1, "other_platform_oauth_client": [] },
-                  "ads_service": { "status": 2 }
-                }
+            "client": [{
+              "client_info": {
+                "mobilesdk_app_id": "1:123456789012:android:321abc456def7890",
+                "android_client_info": { "package_name": "${PACKAGE_NAME}" }
+              },
+              "oauth_client": [],
+              "api_key": [{ "current_key": "AIzaSyDummyKey" }],
+              "services": {
+                "analytics_service": { "status": 1 },
+                "appinvite_service": { "status": 1, "other_platform_oauth_client": [] },
+                "ads_service": { "status": 2 }
               }
-            ],
+            }],
             "configuration_version": "1"
           }
           EOF
           fi
 
-          # --- 3. Smart Project Migrator (Upgrade to Gradle 8.9) ---
-          echo "🔄 Upgrading Gradle Wrapper to 8.9..."
+          # --- 3. Upgrade Gradle & Kotlin ---
+          echo "🔄 Upgrading Gradle Wrapper..."
           if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
              sed -i 's/gradle-.*-all.zip/gradle-8.9-all.zip/' android/gradle/wrapper/gradle-wrapper.properties || true
           fi
           
-          echo "🔄 checking Android Gradle Plugin compatibility..."
           sed -i 's/com.android.tools.build:gradle:[3-7].*/com.android.tools.build:gradle:8.2.1"/' android/build.gradle || true
-          sed -i 's/com.android.tools.build:gradle:8.0.*/com.android.tools.build:gradle:8.2.1"/' android/build.gradle || true
-
-          echo "🔄 Upgrading Kotlin to 1.9.20..."
           sed -i 's/ext.kotlin_version\s*=\s*.*/ext.kotlin_version = "1.9.20"/' android/build.gradle || true
+
+      - name: 🔧 Fix App Name & Package (Robust Method)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          echo "🔧 Configuring App: $APP_NAME | Package: $PACKAGE_NAME"
           
-          # إجبار Java 17
-          mkdir -p android
-          if [ -f "android/gradle.properties" ]; then
-             sed -i '/org.gradle.java.home/d' android/gradle.properties || true
-             echo "org.gradle.java.home=$JAVA_HOME_17_X64" >> android/gradle.properties
+          # Update strings.xml (الاسم الأساسي)
+          strings_path='android/app/src/main/res/values/strings.xml'
+          mkdir -p "$(dirname "$strings_path")"
+          cat > "$strings_path" <<EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">${APP_NAME}</string>
+          </resources>
+          EOF
+
+          # تحديث AndroidManifest.xml مباشرة باستخدام xmlstarlet (أكثر موثوقية)
+          manifest_path='android/app/src/main/AndroidManifest.xml'
+          if [ -f "$manifest_path" ]; then
+            # استبدال label في application tag
+            xmlstarlet ed --inplace -u "//application/@android:label" -v "@string/app_name" "$manifest_path" 2>/dev/null || \
+            sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$manifest_path"
+            
+            # التأكد من وجود namespace للـ android
+            if ! grep -q "xmlns:android" "$manifest_path"; then
+              sed -i 's/<manifest /<manifest xmlns:android="http:\/\/schemas.android.com\/apk\/res\/android" /' "$manifest_path"
+            fi
           fi
 
-          # --- 4. Update App Name, Package & Icon ---
-          cat <<EOF > update_project_info.py
-          import os
-          import xml.etree.ElementTree as ET
-          import re
+          # تحديث build.gradle (Package & SDK)
+          gradle_path='android/app/build.gradle'
+          if [ -f "$gradle_path" ]; then
+            # تحديث applicationId
+            sed -i "s/applicationId \".*\"/applicationId \"${PACKAGE_NAME}\"/g" "$gradle_path"
+            # تحديث namespace (للأندرويد جرادل الجديد)
+            sed -i "s/namespace \".*\"/namespace \"${PACKAGE_NAME}\"/g" "$gradle_path"
+            # التأكد من minSdk 21 على الأقل (للتوافق)
+            sed -i 's/minSdkVersion.*/minSdkVersion 21/g' "$gradle_path"
+            sed -i 's/minSdk\s*=.*/minSdk = 21/g' "$gradle_path"
+          fi
 
-          app_name = os.environ.get('APP_NAME', 'MyApp')
-          package_name = os.environ.get('PACKAGE_NAME', 'com.example.app')
-          
-          print(f"🔧 Configuring: {app_name} | {package_name}")
+          # التحقق من النتيجة
+          echo "✅ strings.xml content:"
+          cat "$strings_path"
+          echo "✅ Manifest application label:"
+          grep -o 'android:label="[^"]*"' "$manifest_path" || echo "Not found"
 
-          # Update strings.xml
-          strings_path = 'android/app/src/main/res/values/strings.xml'
-          os.makedirs(os.path.dirname(strings_path), exist_ok=True)
-          xml_content = f'''<?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <string name="app_name">{app_name}</string>
-          </resources>'''
-          with open(strings_path, 'w', encoding='utf-8') as f: f.write(xml_content)
-
-          # Update AndroidManifest.xml
-          manifest_path = 'android/app/src/main/AndroidManifest.xml'
-          ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
-          try:
-              tree = ET.parse(manifest_path)
-              root = tree.getroot()
-              android_ns = '{http://schemas.android.com/apk/res/android}'
-              
-              application = root.find('application')
-              if application is not None:
-                  application.attrib[f'{android_ns}label'] = '@string/app_name'
-                  application.attrib[f'{android_ns}icon'] = '@mipmap/ic_launcher'
-                  application.attrib[f'{android_ns}roundIcon'] = '@mipmap/ic_launcher'
-                  
-              tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
-          except Exception as e: print(f"Manifest Warning: {e}")
-
-          # Update build.gradle (IDs & Namespaces)
-          gradle_path = 'android/app/build.gradle'
-          if os.path.exists(gradle_path):
-              with open(gradle_path, 'r') as f: content = f.read()
-              content = re.sub(r'applicationId\s+["\'].*?["\']', f'applicationId "{package_name}"', content)
-              content = re.sub(r'namespace\s+["\'].*?["\']', f'namespace "{package_name}"', content)
-              content = re.sub(r'minSdkVersion\s+\d+', 'minSdkVersion 23', content)
-              with open(gradle_path, 'w') as f: f.write(content)
-          EOF
-          python3 update_project_info.py
-
-      - name: Setup Signing Key & Optimization
+      - name: Setup Signing Key (Debug for Universal Compatibility)
         working-directory: ${{ env.PROJECT_DIR }}/android/app
         run: |
-          if [ ! -f "debug.keystore" ]; then
-            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          fi
+          # إنشاء مفتاح توقيع موحد
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
           
-          cat > signing/signing.gradle << 'EOF'
-          signingConfigs {
-              release {
-                  storeFile file("../debug.keystore")
-                  storePassword "android"
-                  keyAlias "androiddebugkey"
-                  keyPassword "android"
+          # إنشاء ملف signing.gradle في المكان الصحيح
+          mkdir -p signing
+          cat > signing.gradle << 'EOF'
+          android {
+              signingConfigs {
+                  release {
+                      storeFile file("debug.keystore")
+                      storePassword "android"
+                      keyAlias "androiddebugkey"
+                      keyPassword "android"
+                  }
               }
-          }
-          buildTypes {
-              release {
-                  signingConfig signingConfigs.release
-                  minifyEnabled true
-                  shrinkResources true
-                  proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                      minifyEnabled false
+                      shrinkResources false
+                      proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+                  }
+                  debug {
+                      signingConfig signingConfigs.debug
+                  }
               }
           }
           EOF
+          
+          # استيراد ملف التوقيع في build.gradle الرئيسي للتطبيق
+          app_gradle="../../android/app/build.gradle"
+          if ! grep -q "signing.gradle" "$app_gradle"; then
+            echo "apply from: 'signing/signing.gradle'" >> "$app_gradle"
+          fi
 
       - name: Process Icon
         run: |
@@ -232,39 +226,49 @@ jobs:
              convert icon.png -resize $px $PROJECT_DIR/android/app/src/main/res/mipmap-$name/ic_launcher.png
           done
 
-      - name: Get Dependencies
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: flutter pub get
-
-      - name: Build Optimized APK (Universal)
+      - name: Get Dependencies & Clean
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          flutter build apk --$BUILD_MODE --target-platform=android-arm,android-arm64 --obfuscate --split-debug-info=symbols/ --no-android-gradle-daemon
+          flutter clean
+          flutter pub get
+
+      - name: Build APK (Universal - All Architectures)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          # بناء لجميع المعماريات (للتوافق مع الهواتف القديمة والمحاكيات)
+          flutter build apk --$BUILD_MODE \
+            --target-platform=android-arm,android-arm64,android-x64 \
+            --no-android-gradle-daemon
           
           APK_DIR="build/app/outputs/flutter-apk"
-          GENERATED_APK=$(find $APK_DIR -name "*.apk" | head -n 1)
+          GENERATED_APK=$(find $APK_DIR -name "*.apk" -not -name "*-unsigned.apk" | head -n 1)
           
           if [ -f "$GENERATED_APK" ]; then
             FINAL_APK="$APK_DIR/${SAFE_NAME}.apk"
-            mv "$GENERATED_APK" "$FINAL_APK"
+            cp "$GENERATED_APK" "$FINAL_APK"
             echo "✅ Build Successful: $FINAL_APK"
-            
-            # --- الإصلاح هنا: استخدام المسار الكامل للملف ---
+            ls -lh "$FINAL_APK"
             echo "APK_PATH=$PWD/$FINAL_APK" >> $GITHUB_ENV
           else
             echo "❌ Build Failed: APK not found"
             exit 1
           fi
 
+      - name: Verify APK
+        run: |
+          echo "📱 APK Info:"
+          aapt dump badging ${{ env.APK_PATH }} | grep -E "package|application-label" || true
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ env.BUILD_ID }}
-          name: "${{ env.APP_NAME }}"
+          name: "${{ env.APP_NAME }} v${{ github.run_number }}"
           body: |
             ✅ **تم البناء بنجاح**
             📱 **التطبيق:** ${{ env.APP_NAME }}
             📦 **الحزمة:** ${{ env.PACKAGE_NAME }}
+            🏗️ **النوع:** ${{ env.BUILD_MODE }}
           files: |
             ${{ env.APK_PATH }}
         env:

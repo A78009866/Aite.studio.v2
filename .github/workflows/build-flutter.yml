@@ -128,7 +128,7 @@ jobs:
             sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$MANIFEST"
           fi
 
-      - name: 🔧 Replace build.gradle (Clean)
+            - name: 🔧 Replace build.gradle (Clean)
         working-directory: ${{ env.PROJECT_DIR }}/android/app
         run: |
           cp build.gradle build.gradle.backup
@@ -186,7 +186,7 @@ jobs:
               
               signingConfigs {
                   release {
-                      storeFile file("../debug.keystore")  # ⬅️ يبحث في android/debug.keystore
+                      storeFile file("../debug.keystore")
                       storePassword "android"
                       keyAlias "androiddebugkey"
                       keyPassword "android"
@@ -208,7 +208,7 @@ jobs:
           GRADLE_EOF
           
           sed -i "s/PLACEHOLDER_PACKAGE/${PACKAGE_NAME}/g" build.gradle
-
+          
       - name: 🔧 Fix Gradle Settings
         working-directory: ${{ env.PROJECT_DIR }}/android
         run: |

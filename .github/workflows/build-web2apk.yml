@@ -1,11 +1,4 @@
 
-# Let's create an improved version of the build workflow that handles any file structure intelligently
-
-improved_yml = '''# =============================================================================
-# Aite.studio - Web to APK Builder (Intelligent v2)
-# Auto-detects and handles any file structure: HTML, folders, nested projects
-# =============================================================================
-
 name: Build Web to APK
 
 on:
@@ -346,13 +339,3 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-'''
-
-print("✅ Improved GitHub Actions workflow created!")
-print("\nKey improvements:")
-print("1. Smart project structure detection (handles nested folders, flat structures, etc.)")
-print("2. Auto-finds entry point (index.html, home.html, or any HTML)")
-print("3. Handles build folders (www/, dist/, build/)")
-print("4. Proper icon handling with multiple densities")
-print("5. Modern apksigner support with jarsigner fallback")
-print("6. Better error handling and logging")

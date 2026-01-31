@@ -68,7 +68,7 @@ jobs:
         with:
           channel: 'stable'
           cache: true
-          # نترك الإصدار مفتوحاً ليجلب الأحدث (3.38+)
+          # نترك الإصدار مفتوحاً ليجلب الأحدث
 
       - name: 🛠️ Smart Auto-Fix & Upgrade Tools
         working-directory: ${{ env.PROJECT_DIR }}
@@ -96,19 +96,18 @@ jobs:
           EOF
           fi
 
-          # --- 2. Smart Project Migrator (Upgrade to Gradle 8) ---
-          # هذا هو الحل للخطأ السابق: الترقية إلى Gradle 8.2+ و AGP 8.1+
+          # --- 2. Smart Project Migrator (Upgrade to Gradle 8.9) ---
+          # تم التحديث لحل مشكلة: Minimum supported Gradle version is 8.9
           
-          echo "🔄 Upgrading Gradle Wrapper to 8.4..."
+          echo "🔄 Upgrading Gradle Wrapper to 8.9..."
           if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
-             sed -i 's/gradle-.*-all.zip/gradle-8.4-all.zip/' android/gradle/wrapper/gradle-wrapper.properties || true
+             sed -i 's/gradle-.*-all.zip/gradle-8.9-all.zip/' android/gradle/wrapper/gradle-wrapper.properties || true
           fi
           
-          echo "🔄 Upgrading Android Gradle Plugin to 8.1.1..."
-          # استبدال الإصدارات القديمة (3.x إلى 7.x) بـ 8.1.1
-          sed -i 's/com.android.tools.build:gradle:[3-7].*/com.android.tools.build:gradle:8.1.1"/' android/build.gradle || true
-          # في حال كان المشروع يستخدم بالفعل 8.x ولكنه قديم
-          sed -i 's/com.android.tools.build:gradle:8.0.*/com.android.tools.build:gradle:8.1.1"/' android/build.gradle || true
+          echo "🔄 checking Android Gradle Plugin compatibility..."
+          # نحاول ضبط AGP ليكون متوافقاً، لكن إذا فشل الاستبدال، سيستخدم المشروع الإصدار المعرف فيه (وهو غالبًا حديث ويتطلب 8.9)
+          sed -i 's/com.android.tools.build:gradle:[3-7].*/com.android.tools.build:gradle:8.2.1"/' android/build.gradle || true
+          sed -i 's/com.android.tools.build:gradle:8.0.*/com.android.tools.build:gradle:8.2.1"/' android/build.gradle || true
 
           echo "🔄 Upgrading Kotlin to 1.9.20..."
           sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.9.20"/' android/build.gradle || true
@@ -116,6 +115,8 @@ jobs:
           # إجبار Java 17 في خصائص Gradle
           mkdir -p android
           if [ -f "android/gradle.properties" ]; then
+             # إزالة أي تعريف قديم لـ java.home لتجنب التعارض
+             sed -i '/org.gradle.java.home/d' android/gradle.properties || true
              echo "org.gradle.java.home=$JAVA_HOME_17_X64" >> android/gradle.properties
           fi
 
@@ -212,7 +213,6 @@ jobs:
       - name: Build Optimized APK (Universal)
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          # إضافة --no-android-gradle-daemon لتجنب مشاكل الذاكرة في السحابة
           flutter build apk --$BUILD_MODE --target-platform=android-arm,android-arm64 --obfuscate --split-debug-info=symbols/ --no-android-gradle-daemon
           
           APK_DIR="build/app/outputs/flutter-apk"

@@ -1,7 +1,8 @@
 # =============================================================================
-# Aite.studio - Web to APK (Speed Optimized + Path Fixed)
+# Aite.studio - Web to APK (Speed Optimized + Path Fixed + Telegram Support)
 # 1. Fixed: Uses $GITHUB_WORKSPACE to ensure APK is found for release.
 # 2. Optimized: Enabled Gradle Caching to reduce build time significantly.
+# 3. Added: Sends the built APK directly to Telegram.
 # =============================================================================
 
 name: Build Web to APK
@@ -157,6 +158,28 @@ jobs:
           # === CRITICAL FIX: MOVE TO WORKSPACE ROOT ===
           mv app-final.apk $GITHUB_WORKSPACE/app.apk
           echo "✅ APK Moved to: $GITHUB_WORKSPACE/app.apk"
+
+      # ========================================================
+      # 🚀 SEND APK TO TELEGRAM
+      # ========================================================
+      - name: Send APK to Telegram
+        if: success()
+        run: |
+          APP_NAME="${{ github.event.client_payload.app_name || github.event.inputs.app_name }}"
+          PKG_NAME="${{ github.event.client_payload.package_name || github.event.inputs.package_name }}"
+          
+          echo "🚀 Sending APK to Telegram..."
+          
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument \
+          -F chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+          -F document=@$GITHUB_WORKSPACE/app.apk \
+          -F caption="✅ *Build Success!*
+          
+          📱 *App Name:* $APP_NAME
+          📦 *Package:* $PKG_NAME
+          
+          _Built by Aite.studio_" \
+          -F parse_mode=Markdown
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

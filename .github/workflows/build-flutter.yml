@@ -128,13 +128,11 @@ jobs:
             sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$MANIFEST"
           fi
 
-      - name: 🔧 Replace build.gradle Completely (Clean & Working)
+      - name: 🔧 Replace build.gradle (Clean)
         working-directory: ${{ env.PROJECT_DIR }}/android/app
         run: |
-          # حفظ النسخة الأصلية للرجوع إليها إذا لزم الأمر (للتشخيص)
-          cp build.gradle build.gradle.backup.original
+          cp build.gradle build.gradle.backup
           
-          # إنشاء build.gradle نظيف ومضمون
           cat > build.gradle << 'GRADLE_EOF'
           plugins {
               id "com.android.application"
@@ -188,7 +186,7 @@ jobs:
               
               signingConfigs {
                   release {
-                      storeFile file("../debug.keystore")
+                      storeFile file("../debug.keystore")  # ⬅️ يبحث في android/debug.keystore
                       storePassword "android"
                       keyAlias "androiddebugkey"
                       keyPassword "android"
@@ -200,10 +198,6 @@ jobs:
                       signingConfig signingConfigs.release
                       minifyEnabled false
                       shrinkResources false
-                      proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-                  }
-                  debug {
-                      signingConfig signingConfigs.debug
                   }
               }
           }
@@ -211,42 +205,25 @@ jobs:
           flutter {
               source '../..'
           }
-          
-          dependencies {
-              implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
-          }
           GRADLE_EOF
           
-          # استبدال placeholder بPackage Name الحقيقي
           sed -i "s/PLACEHOLDER_PACKAGE/${PACKAGE_NAME}/g" build.gradle
-          
-          echo "✅ New build.gradle created successfully!"
-          echo "Contents:"
-          cat build.gradle
 
-      - name: 🔧 Fix Gradle Wrapper & Settings
+      - name: 🔧 Fix Gradle Settings
         working-directory: ${{ env.PROJECT_DIR }}/android
         run: |
-          # تحديث Gradle wrapper
           sed -i 's/gradle-[0-9.]*-/gradle-8.9-/' gradle/wrapper/gradle-wrapper.properties 2>/dev/null || true
           
-          # تحديث Kotlin في settings.gradle إذا كان موجوداً
           if [ -f "settings.gradle" ]; then
             sed -i "s/kotlin(\"android\") version \"[^\"]*\"/kotlin(\"android\") version \"1.9.20\"/g" settings.gradle || true
             sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '1.9.20'/g" settings.gradle || true
-            sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.20"/g' settings.gradle || true
-          fi
-          
-          # إذا كان settings.gradle يستخدم plugins DSL، تأكد من وجود flutter plugin
-          if [ -f "settings.gradle" ] && ! grep -q "flutter-gradle-plugin" settings.gradle; then
-            # إضافة flutter plugin إذا مفقود
-            sed -i '/plugins {/a\    id "dev.flutter.flutter-gradle-plugin" apply false' settings.gradle || true
           fi
 
-      - name: Setup Signing Key
-        working-directory: ${{ env.PROJECT_DIR }}/android/app
+      - name: 🔑 Setup Signing Key (FIXED PATH)
+        working-directory: ${{ env.PROJECT_DIR }}/android  # ⬅️ تغيير المسار إلى android/ وليس android/app/
         run: |
-          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
+          # إنشاء Keystore في android/debug.keystore
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           ls -la debug.keystore
 
       - name: Process Icon
@@ -267,11 +244,9 @@ jobs:
           flutter clean
           flutter pub get
           
-          # محاولة أولى
           flutter build apk --$BUILD_MODE \
             --target-platform=android-arm,android-arm64,android-x64 \
             --no-android-gradle-daemon || \
-          # محاولة ثانية مع تجاهل تحذيرات Kotlin
           flutter build apk --$BUILD_MODE \
             --target-platform=android-arm,android-arm64,android-x64 \
             --no-android-gradle-daemon \
@@ -286,8 +261,7 @@ jobs:
             echo "✅ Build Successful: $FINAL_APK"
             echo "APK_PATH=$PWD/$FINAL_APK" >> $GITHUB_ENV
           else
-            echo "❌ Build Failed: APK not found"
-            ls -la $APK_DIR/ 2>/dev/null || echo "Directory not found"
+            echo "❌ Build Failed"
             exit 1
           fi
 

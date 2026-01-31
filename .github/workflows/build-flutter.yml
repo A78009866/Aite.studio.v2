@@ -49,93 +49,77 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Download and Extract Project
-        run: |
-          wget -q --show-progress -O project.zip "$ZIP_URL"
-          mkdir -p $PROJECT_DIR
-          unzip -q project.zip -d temp_extract
-          if [ "$(ls -A temp_extract | wc -l)" == "1" ] && [ -d "temp_extract/$(ls -A temp_extract)" ]; then
-            mv temp_extract/*/* $PROJECT_DIR/
-          else
-            mv temp_extract/* $PROJECT_DIR/
-          fi
-          rm -rf temp_extract project.zip
-
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
 
-      - name: Smart Fix Legacy Projects (Pubspec & Dependencies)
+      - name: Download and Extract Project (Smart)
+        run: |
+          wget -q --show-progress -O project.zip "$ZIP_URL"
+          mkdir -p $PROJECT_DIR
+          unzip -q project.zip -d temp_extract
+          
+          # Find where pubspec.yaml is located
+          PUBSPEC_PATH=$(find temp_extract -name "pubspec.yaml" | head -n 1)
+          
+          if [ -z "$PUBSPEC_PATH" ]; then
+            echo "❌ Error: pubspec.yaml not found!"
+            exit 1
+          fi
+
+          PROJECT_ROOT=$(dirname "$PUBSPEC_PATH")
+          echo "📂 Found project at: $PROJECT_ROOT"
+          
+          # Move files to correct directory
+          if [ "$PROJECT_ROOT" != "temp_extract" ]; then
+            mv "$PROJECT_ROOT"/* $PROJECT_DIR/
+            mv "$PROJECT_ROOT"/.[!.]* $PROJECT_DIR/ 2>/dev/null || true
+          else
+            mv temp_extract/* $PROJECT_DIR/
+          fi
+          rm -rf temp_extract project.zip
+
+      - name: Repair Project Structure
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
+          # 1. Fix SDK constraints first
           if [ -f "pubspec.yaml" ]; then
-            # Fix SDK to support Null Safety
             sed -i 's/sdk: ">=2.0.[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
             sed -i 's/sdk: ">=2.[1-9].[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
             sed -i "s/sdk: '>=2.0.[0-9].*'/sdk: '>=2.12.0 <4.0.0'/" pubspec.yaml || true
-            
-            # Update legacy icons to support null safety
             sed -i 's/cupertino_icons: \^0\.[0-9.]*/cupertino_icons: ^1.0.2/' pubspec.yaml || true
-            sed -i 's/cupertino_icons: 0\.[0-9.]*/cupertino_icons: ^1.0.2/' pubspec.yaml || true
-          fi
-
-      - name: Fix Firebase & Permissions
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          # Create Dummy Firebase Options if missing
-          if [ ! -f "lib/firebase_options.dart" ]; then
-            mkdir -p lib
-            cat > lib/firebase_options.dart << 'EOF'
-          import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
-          import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform, kIsWeb;
-          class DefaultFirebaseOptions {
-            static FirebaseOptions get currentPlatform {
-              if (kIsWeb) return android;
-              switch (defaultTargetPlatform) {
-                case TargetPlatform.android: return android;
-                default: throw UnsupportedError('Platform not supported');
-              }
-            }
-            static const FirebaseOptions android = FirebaseOptions(
-              apiKey: 'DUMMY_KEY', appId: '1:123:android:123', messagingSenderId: '123', projectId: 'dummy', storageBucket: 'dummy'
-            );
-          }
-          EOF
-          fi
-
-          # Create Google Services JSON
-          mkdir -p android/app
-          if [ ! -f "android/app/google-services.json" ]; then
-            cat > android/app/google-services.json << EOF
-          {
-            "project_info": { "project_number": "123", "project_id": "dummy", "storage_bucket": "dummy" },
-            "client": [{
-              "client_info": { "mobilesdk_app_id": "1:123:android:123", "android_client_info": { "package_name": "${PACKAGE_NAME}" } },
-              "api_key": [{ "current_key": "dummy" }],
-              "services": { "appinvite_service": { "status": 1 } }
-            }]
-          }
-          EOF
-          fi
-
-          # Fix AndroidManifest (Permissions & Exported)
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ]; then
-            sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$MANIFEST"
-            
-            # Fix Crash: Add Internet Permission
-            if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
-               sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"/>' "$MANIFEST"
-            fi
-
-            # Fix Install: Add Exported=true
-            if ! grep -q 'android:exported="true"' "$MANIFEST"; then
-               sed -i 's/<activity/<activity android:exported="true"/g' "$MANIFEST"
-            fi
           fi
           
+          # 2. Get dependencies
+          flutter pub get
+          
+          # 3. CRITICAL: Ensure Android folder exists properly
+          # This command regenerates the android folder if it's missing or corrupt
+          echo "🔧 Ensuring Android platform exists..."
+          flutter create . --platforms android --org ${PACKAGE_NAME}
+
+      - name: Configure Android Project (The Fix)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          # Now we are 100% sure android/app exists
+          
+          # Fix AndroidManifest
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+             # Fix Permissions
+             if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
+                sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"/>' "$MANIFEST"
+             fi
+             # Fix Exported
+             if ! grep -q 'android:exported="true"' "$MANIFEST"; then
+                sed -i 's/<activity/<activity android:exported="true"/g' "$MANIFEST"
+             fi
+             # Update Label
+             sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$MANIFEST"
+          fi
+
           # Fix Strings
           mkdir -p android/app/src/main/res/values
           cat > android/app/src/main/res/values/strings.xml << EOF
@@ -145,45 +129,40 @@ jobs:
           </resources>
           EOF
 
-      - name: Force Kotlin 2.1.0 (Critical Fix)
+      - name: Force Kotlin 2.1.0 (Root Level)
         working-directory: ${{ env.PROJECT_DIR }}/android
         run: |
-          # 1. Update Gradle Wrapper to latest
-          sed -i 's/gradle-[0-9.]*-/gradle-8.9-/' gradle/wrapper/gradle-wrapper.properties 2>/dev/null || true
+          # Update Gradle Wrapper
+          mkdir -p gradle/wrapper
+          echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-all.zip" > gradle/wrapper/gradle-wrapper.properties
           
-          # 2. Force Kotlin 2.1.0 in settings.gradle
+          # Force settings.gradle
           if [ -f "settings.gradle" ]; then
+             sed -i "s/kotlin(\"android\") version \"[^\"]*\"/kotlin(\"android\") version \"2.1.0\"/g" settings.gradle || true
+             sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '2.1.0'/g" settings.gradle || true
+             
              if grep -q "plugins {" "settings.gradle"; then
                 if ! grep -q "com.google.gms.google-services" "settings.gradle"; then
                    sed -i '/plugins {/a \    id "com.google.gms.google-services" version "4.4.0" apply false' settings.gradle
                 fi
              fi
-             
-             # HARD REPLACE ANY KOTLIN VERSION
-             sed -i "s/kotlin(\"android\") version \"[^\"]*\"/kotlin(\"android\") version \"2.1.0\"/g" settings.gradle || true
-             sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '2.1.0'/g" settings.gradle || true
           fi
           
-          # 3. Force Kotlin 2.1.0 in root build.gradle (Legacy projects)
+          # Force root build.gradle (Legacy)
           if [ -f "build.gradle" ]; then
              if grep -q "buildscript" "build.gradle"; then
-                # Ensure google-services is there
                 if ! grep -q "google-services" "build.gradle"; then
                    sed -i '/dependencies {/a \        classpath "com.google.gms:google-services:4.4.0"' build.gradle
                 fi
-                # FORCE KOTLIN VERSION VARIABLE
                 sed -i "s/ext.kotlin_version = '[^']*'/ext.kotlin_version = '2.1.0'/g" build.gradle || true
-                # If variable doesn't exist, inject it
-                if ! grep -q "ext.kotlin_version" "build.gradle"; then
-                   sed -i '/buildscript {/a \    ext.kotlin_version = "2.1.0"' build.gradle
-                fi
              fi
           fi
 
-      - name: Replace app build.gradle (Standardized)
+      - name: Replace App Build.gradle (Safe Mode)
         working-directory: ${{ env.PROJECT_DIR }}/android/app
         run: |
-          cp build.gradle build.gradle.backup
+          # We don't try to copy backup anymore, just write the new file
+          # because we just regenerated the folder, we know the path exists.
           
           cat > build.gradle << 'GRADLE_EOF'
           plugins {
@@ -202,14 +181,10 @@ jobs:
           }
           
           def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
-          if (flutterVersionCode == null) {
-              flutterVersionCode = '1'
-          }
+          if (flutterVersionCode == null) { flutterVersionCode = '1' }
           
           def flutterVersionName = localProperties.getProperty('flutter.versionName')
-          if (flutterVersionName == null) {
-              flutterVersionName = '1.0'
-          }
+          if (flutterVersionName == null) { flutterVersionName = '1.0' }
           
           android {
               namespace "PLACEHOLDER_PACKAGE"
@@ -220,14 +195,7 @@ jobs:
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
               }
-              
-              kotlinOptions {
-                  jvmTarget = '17'
-              }
-              
-              sourceSets {
-                  main.java.srcDirs += 'src/main/kotlin'
-              }
+              kotlinOptions { jvmTarget = '17' }
               
               defaultConfig {
                   applicationId "PLACEHOLDER_PACKAGE"
@@ -250,7 +218,6 @@ jobs:
               buildTypes {
                   release {
                       signingConfig signingConfigs.release
-                      // Optimizations for Size
                       minifyEnabled true
                       shrinkResources true
                       proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -259,21 +226,28 @@ jobs:
           }
           
           dependencies {
-              // Using BOM to manage versions automatically
               implementation platform('com.google.firebase:firebase-bom:33.7.0')
           }
           
-          flutter {
-              source '../..'
-          }
+          flutter { source '../..' }
           GRADLE_EOF
           
-          # Create empty proguard rules to prevent errors if missing
-          touch proguard-rules.pro
-          echo "-keep class io.flutter.app.** { *; }" >> proguard-rules.pro
-          echo "-keep class io.flutter.plugin.** { *; }" >> proguard-rules.pro
-          
           sed -i "s/PLACEHOLDER_PACKAGE/${PACKAGE_NAME}/g" build.gradle
+          touch proguard-rules.pro
+          
+          # Create Dummy Google Services JSON
+          if [ ! -f "google-services.json" ]; then
+            cat > google-services.json << EOF
+          {
+            "project_info": { "project_number": "123", "project_id": "dummy", "storage_bucket": "dummy" },
+            "client": [{
+              "client_info": { "mobilesdk_app_id": "1:123:android:123", "android_client_info": { "package_name": "${PACKAGE_NAME}" } },
+              "api_key": [{ "current_key": "dummy" }],
+              "services": { "appinvite_service": { "status": 1 } }
+            }]
+          }
+          EOF
+          fi
 
       - name: Setup Signing Key
         working-directory: ${{ env.PROJECT_DIR }}/android
@@ -282,60 +256,28 @@ jobs:
 
       - name: Process Icon
         run: |
-          rm -rf $PROJECT_DIR/android/app/src/main/res/mipmap-*
-          declare -a sizes=("48x48:mdpi" "72x72:hdpi" "96x96:xhdpi" "144x144:xxhdpi" "192x192:xxxhdpi")
           wget -q -O icon.png "$ICON_URL"
-          for size in "${sizes[@]}"; do
-             IFS=":" read -r px name <<< "$size"
-             mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-$name
-             convert icon.png -resize $px $PROJECT_DIR/android/app/src/main/res/mipmap-$name/ic_launcher.png
-          done
+          mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-mdpi
+          convert icon.png -resize 48x48 $PROJECT_DIR/android/app/src/main/res/mipmap-mdpi/ic_launcher.png || cp icon.png $PROJECT_DIR/android/app/src/main/res/mipmap-mdpi/ic_launcher.png
 
-      - name: Build APK (Small Size & Optimized)
+      - name: Final Build
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          flutter clean
-          rm -rf android/.gradle
-          
           flutter pub upgrade --major-versions || true
-          dart fix --apply || true
           flutter pub get
           
-          echo "🚀 Building Optimized APK (Only ARM)..."
+          # Build APK (ARM Only for size & compatibility)
+          flutter build apk --release --target-platform=android-arm,android-arm64 --no-tree-shake-icons
           
-          flutter build apk --$BUILD_MODE \
-            --target-platform=android-arm,android-arm64 \
-            --no-android-gradle-daemon \
-            --release || \
-          flutter build apk --$BUILD_MODE \
-            --target-platform=android-arm,android-arm64 \
-            --no-android-gradle-daemon \
-            --android-skip-build-dependency-validation
-          
-          APK_DIR="build/app/outputs/flutter-apk"
-          GENERATED_APK=$(find $APK_DIR -name "*.apk" -not -name "*-unsigned.apk" | head -n 1)
-          
-          if [ -f "$GENERATED_APK" ]; then
-            FINAL_APK="$APK_DIR/${SAFE_NAME}.apk"
-            cp "$GENERATED_APK" "$FINAL_APK"
-            echo "✅ Build Successful: $FINAL_APK"
-            echo "APK_PATH=$PWD/$FINAL_APK" >> $GITHUB_ENV
-          else
-            echo "❌ Build Failed: APK not found"
-            exit 1
-          fi
+          APK_PATH=$(find build/app/outputs/flutter-apk -name "app-release.apk" | head -n 1)
+          cp "$APK_PATH" "${SAFE_NAME}.apk"
+          echo "APK_FINAL_PATH=${{ env.PROJECT_DIR }}/${SAFE_NAME}.apk" >> $GITHUB_ENV
 
-      - name: Upload to GitHub Release
+      - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ env.BUILD_ID }}
           name: "${{ env.APP_NAME }}"
-          body: |
-            ✅ **تم البناء بنجاح (نسخة Kotlin 2.1.0)**
-            📱 **التطبيق:** ${{ env.APP_NAME }}
-            📉 **الحجم:** صغير (بدون ملفات محاكيات).
-            ⚠️ **تنبيه:** يرجى حذف أي نسخة سابقة قبل التثبيت.
-          files: |
-            ${{ env.APK_PATH }}
+          files: ${{ env.APK_FINAL_PATH }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

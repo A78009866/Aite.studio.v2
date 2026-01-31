@@ -67,16 +67,23 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Smart Fix Legacy Projects (Pubspec)
+      - name: Smart Fix Legacy Projects (Pubspec & Dependencies)
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           if [ -f "pubspec.yaml" ]; then
+            echo "🔧 Fixing SDK constraints..."
+            # Fix SDK version to support Null Safety
             sed -i 's/sdk: ">=2.0.[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
             sed -i 's/sdk: ">=2.[1-9].[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
             sed -i "s/sdk: '>=2.0.[0-9].*'/sdk: '>=2.12.0 <4.0.0'/" pubspec.yaml || true
+            
+            echo "🔧 Fixing old dependencies..."
+            # Force update cupertino_icons from 0.1.x to 1.0.2 (Null Safe)
+            sed -i 's/cupertino_icons: \^0\.[0-9.]*/cupertino_icons: ^1.0.2/' pubspec.yaml || true
+            sed -i 's/cupertino_icons: 0\.[0-9.]*/cupertino_icons: ^1.0.2/' pubspec.yaml || true
           fi
 
-      - name: Fix Firebase & Resources
+      - name: Fix Firebase & Resources & Permissions
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           # Firebase Options
@@ -115,10 +122,18 @@ jobs:
           EOF
           fi
 
-          # AndroidManifest fixes
+          # AndroidManifest fixes (CRITICAL FOR CRASH FIX)
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
+            # Fix Label
             sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$MANIFEST"
+            
+            # 1. Add Internet Permission (Fixes crash on launch)
+            if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
+               sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"/>' "$MANIFEST"
+            fi
+
+            # 2. Add Exported Flag (Fixes Android 12+ install issues)
             if ! grep -q 'android:exported="true"' "$MANIFEST"; then
                sed -i 's/<activity/<activity android:exported="true"/g' "$MANIFEST"
             fi
@@ -138,9 +153,6 @@ jobs:
         run: |
           cp build.gradle build.gradle.backup
           
-          # We add google-services plugin here. 
-          # Note: If the project uses the new "plugins DSL" in settings.gradle, this is fine.
-          # If it uses the old "apply plugin" method, this is also fine as we replaced the whole file.
           cat > build.gradle << 'GRADLE_EOF'
           plugins {
               id "com.android.application"
@@ -229,19 +241,17 @@ jobs:
           sed -i 's/gradle-[0-9.]*-/gradle-8.9-/' gradle/wrapper/gradle-wrapper.properties 2>/dev/null || true
           
           if [ -f "settings.gradle" ]; then
-             # ONLY inject if plugins block exists AND google-services is NOT present
+             # Check before insert to avoid duplication error
              if grep -q "plugins {" "settings.gradle"; then
                 if ! grep -q "com.google.gms.google-services" "settings.gradle"; then
                    sed -i '/plugins {/a \    id "com.google.gms.google-services" version "4.4.0" apply false' settings.gradle
                 fi
              fi
              
-             # Kotlin fixes
              sed -i "s/kotlin(\"android\") version \"[^\"]*\"/kotlin(\"android\") version \"1.9.20\"/g" settings.gradle || true
              sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '1.9.20'/g" settings.gradle || true
           fi
           
-          # Legacy build.gradle check (if settings.gradle doesn't use plugins block)
           if [ -f "build.gradle" ]; then
              if grep -q "buildscript" "build.gradle"; then
                 if ! grep -q "google-services" "build.gradle"; then
@@ -271,7 +281,11 @@ jobs:
         run: |
           flutter clean
           
-          # Fix legacy issues
+          # Force update outdated dependencies
+          echo "📦 Upgrading major versions for legacy support..."
+          flutter pub upgrade --major-versions || true
+          
+          # Fix code issues
           dart fix --apply || true
           
           flutter pub get
@@ -307,7 +321,7 @@ jobs:
             ✅ **تم البناء بنجاح**
             📱 **التطبيق:** ${{ env.APP_NAME }}
             📦 **الحزمة:** ${{ env.PACKAGE_NAME }}
-            ⚠️ **هام:** يجب حذف أي نسخة سابقة من الهاتف قبل تثبيت هذه النسخة.
+            ⚠️ **تنبيه:** يرجى حذف أي نسخة سابقة قبل التثبيت لضمان العمل.
           files: |
             ${{ env.APK_PATH }}
         env:

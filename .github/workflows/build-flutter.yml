@@ -145,7 +145,42 @@ jobs:
           </resources>
           EOF
 
-      - name: Replace build.gradle (Kotlin 2.1.0 & Minify)
+      - name: Force Kotlin 2.1.0 (Critical Fix)
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        run: |
+          # 1. Update Gradle Wrapper to latest
+          sed -i 's/gradle-[0-9.]*-/gradle-8.9-/' gradle/wrapper/gradle-wrapper.properties 2>/dev/null || true
+          
+          # 2. Force Kotlin 2.1.0 in settings.gradle
+          if [ -f "settings.gradle" ]; then
+             if grep -q "plugins {" "settings.gradle"; then
+                if ! grep -q "com.google.gms.google-services" "settings.gradle"; then
+                   sed -i '/plugins {/a \    id "com.google.gms.google-services" version "4.4.0" apply false' settings.gradle
+                fi
+             fi
+             
+             # HARD REPLACE ANY KOTLIN VERSION
+             sed -i "s/kotlin(\"android\") version \"[^\"]*\"/kotlin(\"android\") version \"2.1.0\"/g" settings.gradle || true
+             sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '2.1.0'/g" settings.gradle || true
+          fi
+          
+          # 3. Force Kotlin 2.1.0 in root build.gradle (Legacy projects)
+          if [ -f "build.gradle" ]; then
+             if grep -q "buildscript" "build.gradle"; then
+                # Ensure google-services is there
+                if ! grep -q "google-services" "build.gradle"; then
+                   sed -i '/dependencies {/a \        classpath "com.google.gms:google-services:4.4.0"' build.gradle
+                fi
+                # FORCE KOTLIN VERSION VARIABLE
+                sed -i "s/ext.kotlin_version = '[^']*'/ext.kotlin_version = '2.1.0'/g" build.gradle || true
+                # If variable doesn't exist, inject it
+                if ! grep -q "ext.kotlin_version" "build.gradle"; then
+                   sed -i '/buildscript {/a \    ext.kotlin_version = "2.1.0"' build.gradle
+                fi
+             fi
+          fi
+
+      - name: Replace app build.gradle (Standardized)
         working-directory: ${{ env.PROJECT_DIR }}/android/app
         run: |
           cp build.gradle build.gradle.backup
@@ -224,6 +259,7 @@ jobs:
           }
           
           dependencies {
+              // Using BOM to manage versions automatically
               implementation platform('com.google.firebase:firebase-bom:33.7.0')
           }
           
@@ -234,41 +270,10 @@ jobs:
           
           # Create empty proguard rules to prevent errors if missing
           touch proguard-rules.pro
-          # Add rule to keep Flutter wrappers if minifying
           echo "-keep class io.flutter.app.** { *; }" >> proguard-rules.pro
           echo "-keep class io.flutter.plugin.** { *; }" >> proguard-rules.pro
           
           sed -i "s/PLACEHOLDER_PACKAGE/${PACKAGE_NAME}/g" build.gradle
-
-      - name: Fix Gradle Settings (Force Kotlin 2.1.0)
-        working-directory: ${{ env.PROJECT_DIR }}/android
-        run: |
-          sed -i 's/gradle-[0-9.]*-/gradle-8.9-/' gradle/wrapper/gradle-wrapper.properties 2>/dev/null || true
-          
-          if [ -f "settings.gradle" ]; then
-             # Check before insert to avoid duplication
-             if grep -q "plugins {" "settings.gradle"; then
-                if ! grep -q "com.google.gms.google-services" "settings.gradle"; then
-                   sed -i '/plugins {/a \    id "com.google.gms.google-services" version "4.4.0" apply false' settings.gradle
-                fi
-             fi
-             
-             # FORCE UPGRADE KOTLIN TO 2.1.0
-             sed -i "s/kotlin(\"android\") version \"[^\"]*\"/kotlin(\"android\") version \"2.1.0\"/g" settings.gradle || true
-             sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '2.1.0'/g" settings.gradle || true
-          fi
-          
-          # Clean legacy build.gradle
-          if [ -f "build.gradle" ]; then
-             if grep -q "buildscript" "build.gradle"; then
-                # Ensure google-services is there
-                if ! grep -q "google-services" "build.gradle"; then
-                   sed -i '/dependencies {/a \        classpath "com.google.gms:google-services:4.4.0"' build.gradle
-                fi
-                # Update legacy Kotlin version variable
-                sed -i "s/ext.kotlin_version = '[^']*'/ext.kotlin_version = '2.1.0'/g" build.gradle || true
-             fi
-          fi
 
       - name: Setup Signing Key
         working-directory: ${{ env.PROJECT_DIR }}/android
@@ -290,13 +295,14 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           flutter clean
+          rm -rf android/.gradle
+          
           flutter pub upgrade --major-versions || true
           dart fix --apply || true
           flutter pub get
           
-          echo "🚀 Building Optimized APK (Removing x64 for size)..."
+          echo "🚀 Building Optimized APK (Only ARM)..."
           
-          # We remove android-x64 to save size. We only build for ARM (real phones).
           flutter build apk --$BUILD_MODE \
             --target-platform=android-arm,android-arm64 \
             --no-android-gradle-daemon \
@@ -325,9 +331,9 @@ jobs:
           tag_name: build-${{ env.BUILD_ID }}
           name: "${{ env.APP_NAME }}"
           body: |
-            ✅ **تم البناء بنجاح (نسخة محسنة)**
+            ✅ **تم البناء بنجاح (نسخة Kotlin 2.1.0)**
             📱 **التطبيق:** ${{ env.APP_NAME }}
-            📉 **الحجم:** تم تصغير الحجم بإزالة ملفات المحاكيات (x64).
+            📉 **الحجم:** صغير (بدون ملفات محاكيات).
             ⚠️ **تنبيه:** يرجى حذف أي نسخة سابقة قبل التثبيت.
           files: |
             ${{ env.APK_PATH }}

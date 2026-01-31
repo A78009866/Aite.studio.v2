@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Aite.studio | Flutter Cloud Engine</title>
+    <title>Aite.studio | Web to APK Builder</title>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
@@ -263,7 +263,7 @@
     <div id="loginOverlay" class="glass-modal-overlay" style="background:rgba(0,0,0,0.9);">
         <div class="glass-card">
             <h2 class="brand" style="font-size: 2rem; margin-bottom: 10px;">Aite<span>.</span>studio</h2>
-            <p id="t_login_desc" style="color:#888; margin-bottom: 25px;">قم بتسجيل الدخول لبدء بناء تطبيقاتك</p>
+            <p id="t_login_desc" style="color:#888; margin-bottom: 25px;">قم بتسجيل الدخول لبدء تحويل مواقعك لتطبيقات</p>
             <button onclick="signInWithGoogle()" class="action-btn" style="background:#fff; color:#000;">
                 <i class="fa-brands fa-google"></i> <span id="t_signin">Google Login</span>
             </button>
@@ -295,8 +295,8 @@
         <div class="main-container">
              
             <div class="config-panel">
-                <h1 id="t_welcome" style="font-size: 2rem; margin-bottom: 10px;">اهلا بك ايها المطور!</h1>
-                <p id="t_sub" style="color: #888; margin-bottom: 30px; line-height: 1.6;">منصة البناء السحابي لتطبيقات فلاتر.</p>
+                <h1 id="t_welcome" style="font-size: 2rem; margin-bottom: 10px;">حوّل موقعك لتطبيق APK!</h1>
+                <p id="t_sub" style="color: #888; margin-bottom: 30px; line-height: 1.6;">منصة تحويل مواقع الويب (HTML/CSS/JS) إلى تطبيقات Android أصلية باستخدام Capacitor.</p>
 
                 <div class="tabs-container">
                     <button class="tab-btn active" onclick="switchTab('build')" id="t_tab_build">بناء تطبيق</button>
@@ -332,21 +332,21 @@
                             <div class="upload-card" id="zipUploadCard" onclick="document.getElementById('zipInput').click()">
                                 <div id="zipUploadContent">
                                     <i class="fa-solid fa-file-zipper upload-icon"></i>
-                                    <p id="t_click_zip" style="color:#aaa;">اضغط لرفع ملف مشروعك ZIP (Flutter Only)</p>
+                                    <p id="t_click_zip" style="color:#aaa;">اضغط لرفع ملف موقعك (HTML/CSS/JS)</p>
                                 </div>
                                 <input type="file" id="zipInput" accept=".zip,application/zip,application/x-zip,application/x-zip-compressed" style="display:none">
                             </div>
 
                             <div id="zipFilePreview" class="file-preview-card">
                                 <div class="file-icon-box">
-                                    <i class="fa-brands fa-flutter"></i>
+                                    <i class="fa-brands fa-html5"></i>
                                 </div>
                                 <div class="file-info">
                                     <div id="zipFileNameDisplay" class="file-name">Project.zip</div>
                                     <div class="file-meta">
                                         <span id="zipFileSizeDisplay">0 MB</span>
                                         <span>•</span>
-                                        <span style="color:var(--primary);">Flutter Project</span>
+                                        <span style="color:var(--primary);">Web Project</span>
                                     </div>
                                 </div>
                                 <button type="button" class="file-remove-btn" onclick="removeZipFile()">
@@ -437,19 +437,19 @@
         // --- Translations ---
         const translations = {
             ar: {
-                login_desc: "قم بتسجيل الدخول لبدء بناء تطبيقاتك",
+                login_desc: "قم بتسجيل الدخول لبدء تحويل مواقعك لتطبيقات",
                 signin: "تسجيل الدخول عبر Google",
                 crop_title: "ضبط الأيقونة",
                 confirm: "تأكيد",
                 cancel: "إلغاء",
-                welcome: "اهلا بك ايها المطور!",
-                sub: "منصة البناء السحابي لتطبيقات فلاتر.",
+                welcome: "حوّل موقعك لتطبيق APK!",
+                sub: "منصة تحويل مواقع الويب (HTML/CSS/JS) إلى تطبيقات Android أصلية باستخدام Capacitor.",
                 app_name: "اسم التطبيق",
                 pkg_name: "معرف الحزمة",
                 icon: "أيقونة التطبيق",
                 zip: "ملف المشروع (ZIP)",
                 click_icon: "اضغط هنا لاختيار الصورة",
-                click_zip: "اضغط لرفع ملف المشروع (Flutter Only)",
+                click_zip: "اضغط لرفع ملف موقعك (HTML/CSS/JS)",
                 btn_build: "بدء البناء السحابي",
                 status: "الحالة:",
                 struct: "تم التحقق من الملف:",
@@ -463,19 +463,19 @@
                 close: "إغلاق"
             },
             en: {
-                login_desc: "Please sign in to manage your apps",
+                login_desc: "Please sign in to convert your websites to apps",
                 signin: "Sign in with Google",
                 crop_title: "Adjust Icon",
                 confirm: "Confirm",
                 cancel: "Cancel",
-                welcome: "Welcome Developer!",
-                sub: "Cloud build platform for Flutter apps.",
+                welcome: "Convert Your Website to APK!",
+                sub: "Platform to convert web projects (HTML/CSS/JS) to native Android apps using Capacitor.",
                 app_name: "App Name",
                 pkg_name: "Package Name",
                 icon: "App Icon",
                 zip: "Project ZIP",
                 click_icon: "Click to upload Image",
-                click_zip: "Click to upload Project (Flutter Only)",
+                click_zip: "Click to upload your website (HTML/CSS/JS)",
                 btn_build: "Start Cloud Build",
                 status: "Status:",
                 struct: "Verified File:",
@@ -600,7 +600,7 @@
             if(file) {
                 const fileName = file.name.toLowerCase();
                 if(!fileName.endsWith('.zip')) {
-                    alert(currentLang === 'ar' ? "عذراً، يسمح فقط بملفات ZIP لمشاريع فلاتر" : "Sorry, only ZIP files are allowed for Flutter projects.");
+                    alert(currentLang === 'ar' ? "عذراً، يسمح فقط بملفات ZIP" : "Sorry, only ZIP files are allowed.");
                     this.value = '';
                     checkFormValidity();
                     return;
@@ -652,7 +652,7 @@
             fd.append('projectZip', document.getElementById('zipInput').files[0]);
 
             try {
-                const res = await fetch('/build-flutter', { method: 'POST', body: fd });
+                const res = await fetch('/build-web2apk', { method: 'POST', body: fd });
                 const data = await res.json();
                 if(data.success) {
                     startPolling(data.build_id, data.safe_app_name, data.icon_url, data.app_name, data.package_name);
@@ -675,10 +675,10 @@
                 
                 if(currentLang === 'ar') {
                     if(elapsed < 20) label.innerText = "رفع الملفات...";
-                    else if(elapsed < 60) label.innerText = "تحضير بيئة فلاتر...";
+                    else if(elapsed < 60) label.innerText = "تحضير بيئة Capacitor...";
                     else label.innerText = "بناء وتوقيع APK...";
                 } else {
-                    label.innerText = elapsed < 60 ? "Setting up Flutter..." : "Building APK...";
+                    label.innerText = elapsed < 60 ? "Setting up Capacitor..." : "Building APK...";
                 }
 
                 let progress = Math.min(10 + (elapsed / 2.5), 90);

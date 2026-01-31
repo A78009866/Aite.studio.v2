@@ -1,5 +1,6 @@
 // =============================================================================
-// Aite.studio - Web to APK Builder Server (Capacitor)
+// Aite.studio - Web to APK Builder Server
+// Supports: Single HTML file, Folder (multiple files), ZIP archive
 // =============================================================================
 
 require('dotenv').config();
@@ -11,7 +12,9 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
+const { createWriteStream } = require('fs');
 const crypto = require('crypto');
+const AdmZip = require('adm-zip');
 
 const app = express();
 
@@ -117,6 +120,21 @@ async function uploadLargeFileToCloudinary(filePath, options = {}) {
   });
 }
 
+// Create ZIP from multiple files
+async function createZipFromFiles(files, outputPath) {
+  const zip = new AdmZip();
+  
+  for (const file of files) {
+    const fileBuffer = await fs.readFile(file.path);
+    // Preserve relative path structure for folder uploads
+    const relativePath = file.relativePath || file.originalname;
+    zip.addFile(relativePath, fileBuffer);
+  }
+  
+  zip.writeZip(outputPath);
+  return outputPath;
+}
+
 function makeErrorResponse(code, message, details = null) {
   const response = { 
     success: false, 
@@ -137,7 +155,7 @@ function makeSuccessResponse(data = {}) {
 }
 
 // =============================================================================
-// Multer Configuration
+// Multer Configuration - Supports multiple files (for folder upload)
 // =============================================================================
 
 const diskStorage = multer.diskStorage({
@@ -151,7 +169,8 @@ const diskStorage = multer.diskStorage({
     }
   },
   filename: (req, file, cb) => {
-    const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}-${file.originalname}`;
+    // Preserve original filename and path for folder uploads
+    const uniqueName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${file.originalname}`;
     cb(null, uniqueName);
   }
 });
@@ -162,18 +181,8 @@ const fileFilter = (req, file, cb) => {
       return cb(new Error('Icon must be an image file'), false);
     }
     cb(null, true);
-  } else if (file.fieldname === 'projectZip') {
-    const allowedTypes = [
-      'application/zip',
-      'application/x-zip',
-      'application/x-zip-compressed',
-      'application/octet-stream'
-    ];
-    const isZip = allowedTypes.includes(file.mimetype) || 
-                  file.originalname.toLowerCase().endsWith('.zip');
-    if (!isZip) {
-      return cb(new Error('Project file must be a ZIP archive'), false);
-    }
+  } else if (file.fieldname === 'projectFiles') {
+    // Accept all file types for project files (HTML, CSS, JS, images, etc.)
     cb(null, true);
   } else {
     cb(new Error('Unexpected field'), false);
@@ -184,7 +193,7 @@ const upload = multer({
   storage: diskStorage,
   limits: {
     fileSize: CONFIG.MAX_FILE_SIZE,
-    files: 2
+    files: 1000 // Allow up to 1000 files for folder uploads
   },
   fileFilter: fileFilter
 });
@@ -197,10 +206,12 @@ const upload = multer({
 app.get('/health', (req, res) => {
   res.json(makeSuccessResponse({
     status: 'healthy',
-    version: '3.0.0-web2apk',
+    version: '3.1.0-web2apk',
     features: {
       webToApk: true,
-      capacitorBuild: true,
+      htmlFile: true,
+      folderUpload: true,
+      zipUpload: true,
       exactAppName: true,
       firebaseSave: true
     }
@@ -208,13 +219,14 @@ app.get('/health', (req, res) => {
 });
 
 // =============================================================================
-// Main Build Endpoint - Web to APK using Capacitor
+// Main Build Endpoint - Web to APK
+// Supports: Single HTML, Folder (multiple files), ZIP
 // =============================================================================
 
 app.post('/build-web2apk', 
   upload.fields([
     { name: 'icon', maxCount: 1 },
-    { name: 'projectZip', maxCount: 1 }
+    { name: 'projectFiles', maxCount: 1000 }
   ]),
   async (req, res) => {
     const requestId = generateBuildId();
@@ -235,7 +247,7 @@ app.post('/build-web2apk',
         ));
       }
 
-      const { appName, packageName } = req.body || {};
+      const { appName, packageName, uploadType } = req.body || {};
       
       if (!appName || !packageName) {
         await cleanupTemp(tempDir);
@@ -253,19 +265,20 @@ app.post('/build-web2apk',
         ));
       }
 
-      if (!req.files || !req.files.icon || !req.files.projectZip) {
+      if (!req.files || !req.files.icon || !req.files.projectFiles || req.files.projectFiles.length === 0) {
         await cleanupTemp(tempDir);
         return res.status(400).json(makeErrorResponse(
           'MISSING_FILES',
-          'Both icon and projectZip files are required'
+          'Both icon and project files are required'
         ));
       }
 
       const iconFile = req.files.icon[0];
-      const zipFile = req.files.projectZip[0];
+      const projectFiles = req.files.projectFiles;
 
       console.log(`[${requestId}] Icon: ${iconFile.originalname} (${formatFileSize(iconFile.size)})`);
-      console.log(`[${requestId}] ZIP: ${zipFile.originalname} (${formatFileSize(zipFile.size)})`);
+      console.log(`[${requestId}] Upload Type: ${uploadType}`);
+      console.log(`[${requestId}] Project Files: ${projectFiles.length} file(s)`);
 
       if (iconFile.size > CONFIG.MAX_ICON_SIZE) {
         await cleanupTemp(tempDir);
@@ -302,19 +315,58 @@ app.post('/build-web2apk',
         ));
       }
 
-      // Upload ZIP
-      console.log(`[${requestId}] Uploading ZIP...`);
+      // Process and upload project files
+      console.log(`[${requestId}] Processing project files...`);
       let zipUpload;
+      
       try {
-        if (zipFile.size > 50 * 1024 * 1024) {
-          zipUpload = await uploadLargeFileToCloudinary(zipFile.path, {
+        let zipBuffer;
+        let zipFileName;
+        
+        // Check if first file is already a ZIP
+        const firstFile = projectFiles[0];
+        const isZipUpload = uploadType === 'zip' || 
+                           firstFile.originalname.toLowerCase().endsWith('.zip') ||
+                           firstFile.mimetype === 'application/zip';
+        
+        if (isZipUpload && projectFiles.length === 1) {
+          // Use the uploaded ZIP directly
+          console.log(`[${requestId}] Using uploaded ZIP file directly`);
+          zipBuffer = await fs.readFile(firstFile.path);
+          zipFileName = firstFile.originalname;
+        } else {
+          // Create ZIP from files (single HTML or folder)
+          console.log(`[${requestId}] Creating ZIP from ${projectFiles.length} file(s)...`);
+          const zipPath = path.join(tempDir, 'project-bundle.zip');
+          
+          const zip = new AdmZip();
+          
+          for (const file of projectFiles) {
+            const fileBuffer = await fs.readFile(file.path);
+            // Use relative path if available (for folder uploads)
+            const entryName = file.relativePath || file.originalname;
+            zip.addFile(entryName, fileBuffer);
+          }
+          
+          zip.writeZip(zipPath);
+          zipBuffer = await fs.readFile(zipPath);
+          zipFileName = 'project-bundle.zip';
+        }
+
+        // Upload ZIP to Cloudinary
+        console.log(`[${requestId}] Uploading ZIP (${formatFileSize(zipBuffer.length)})...`);
+        
+        if (zipBuffer.length > 50 * 1024 * 1024) {
+          // Large file - use stream
+          const zipPath = path.join(tempDir, zipFileName);
+          await fs.writeFile(zipPath, zipBuffer);
+          zipUpload = await uploadLargeFileToCloudinary(zipPath, {
             folder: 'aite_studio/web-projects',
             public_id: `${sanitizeFilename(packageName)}_source_${requestId}`,
             resource_type: 'raw',
             overwrite: true
           });
         } else {
-          const zipBuffer = await fs.readFile(zipFile.path);
           zipUpload = await uploadToCloudinaryBuffer(zipBuffer, {
             folder: 'aite_studio/web-projects',
             public_id: `${sanitizeFilename(packageName)}_source_${requestId}`,
@@ -322,18 +374,19 @@ app.post('/build-web2apk',
             overwrite: true
           });
         }
+        
         console.log(`[${requestId}] ZIP uploaded: ${zipUpload.secure_url}`);
       } catch (err) {
         await cleanupTemp(tempDir);
         return res.status(500).json(makeErrorResponse(
-          'CLOUDINARY_ZIP_FAIL',
-          'Failed to upload project ZIP',
+          'ZIP_PROCESSING_FAIL',
+          'Failed to process project files',
           err.message
         ));
       }
 
-      // Dispatch to GitHub Actions for Capacitor Build
-      console.log(`[${requestId}] Dispatching to GitHub for Capacitor build...`);
+      // Dispatch to GitHub Actions
+      console.log(`[${requestId}] Dispatching to GitHub for build...`);
       
       const githubPayload = {
         event_type: 'build-web2apk',
@@ -344,6 +397,7 @@ app.post('/build-web2apk',
           package_name: packageName,
           icon_url: iconUpload.secure_url,
           zip_url: zipUpload.secure_url,
+          upload_type: uploadType || 'folder',
           request_id: requestId,
           timestamp: new Date().toISOString()
         }
@@ -375,6 +429,7 @@ app.post('/build-web2apk',
           package_name: packageName,
           icon_url: iconUpload.secure_url,
           zip_url: zipUpload.secure_url,
+          upload_type: uploadType,
           message: 'Web-to-APK build started successfully',
           check_status_url: `/check-status/${requestId}`
         }));
@@ -580,11 +635,12 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log('='.repeat(60));
-  console.log('🚀 Aite.studio - Web to APK Builder (Capacitor)');
+  console.log('🚀 Aite.studio - Web to APK Builder');
   console.log('='.repeat(60));
   console.log(`📡 Port: ${PORT}`);
   console.log(`📁 Temp: ${CONFIG.TEMP_DIR}`);
   console.log(`📦 Max Size: ${formatFileSize(CONFIG.MAX_FILE_SIZE)}`);
+  console.log(`✅ Supports: HTML, Folder, ZIP`);
   console.log('='.repeat(60));
 });
 

@@ -43,7 +43,6 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq wget unzip imagemagick
           
-      # نستخدم Java 17 وهي المعيار الأساسي
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -68,7 +67,6 @@ jobs:
         with:
           channel: 'stable'
           cache: true
-          # نترك الإصدار مفتوحاً ليجلب الأحدث
 
       - name: 🛠️ Smart Auto-Fix & Upgrade Tools
         working-directory: ${{ env.PROJECT_DIR }}
@@ -97,7 +95,6 @@ jobs:
           fi
 
           # --- 2. Fix Missing Google Services JSON (Android Side) ---
-          # هذا هو الحل للخطأ الحالي: إنشاء ملف JSON وهمي لإرضاء Gradle Plugin
           if [ ! -f "android/app/google-services.json" ]; then
             echo "⚠️ google-services.json missing. Generating dummy file."
             cat <<EOF > android/app/google-services.json
@@ -140,7 +137,6 @@ jobs:
           sed -i 's/com.android.tools.build:gradle:8.0.*/com.android.tools.build:gradle:8.2.1"/' android/build.gradle || true
 
           echo "🔄 Upgrading Kotlin to 1.9.20..."
-          # تحسين أمر الاستبدال ليشمل احتمالات المسافات المختلفة
           sed -i 's/ext.kotlin_version\s*=\s*.*/ext.kotlin_version = "1.9.20"/' android/build.gradle || true
           
           # إجبار Java 17
@@ -247,12 +243,14 @@ jobs:
           
           APK_DIR="build/app/outputs/flutter-apk"
           GENERATED_APK=$(find $APK_DIR -name "*.apk" | head -n 1)
-          FINAL_APK="$APK_DIR/${SAFE_NAME}.apk"
           
           if [ -f "$GENERATED_APK" ]; then
+            FINAL_APK="$APK_DIR/${SAFE_NAME}.apk"
             mv "$GENERATED_APK" "$FINAL_APK"
             echo "✅ Build Successful: $FINAL_APK"
-            echo "APK_PATH=$FINAL_APK" >> $GITHUB_ENV
+            
+            # --- الإصلاح هنا: استخدام المسار الكامل للملف ---
+            echo "APK_PATH=$PWD/$FINAL_APK" >> $GITHUB_ENV
           else
             echo "❌ Build Failed: APK not found"
             exit 1
@@ -264,7 +262,7 @@ jobs:
           tag_name: build-${{ env.BUILD_ID }}
           name: "${{ env.APP_NAME }}"
           body: |
-            ✅ **تم البناء بنجاح (Universal 2.0)**
+            ✅ **تم البناء بنجاح**
             📱 **التطبيق:** ${{ env.APP_NAME }}
             📦 **الحزمة:** ${{ env.PACKAGE_NAME }}
           files: |

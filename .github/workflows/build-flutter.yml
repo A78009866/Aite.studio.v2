@@ -82,12 +82,15 @@ jobs:
           # 1. Debug Keystore Generation
           keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null || true
           
-          # 2. ✅ MOCK SIGNING: Create missing signing files
-          mkdir -p android/app/signing
-          if [ ! -f "android/app/signing/signing.gradle" ]; then
-              echo "// Auto-generated mock signing for CI" > android/app/signing/signing.gradle
-              echo "android { signingConfigs { debug { storeFile file('../debug.keystore') } } }" >> android/app/signing/signing.gradle
-              echo "⚠️ Created mock signing.gradle"
+          # 2. ✅ FIX: Remove signing script reference if file doesn't exist (instead of creating dummy)
+          APP_BUILD_GRADLE="android/app/build.gradle"
+          if [ -f "$APP_BUILD_GRADLE" ]; then
+              if [ ! -f "android/app/signing/signing.gradle" ]; then
+                  # Remove any line that applies/forwards to signing.gradle
+                  sed -i "/apply from:.*signing\.gradle/d" $APP_BUILD_GRADLE
+                  sed -i "/apply from:.*signing\/signing\.gradle/d" $APP_BUILD_GRADLE
+                  echo "⚠️ Removed missing signing.gradle reference from build.gradle"
+              fi
           fi
           
           # 3. ✅ MOCK KEYSTORE PROPS: Create if referenced but missing

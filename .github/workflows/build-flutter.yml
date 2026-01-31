@@ -1,273 +1,209 @@
-name: Smart Flutter Cloud Build (Universal v3)
+name: Smart Flutter Cloud Build
 
 on:
   repository_dispatch:
     types: [build-flutter]
   workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'App Name'
+        required: true
+      package_name:
+        description: 'Package Name (com.example.app)'
+        required: true
+      icon_url:
+        description: 'Icon URL'
+        required: true
+      zip_url:
+        description: 'Project ZIP URL'
+        required: true
+      flutter_version:
+        description: 'Flutter Version (auto/stable/3.x.x)'
+        default: 'auto'
+        required: false
+      build_mode:
+        description: 'Build Mode'
+        default: 'release'
+        required: false
 
 env:
   PROJECT_DIR: ${{ github.workspace }}/flutter_project
   BUILD_ID: ${{ github.event.client_payload.request_id || github.run_id }}
-  APP_NAME: ${{ github.event.client_payload.app_name }}
+  # الاسم الذي يظهر للمستخدم (عربي)
+  APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name }}
+  # اسم الملف الفيزيائي (إنجليزي وآمن)
   SAFE_NAME: ${{ github.event.client_payload.safe_name || 'app-release' }}
-  PACKAGE_NAME: ${{ github.event.client_payload.package_name }}
-  ICON_URL: ${{ github.event.client_payload.icon_url }}
-  ZIP_URL: ${{ github.event.client_payload.zip_url }}
+  PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name }}
+  ICON_URL: ${{ github.event.client_payload.icon_url || github.event.inputs.icon_url }}
+  ZIP_URL: ${{ github.event.client_payload.zip_url || github.event.inputs.zip_url }}
+  FLUTTER_VERSION_INPUT: ${{ github.event.client_payload.flutter_version || github.event.inputs.flutter_version || 'auto' }}
+  BUILD_MODE: ${{ github.event.client_payload.build_mode || github.event.inputs.build_mode || 'release' }}
 
 jobs:
-  universal-build:
+  analyze-and-build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     
     steps:
-      - name: 1. Setup Environment
+      - name: Setup Environment
         run: |
+          echo "Starting build for: $APP_NAME ($PACKAGE_NAME)"
           sudo apt-get update -qq
-          sudo apt-get install -y -qq wget unzip imagemagick openjdk-17-jdk
-
-      - name: 2. Download and Extract
+          sudo apt-get install -y -qq wget unzip imagemagick
+      - name: Download and Extract Project
         run: |
           wget -q --show-progress -O project.zip "$ZIP_URL"
           mkdir -p $PROJECT_DIR
           unzip -q project.zip -d temp_extract
-          if [ "$(ls -A temp_extract | wc -l)" == "1" ] && [ -d "temp_extract/$(ls -A temp_extract)" ]; then
-            mv temp_extract/*/* $PROJECT_DIR/
+          if [ "$(ls -A temp_extract | wc -l)" == "1" ]; then
+            mv temp_extract/*/* $PROJECT_DIR/ 2>/dev/null || mv temp_extract/* $PROJECT_DIR/
           else
             mv temp_extract/* $PROJECT_DIR/
           fi
           rm -rf temp_extract project.zip
-
-      - name: 3. Analyze Project Structure
+      - name: Detect Flutter Version
+        id: detect_flutter
         working-directory: ${{ env.PROJECT_DIR }}
-        id: analyzer
         run: |
-          cat <<EOF > detect_version.py
-          import re
-          import os
-
-          is_legacy = False
-          flutter_ver = ""
-
-          if os.path.exists("pubspec.yaml"):
-              with open("pubspec.yaml", "r") as f:
-                  content = f.read()
-                  match = re.search(r'sdk:\s*["\']?([><=^0-9\.\s-]+)["\']?', content)
-                  if match:
-                      ver_str = match.group(1)
-                      print(f"SDK Constraint: {ver_str}")
-                      if "2.12" not in ver_str and "3." not in ver_str and ("<3.0.0" in ver_str or "2." in ver_str):
-                          is_legacy = True
-                          flutter_ver = "3.7.12"
-                      
-          with open(os.environ['GITHUB_ENV'], 'a') as f:
-              f.write(f"IS_LEGACY={str(is_legacy).lower()}\n")
-              f.write(f"FLUTTER_VER={flutter_ver}\n")
-              
-          print(f"Legacy: {is_legacy}, Flutter: {flutter_ver or 'Latest'}")
-          EOF
-          python3 detect_version.py
-
-      - name: 4. Setup Flutter
+          DETECTED_VERSION="stable"
+          if [ "$FLUTTER_VERSION_INPUT" != "auto" ]; then
+            DETECTED_VERSION="$FLUTTER_VERSION_INPUT"
+          elif [ -f "pubspec.yaml" ]; then
+             VERSION=$(cat pubspec.yaml | grep -A 5 "environment:" | grep "flutter:" | head -1 | grep -oP '\d+\.\d+\.\d+' | head -1)
+             if [ ! -z "$VERSION" ]; then DETECTED_VERSION="$VERSION"; fi
+          fi
+          echo "version=$DETECTED_VERSION" >> $GITHUB_OUTPUT
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
-          flutter-version: ${{ env.FLUTTER_VER }}
-          cache: true
+          flutter-version: ${{ contains(steps.detect_flutter.outputs.version, '.') && steps.detect_flutter.outputs.version || '' }}
+          channel: ${{ !contains(steps.detect_flutter.outputs.version, '.') && steps.detect_flutter.outputs.version || 'stable' }}
 
-      - name: 5. Auto-Fix Gradle & Dependencies (Universal)
+      - name: Pre-build Diagnostics
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          echo "🔧 Starting Universal Project Fixes..."
-          
-          # 1. Debug Keystore Generation
-          keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null || true
-          
-          # 2. ✅ FIX: Remove signing script reference if file doesn't exist (instead of creating dummy)
-          APP_BUILD_GRADLE="android/app/build.gradle"
-          if [ -f "$APP_BUILD_GRADLE" ]; then
-              if [ ! -f "android/app/signing/signing.gradle" ]; then
-                  # Remove any line that applies/forwards to signing.gradle
-                  sed -i "/apply from:.*signing\.gradle/d" $APP_BUILD_GRADLE
-                  sed -i "/apply from:.*signing\/signing\.gradle/d" $APP_BUILD_GRADLE
-                  echo "⚠️ Removed missing signing.gradle reference from build.gradle"
-              fi
-          fi
-          
-          # 3. ✅ MOCK KEYSTORE PROPS: Create if referenced but missing
-          if [ ! -f "android/keystore.properties" ]; then
-              if grep -q "keystore.properties" android/app/build.gradle 2>/dev/null || grep -q "keystore.properties" android/build.gradle 2>/dev/null; then
-                  echo "storeFile=debug.keystore" > android/keystore.properties
-                  echo "storePassword=android" >> android/keystore.properties
-                  echo "keyPassword=android" >> android/keystore.properties
-                  echo "keyAlias=androiddebugkey" >> android/keystore.properties
-                  echo "⚠️ Created mock keystore.properties"
-              fi
-          fi
-          
-          # 4. ✅ MOCK FIREBASE: Create if referenced but missing
-          if grep -r "firebase_options.dart" lib/ > /dev/null 2>&1; then
-            if [ ! -f "lib/firebase_options.dart" ]; then
-              mkdir -p lib
-              echo "class DefaultFirebaseOptions{static get currentPlatform{return null;}}" > lib/firebase_options.dart
-              echo "⚠️ Created mock firebase_options.dart"
-            fi
-          fi
-          
-          # 5. Gradle & AGP Configuration
-          mkdir -p android/gradle/wrapper
-          WRAPPER="android/gradle/wrapper/gradle-wrapper.properties"
-          BUILD_GRADLE="android/build.gradle"
-          SETTINGS_GRADLE="android/settings.gradle"
-          APP_BUILD_GRADLE="android/app/build.gradle"
-
-          if [ "${{ env.IS_LEGACY }}" == "true" ]; then
-            echo "🔧 Mode: LEGACY (Flutter 2.x)"
-            echo "distributionUrl=https\://services.gradle.org/distributions/gradle-7.5-all.zip" > $WRAPPER
-            
-            if [ -f "$BUILD_GRADLE" ]; then
-               sed -i 's/com.android.tools.build:gradle:[0-9.]\+/com.android.tools.build:gradle:7.3.0/g' $BUILD_GRADLE
-               sed -i 's/org.jetbrains.kotlin:kotlin-gradle-plugin:[0-9.]\+/org.jetbrains.kotlin:kotlin-gradle-plugin:1.7.10/g' $BUILD_GRADLE
-            fi
-            
-            if [ -f "$SETTINGS_GRADLE" ]; then
-               sed -i 's/com.android.application:[0-9.]\+/com.android.application:7.3.0/g' $SETTINGS_GRADLE
-               sed -i 's/org.jetbrains.kotlin.android:[0-9.]\+/org.jetbrains.kotlin.android:1.7.10/g' $SETTINGS_GRADLE
-            fi
-            
-            echo "BUILD_ARGS=--release --no-shrink --no-sound-null-safety" >> $GITHUB_ENV
-
-          else
-            echo "✨ Mode: MODERN (Universal AGP 8.x Support)"
-            
-            # Detect AGP version from existing files
-            AGP_VERSION=""
-            if [ -f "$BUILD_GRADLE" ]; then
-                AGP_RAW=$(grep -oP 'com.android.tools.build:gradle:\K[0-9.]+' $BUILD_GRADLE || true)
-                if [ ! -z "$AGP_RAW" ]; then
-                    AGP_VERSION=$AGP_RAW
-                    sed -i 's/com.android.tools.build:gradle:[0-9.]\+/com.android.tools.build:gradle:8.1.0/g' $BUILD_GRADLE
-                    sed -i 's/org.jetbrains.kotlin:kotlin-gradle-plugin:[0-9.]\+/org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.10/g' $BUILD_GRADLE
-                fi
-            fi
-            
-            # Handle settings.gradle (Flutter 3.16+)
-            if [ -f "$SETTINGS_GRADLE" ]; then
-                if [ -z "$AGP_VERSION" ]; then
-                    AGP_PLUGIN=$(grep -oP 'com.android.application["'\'']?\s*version\s*["'\'']?\K[0-9.]+' $SETTINGS_GRADLE || true)
-                    [ ! -z "$AGP_PLUGIN" ] && AGP_VERSION=$AGP_PLUGIN
-                fi
-                
-                # Update plugins syntax
-                sed -i 's/id\s*["'\'']com.android.application["'\'']\s*version\s*["'\''][^"'\'']*["'\'']/id "com.android.application" version "8.1.0"/g' $SETTINGS_GRADLE
-                sed -i "s/id\s*[\"']com.android.application[\"']\s*version\s*[\"'][^\"']*[\"']/id 'com.android.application' version '8.1.0'/g" $SETTINGS_GRADLE
-                sed -i 's/id\s*["'\'']org.jetbrains.kotlin.android["'\'']\s*version\s*["'\''][^"'\'']*["'\'']/id "org.jetbrains.kotlin.android" version "1.9.10"/g' $SETTINGS_GRADLE
-            fi
-            
-            echo "📋 Detected AGP: ${AGP_VERSION:-'8.1 (default)'}"
-            
-            # Use Gradle 8.10.2 for maximum compatibility (supports AGP 8.0 - 8.7+)
-            GRADLE_VER="8.10.2"
-            if [ ! -z "$AGP_VERSION" ]; then
-                AGP_MINOR=$(echo $AGP_VERSION | cut -d. -f2)
-                if [ "$AGP_MINOR" -ge 7 ] 2>/dev/null; then
-                    echo "🔍 AGP 8.7+ detected, ensuring Gradle 8.9+"
-                    GRADLE_VER="8.10.2"
-                fi
-            fi
-            
-            echo "⚙️ Using Gradle $GRADLE_VER"
-            echo "distributionUrl=https\://services.gradle.org/distributions/gradle-${GRADLE_VER}-all.zip" > $WRAPPER
-            
-            # Inject namespace if missing (required for AGP 8+)
-            if [ -f "$APP_BUILD_GRADLE" ]; then
-               if ! grep -q "namespace" $APP_BUILD_GRADLE; then
-                 sed -i "/android {/a \    namespace '${{ env.PACKAGE_NAME }}'" $APP_BUILD_GRADLE
-                 echo "⚠️ Injected namespace into app/build.gradle"
-               fi
-            fi
-            
-            echo "BUILD_ARGS=--release --no-shrink" >> $GITHUB_ENV
-          fi
-
-          # Cleanup conflicting properties
-          sed -i '/flutterVersionName/d' android/local.properties 2>/dev/null || true
-          sed -i '/flutterVersionCode/d' android/local.properties 2>/dev/null || true
-
-      - name: 6. Refactor Package Name & Icon
+          mkdir -p android
+          if [ ! -f "android/local.properties" ]; then echo "sdk.dir=/usr/local/lib/android/sdk" > android/local.properties; fi
+      # -------------------------------------------------------------------------
+      # سكربت بايثون المحدث: يصلح الاسم + يربط الأيقونة بشكل إجباري
+      # -------------------------------------------------------------------------
+      - name: Force Update App Name, Package AND Icon
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          cat <<EOF > refactor.py
-          import os, re
-          pkg = "${{ env.PACKAGE_NAME }}"
-          name = "${{ env.APP_NAME }}"
-          path = pkg.replace('.', '/')
+          cat <<EOF > update_project_info.py
+          import os
+          import xml.etree.ElementTree as ET
+          import re
+          app_name = os.environ.get('APP_NAME', 'MyApp')
+          package_name = os.environ.get('PACKAGE_NAME', 'com.example.app')
           
-          # Fix AndroidManifest.xml
-          m = "android/app/src/main/AndroidManifest.xml"
-          if os.path.exists(m):
-              with open(m, 'r') as f: s = f.read()
-              s = re.sub(r'package="[^"]+"', f'package="{pkg}"', s)
-              s = re.sub(r'android:label="[^"]+"', 'android:label="@string/app_name"', s)
-              with open(m, 'w') as f: f.write(s)
-          
-          # Create strings.xml
-          s_path = "android/app/src/main/res/values/strings.xml"
-          os.makedirs(os.path.dirname(s_path), exist_ok=True)
-          with open(s_path, 'w') as f: f.write(f'<resources><string name="app_name">{name}</string></resources>')
-          
-          # Fix app/build.gradle applicationId
-          g = "android/app/build.gradle"
-          if os.path.exists(g):
-              with open(g, 'r') as f: s = f.read()
-              s = re.sub(r'applicationId\s+["\'].*?["\']', f'applicationId "{pkg}"', s)
-              with open(g, 'w') as f: f.write(s)
+          # 1. Update strings.xml (اسم التطبيق)
+          strings_path = 'android/app/src/main/res/values/strings.xml'
+          os.makedirs(os.path.dirname(strings_path), exist_ok=True)
+          xml_content = f'''<?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">{app_name}</string>
+          </resources>'''
+          with open(strings_path, 'w', encoding='utf-8') as f:
+              f.write(xml_content)
+          # 2. Update AndroidManifest.xml (الاسم، الحزمة، والأيقونة)
+          manifest_path = 'android/app/src/main/AndroidManifest.xml'
+          ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
+          try:
+              tree = ET.parse(manifest_path)
+              root = tree.getroot()
               
-          # Move MainActivity to correct package directory
-          for root, dirs, files in os.walk("android/app/src/main"):
-              if "MainActivity.java" in files or "MainActivity.kt" in files:
-                  f_name = "MainActivity.kt" if "MainActivity.kt" in files else "MainActivity.java"
-                  old = os.path.join(root, f_name)
-                  new_dir = os.path.join("android/app/src/main", "java" if "java" in root else "kotlin", path)
-                  os.makedirs(new_dir, exist_ok=True)
-                  with open(old, 'r') as f: c = f.read()
-                  c = re.sub(r'package\s+[\w\.]+', f'package {pkg}', c)
-                  with open(os.path.join(new_dir, f_name), 'w') as f: f.write(c)
-                  if old != os.path.join(new_dir, f_name):
-                      os.remove(old)
-                  break
+              # تحديث اسم الحزمة
+              if 'package' in root.attrib: root.attrib['package'] = package_name
+              
+              application = root.find('application')
+              if application is not None:
+                  android_ns = '{http://schemas.android.com/apk/res/android}'
+                  
+                  # تحديث اسم التطبيق
+                  application.attrib[f'{android_ns}label'] = '@string/app_name'
+                  
+                  # >>> إصلاح الأيقونة: إجبار المانيفست على استخدام أيقوناتنا المولدة <<<
+                  application.attrib[f'{android_ns}icon'] = '@mipmap/ic_launcher'
+                  application.attrib[f'{android_ns}roundIcon'] = '@mipmap/ic_launcher'
+                  
+              tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
+              print("Manifest updated successfully with Icon and Name.")
+          except Exception as e: print(f"Manifest Error: {e}")
+          # 3. Update build.gradle (معرف التطبيق)
+          gradle_path = 'android/app/build.gradle'
+          if os.path.exists(gradle_path):
+              with open(gradle_path, 'r') as f: content = f.read()
+              content = re.sub(r'applicationId\s+["\'].*?["\']', f'applicationId "{package_name}"', content)
+              content = re.sub(r'namespace\s+["\'].*?["\']', f'namespace "{package_name}"', content)
+              with open(gradle_path, 'w') as f: f.write(content)
           EOF
-          python3 refactor.py
+          python3 update_project_info.py
+      - name: Setup Signing
+        working-directory: ${{ env.PROJECT_DIR }}/android/app
+        run: |
+          if [ ! -f "debug.keystore" ]; then
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          mkdir -p signing
+          cat > signing/signing.gradle << 'EOF'
+          signingConfigs {
+              release {
+                  storeFile file("../debug.keystore")
+                  storePassword "android"
+                  keyAlias "androiddebugkey"
+                  keyPassword "android"
+              }
+          }
+          buildTypes {
+              release {
+                  signingConfig signingConfigs.release
+                  minifyEnabled true
+                  shrinkResources true
+                  proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+              }
+          }
+          EOF
+      - name: Process Icon
+        run: |
+          mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-xxxhdpi
+          wget -q -O icon_original.png "$ICON_URL"
+          # توليد الأيقونات في المسار القياسي ic_launcher
+          convert icon_original.png -resize 48x48 $PROJECT_DIR/android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          convert icon_original.png -resize 72x72 $PROJECT_DIR/android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          convert icon_original.png -resize 96x96 $PROJECT_DIR/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          convert icon_original.png -resize 144x144 $PROJECT_DIR/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          convert icon_original.png -resize 192x192 $PROJECT_DIR/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+      - name: Get Dependencies
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter pub get
 
-          # Download and process icon
-          wget -q -O icon.png "$ICON_URL"
-          rm -rf android/app/src/main/res/mipmap-*
-          for s in "mdpi 48" "hdpi 72" "xhdpi 96" "xxhdpi 144" "xxxhdpi 192"; do
-             read -r n d <<< "$s"
-             mkdir -p android/app/src/main/res/mipmap-$n
-             convert icon.png -resize ${d}x${d} android/app/src/main/res/mipmap-$n/ic_launcher.png
-          done
-
-      - name: 7. Build APK
+      - name: Build Universal APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          flutter pub get
-          echo "🚀 Building with: ${{ env.BUILD_ARGS }}"
-          # ✅ SKIP VALIDATION: Bypass Kotlin version checks for broader compatibility
-          export ANDROID_SKIP_BUILD_DEPENDENCY_VALIDATION=true
-          flutter build apk ${{ env.BUILD_ARGS }}
-
-          APK=$(find build/app/outputs/flutter-apk -name "*.apk" | head -n 1)
-          mv "$APK" "${{ env.SAFE_NAME }}.apk"
-          echo "APK_PATH=$(pwd)/${{ env.SAFE_NAME }}.apk" >> $GITHUB_ENV
-
-      - name: 8. Upload Release
+          flutter build apk --$BUILD_MODE --target-platform=android-arm,android-arm64 --split-debug-info=symbols/
+          
+          APK_DIR="build/app/outputs/flutter-apk"
+          DEFAULT_APK="$APK_DIR/app-$BUILD_MODE.apk"
+          
+          # استخدام الاسم الآمن للملف (Fix Invalid Package)
+          FINAL_APK="$APK_DIR/${SAFE_NAME}.apk"
+          
+          echo "Renaming $DEFAULT_APK to $FINAL_APK"
+          mv "$DEFAULT_APK" "$FINAL_APK"
+          
+          FULL_PATH="$(pwd)/$FINAL_APK"
+          echo "APK_PATH=$FULL_PATH" >> $GITHUB_ENV
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ env.BUILD_ID }}
           name: "${{ env.APP_NAME }}"
           body: |
-             Build ID: ${{ env.BUILD_ID }}
-             Mode: ${{ env.IS_LEGACY == 'true' && 'Legacy 🏚️' || 'Modern ✨' }}
-          files: ${{ env.APK_PATH }}
+            ✅ **Build Success**
+            **App:** ${{ env.APP_NAME }}
+            **Package:** ${{ env.PACKAGE_NAME }}
+          files: |
+            ${{ env.APK_PATH }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

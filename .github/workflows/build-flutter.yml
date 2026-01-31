@@ -71,22 +71,20 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           if [ -f "pubspec.yaml" ]; then
-            echo "🔧 Fixing SDK constraints..."
-            # Fix SDK version to support Null Safety
+            # Fix SDK to support Null Safety
             sed -i 's/sdk: ">=2.0.[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
             sed -i 's/sdk: ">=2.[1-9].[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
             sed -i "s/sdk: '>=2.0.[0-9].*'/sdk: '>=2.12.0 <4.0.0'/" pubspec.yaml || true
             
-            echo "🔧 Fixing old dependencies..."
-            # Force update cupertino_icons from 0.1.x to 1.0.2 (Null Safe)
+            # Update legacy icons to support null safety
             sed -i 's/cupertino_icons: \^0\.[0-9.]*/cupertino_icons: ^1.0.2/' pubspec.yaml || true
             sed -i 's/cupertino_icons: 0\.[0-9.]*/cupertino_icons: ^1.0.2/' pubspec.yaml || true
           fi
 
-      - name: Fix Firebase & Resources & Permissions
+      - name: Fix Firebase & Permissions
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          # Firebase Options
+          # Create Dummy Firebase Options if missing
           if [ ! -f "lib/firebase_options.dart" ]; then
             mkdir -p lib
             cat > lib/firebase_options.dart << 'EOF'
@@ -107,7 +105,7 @@ jobs:
           EOF
           fi
 
-          # Google Services JSON
+          # Create Google Services JSON
           mkdir -p android/app
           if [ ! -f "android/app/google-services.json" ]; then
             cat > android/app/google-services.json << EOF
@@ -122,24 +120,23 @@ jobs:
           EOF
           fi
 
-          # AndroidManifest fixes (CRITICAL FOR CRASH FIX)
+          # Fix AndroidManifest (Permissions & Exported)
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
-            # Fix Label
             sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$MANIFEST"
             
-            # 1. Add Internet Permission (Fixes crash on launch)
+            # Fix Crash: Add Internet Permission
             if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
                sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"/>' "$MANIFEST"
             fi
 
-            # 2. Add Exported Flag (Fixes Android 12+ install issues)
+            # Fix Install: Add Exported=true
             if ! grep -q 'android:exported="true"' "$MANIFEST"; then
                sed -i 's/<activity/<activity android:exported="true"/g' "$MANIFEST"
             fi
           fi
           
-          # Strings.xml
+          # Fix Strings
           mkdir -p android/app/src/main/res/values
           cat > android/app/src/main/res/values/strings.xml << EOF
           <?xml version="1.0" encoding="utf-8"?>
@@ -148,7 +145,7 @@ jobs:
           </resources>
           EOF
 
-      - name: Replace build.gradle (Clean & Fixed)
+      - name: Replace build.gradle (Kotlin 2.1.0 & Minify)
         working-directory: ${{ env.PROJECT_DIR }}/android/app
         run: |
           cp build.gradle build.gradle.backup
@@ -218,14 +215,16 @@ jobs:
               buildTypes {
                   release {
                       signingConfig signingConfigs.release
-                      minifyEnabled false
-                      shrinkResources false
+                      // Optimizations for Size
+                      minifyEnabled true
+                      shrinkResources true
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
                   }
               }
           }
           
           dependencies {
-              implementation platform('com.google.firebase:firebase-bom:32.7.0')
+              implementation platform('com.google.firebase:firebase-bom:33.7.0')
           }
           
           flutter {
@@ -233,30 +232,41 @@ jobs:
           }
           GRADLE_EOF
           
+          # Create empty proguard rules to prevent errors if missing
+          touch proguard-rules.pro
+          # Add rule to keep Flutter wrappers if minifying
+          echo "-keep class io.flutter.app.** { *; }" >> proguard-rules.pro
+          echo "-keep class io.flutter.plugin.** { *; }" >> proguard-rules.pro
+          
           sed -i "s/PLACEHOLDER_PACKAGE/${PACKAGE_NAME}/g" build.gradle
 
-      - name: Fix Gradle Settings & Root (Smart)
+      - name: Fix Gradle Settings (Force Kotlin 2.1.0)
         working-directory: ${{ env.PROJECT_DIR }}/android
         run: |
           sed -i 's/gradle-[0-9.]*-/gradle-8.9-/' gradle/wrapper/gradle-wrapper.properties 2>/dev/null || true
           
           if [ -f "settings.gradle" ]; then
-             # Check before insert to avoid duplication error
+             # Check before insert to avoid duplication
              if grep -q "plugins {" "settings.gradle"; then
                 if ! grep -q "com.google.gms.google-services" "settings.gradle"; then
                    sed -i '/plugins {/a \    id "com.google.gms.google-services" version "4.4.0" apply false' settings.gradle
                 fi
              fi
              
-             sed -i "s/kotlin(\"android\") version \"[^\"]*\"/kotlin(\"android\") version \"1.9.20\"/g" settings.gradle || true
-             sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '1.9.20'/g" settings.gradle || true
+             # FORCE UPGRADE KOTLIN TO 2.1.0
+             sed -i "s/kotlin(\"android\") version \"[^\"]*\"/kotlin(\"android\") version \"2.1.0\"/g" settings.gradle || true
+             sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '2.1.0'/g" settings.gradle || true
           fi
           
+          # Clean legacy build.gradle
           if [ -f "build.gradle" ]; then
              if grep -q "buildscript" "build.gradle"; then
+                # Ensure google-services is there
                 if ! grep -q "google-services" "build.gradle"; then
                    sed -i '/dependencies {/a \        classpath "com.google.gms:google-services:4.4.0"' build.gradle
                 fi
+                # Update legacy Kotlin version variable
+                sed -i "s/ext.kotlin_version = '[^']*'/ext.kotlin_version = '2.1.0'/g" build.gradle || true
              fi
           fi
 
@@ -276,26 +286,23 @@ jobs:
              convert icon.png -resize $px $PROJECT_DIR/android/app/src/main/res/mipmap-$name/ic_launcher.png
           done
 
-      - name: Build APK (with Auto Fix)
+      - name: Build APK (Small Size & Optimized)
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           flutter clean
-          
-          # Force update outdated dependencies
-          echo "📦 Upgrading major versions for legacy support..."
           flutter pub upgrade --major-versions || true
-          
-          # Fix code issues
           dart fix --apply || true
-          
           flutter pub get
           
+          echo "🚀 Building Optimized APK (Removing x64 for size)..."
+          
+          # We remove android-x64 to save size. We only build for ARM (real phones).
           flutter build apk --$BUILD_MODE \
-            --target-platform=android-arm,android-arm64,android-x64 \
+            --target-platform=android-arm,android-arm64 \
             --no-android-gradle-daemon \
             --release || \
           flutter build apk --$BUILD_MODE \
-            --target-platform=android-arm,android-arm64,android-x64 \
+            --target-platform=android-arm,android-arm64 \
             --no-android-gradle-daemon \
             --android-skip-build-dependency-validation
           
@@ -318,10 +325,10 @@ jobs:
           tag_name: build-${{ env.BUILD_ID }}
           name: "${{ env.APP_NAME }}"
           body: |
-            ✅ **تم البناء بنجاح**
+            ✅ **تم البناء بنجاح (نسخة محسنة)**
             📱 **التطبيق:** ${{ env.APP_NAME }}
-            📦 **الحزمة:** ${{ env.PACKAGE_NAME }}
-            ⚠️ **تنبيه:** يرجى حذف أي نسخة سابقة قبل التثبيت لضمان العمل.
+            📉 **الحجم:** تم تصغير الحجم بإزالة ملفات المحاكيات (x64).
+            ⚠️ **تنبيه:** يرجى حذف أي نسخة سابقة قبل التثبيت.
           files: |
             ${{ env.APK_PATH }}
         env:

@@ -1,6 +1,6 @@
 # =============================================================================
-# Aite.studio - Web to APK Builder (Intelligent v2.4 - Node.js 22 Update)
-# Fixed: Updated Node.js from 18 to 22 to support Capacitor CLI 8
+# Aite.studio - Web to APK Builder (Intelligent v2.5 - Java 21 Fix)
+# Fixed: Updated Java from 17 to 21 to support latest Capacitor Android
 # =============================================================================
 
 name: Build Web to APK
@@ -138,11 +138,12 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Setup Java 17
+      # FIX: Updated to Java 21
+      - name: Setup Java 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -182,7 +183,9 @@ jobs:
           # Build
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon             -Dorg.gradle.java.home=$JAVA_HOME             -Dfile.encoding=UTF-8
+          ./gradlew assembleDebug --no-daemon \
+            -Dorg.gradle.java.home=$JAVA_HOME \
+            -Dfile.encoding=UTF-8
 
           echo "✅ Build complete!"
 
@@ -192,9 +195,11 @@ jobs:
           APK=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
           [ -z "$APK" ] && { echo "❌ No APK found!"; exit 1; }
 
-          keytool -genkey -v -keystore key.jks -alias key -storepass 123456 -keypass 123456             -keyalg RSA -validity 10000 -dname "CN=Android,O=Android,C=US" 2>/dev/null
+          keytool -genkey -v -keystore key.jks -alias key -storepass 123456 -keypass 123456 \
+            -keyalg RSA -validity 10000 -dname "CN=Android,O=Android,C=US" 2>/dev/null
 
-          jarsigner -keystore key.jks -storepass 123456 -keypass 123456             -sigalg SHA256withRSA -digestalg SHA-256 "$APK" key
+          jarsigner -keystore key.jks -storepass 123456 -keypass 123456 \
+            -sigalg SHA256withRSA -digestalg SHA-256 "$APK" key
 
           cp "$APK" ../../app.apk
           echo "✅ Signed: app.apk"

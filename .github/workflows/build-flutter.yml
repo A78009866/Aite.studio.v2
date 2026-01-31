@@ -1,4 +1,4 @@
-name: Smart Flutter Cloud Build (Universal)
+name: Smart Flutter Cloud Build (Universal v3)
 
 on:
   repository_dispatch:
@@ -13,9 +13,6 @@ env:
   PACKAGE_NAME: ${{ github.event.client_payload.package_name }}
   ICON_URL: ${{ github.event.client_payload.icon_url }}
   ZIP_URL: ${{ github.event.client_payload.zip_url }}
-  # المتغيرات الديناميكية سيتم تحديدها أثناء التشغيل
-  FLUTTER_VER: '3.22.x' 
-  BUILD_ARGS: '--release --no-shrink'
 
 jobs:
   universal-build:
@@ -28,12 +25,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq wget unzip imagemagick openjdk-17-jdk
 
-      - name: 2. Download and Extract Project
+      - name: 2. Download and Extract
         run: |
           wget -q --show-progress -O project.zip "$ZIP_URL"
           mkdir -p $PROJECT_DIR
           unzip -q project.zip -d temp_extract
-          # تحريك الملفات بذكاء
+          # Smart Move: Handle nested folders
           if [ "$(ls -A temp_extract | wc -l)" == "1" ] && [ -d "temp_extract/$(ls -A temp_extract)" ]; then
             mv temp_extract/*/* $PROJECT_DIR/
           else
@@ -42,184 +39,166 @@ jobs:
           rm -rf temp_extract project.zip
 
       # ========================================================
-      # THE BRAIN: Smart Detection (Legacy vs Modern)
+      # 🧠 SMART DETECTOR: Python Logic for Precise Detection
       # ========================================================
-      - name: 3. Detect Project Age & Configure
+      - name: 3. Analyze Project Structure
         working-directory: ${{ env.PROJECT_DIR }}
-        id: detector
+        id: analyzer
         run: |
-          echo "🔍 Analyzing pubspec.yaml for compatibility..."
-          
-          # قراءة إصدار SDK المطلوب من ملف المشروع
-          SDK_CONSTRAINT=$(grep "sdk:" pubspec.yaml | head -n 1)
-          echo "Found SDK constraint: $SDK_CONSTRAINT"
-          
-          # منطق الكشف: هل المشروع قديم (أقل من 2.12)؟
-          # نبحث عن أنماط مثل "sdk: >=2.7.0" أو "sdk: <3.0.0" بدون وجود 2.12 كحد أدنى
-          
-          IS_LEGACY=false
-          
-          if [[ "$SDK_CONSTRAINT" == *"2.12"* ]] || [[ "$SDK_CONSTRAINT" == *"3."* ]]; then
-             echo "✅ Modern Project Detected (Null Safety supported)"
-             echo "FLUTTER_VER=3.22.x" >> $GITHUB_ENV
-             echo "IS_LEGACY=false" >> $GITHUB_ENV
-          else
-             echo "⚠️ Legacy Project Detected (Pre-Null Safety)"
-             # نستخدم نسخة 3.7.12 لأنها تدعم القديم وتدعم Gradle المقبول
-             echo "FLUTTER_VER=3.7.12" >> $GITHUB_ENV
-             # إضافة فلاج تجاوز فحص الأمان
-             echo "BUILD_ARGS=--release --no-shrink --no-sound-null-safety" >> $GITHUB_ENV
-             echo "IS_LEGACY=true" >> $GITHUB_ENV
-          fi
+          cat <<EOF > detect_version.py
+          import re
+          import os
 
-      - name: 4. Setup Flutter (Dynamic Version)
+          # Default values
+          is_legacy = False
+          flutter_ver = "" # Empty means latest stable
+
+          if os.path.exists("pubspec.yaml"):
+              with open("pubspec.yaml", "r") as f:
+                  content = f.read()
+                  
+                  # Find SDK Constraint
+                  match = re.search(r'sdk:\s*["\']?([><=^0-9\.\s-]+)["\']?', content)
+                  if match:
+                      ver_str = match.group(1)
+                      print(f"Found SDK Constraint: {ver_str}")
+                      
+                      # Check for Legacy (< 2.12.0)
+                      # If it does NOT contain 2.12 or 3.x.x, and contains 2.x, it's legacy
+                      if "2.12" not in ver_str and "3." not in ver_str and ("<3.0.0" in ver_str or "2." in ver_str):
+                          is_legacy = True
+                          flutter_ver = "3.7.12" # Last version with solid legacy support
+                      
+          # Output to GitHub Actions
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f"IS_LEGACY={str(is_legacy).lower()}\n")
+              f.write(f"FLUTTER_VER={flutter_ver}\n")
+              
+          print(f"Legacy Mode: {is_legacy}")
+          print(f"Selected Flutter Version: {flutter_ver if flutter_ver else 'Latest Stable'}")
+          EOF
+          
+          python3 detect_version.py
+
+      - name: 4. Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: ${{ env.FLUTTER_VER }} # يستخدم النسخة التي حددناها في الخطوة السابقة
+          flutter-version: ${{ env.FLUTTER_VER }} # Dynamic: Empty for latest, 3.7.12 for legacy
           cache: true
 
-      - name: 5. Smart Gradle Fixer
+      - name: 5. Auto-Fix Gradle & Dependencies
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          echo "🔧 Fixing Gradle based on project type..."
-          
-          # إنشاء مفتاح التوقيع (مشترك للكل)
+          # 1. Mock firebase_options to prevent build errors
+          if grep -r "firebase_options.dart" lib/ > /dev/null; then
+            if [ ! -f "lib/firebase_options.dart" ]; then
+              mkdir -p lib
+              echo "class DefaultFirebaseOptions{static get currentPlatform{return null;}}" > lib/firebase_options.dart
+            fi
+          fi
+
+          # 2. Key Generation
           keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           
-          # إصلاح ملفات Gradle
+          # 3. Gradle Fixes based on Mode
+          WRAPPER="android/gradle/wrapper/gradle-wrapper.properties"
           GRADLE_FILE="android/build.gradle"
-          WRAPPER_FILE="android/gradle/wrapper/gradle-wrapper.properties"
           mkdir -p android/gradle/wrapper
 
           if [ "${{ env.IS_LEGACY }}" == "true" ]; then
-            # === وضع المشاريع القديمة ===
-            echo "🛠 Applying LEGACY fixes..."
+            echo "🔧 Mode: LEGACY (Fixing for Old Android)"
+            echo "distributionUrl=https\://services.gradle.org/distributions/gradle-7.5-all.zip" > $WRAPPER
             
-            # استخدام Gradle 7.4 (متوافق مع Flutter 3.7 و Java 11/17)
-            echo "distributionUrl=https\://services.gradle.org/distributions/gradle-7.5-all.zip" > $WRAPPER_FILE
-            
-            # استخدام AGP أقدم قليلاً للتوافق
             if [ -f "$GRADLE_FILE" ]; then
                sed -i 's/com.android.tools.build:gradle:[0-9.]\+/com.android.tools.build:gradle:7.3.0/g' $GRADLE_FILE
                sed -i 's/org.jetbrains.kotlin:kotlin-gradle-plugin:[0-9.]\+/org.jetbrains.kotlin:kotlin-gradle-plugin:1.7.10/g' $GRADLE_FILE
             fi
+            # Set Build Args for Legacy
+            echo "BUILD_ARGS=--release --no-shrink --no-sound-null-safety" >> $GITHUB_ENV
 
           else
-            # === وضع المشاريع الحديثة ===
-            echo "✨ Applying MODERN fixes..."
-            
-            # استخدام Gradle 8.4 الحديث
-            echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-all.zip" > $WRAPPER_FILE
+            echo "✨ Mode: MODERN (Updating to Latest)"
+            echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-all.zip" > $WRAPPER
             
             if [ -f "$GRADLE_FILE" ]; then
                sed -i 's/com.android.tools.build:gradle:[0-9.]\+/com.android.tools.build:gradle:8.1.0/g' $GRADLE_FILE
                sed -i 's/org.jetbrains.kotlin:kotlin-gradle-plugin:[0-9.]\+/org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.10/g' $GRADLE_FILE
-               # إضافة namespace المطلوبة للحديث
+               # Add namespace for AGP 8+
                if ! grep -q "namespace" android/app/build.gradle; then
                  sed -i "/android {/a \    namespace '${PACKAGE_NAME}'" android/app/build.gradle
                fi
             fi
+            # Set Build Args for Modern
+            echo "BUILD_ARGS=--release --no-shrink" >> $GITHUB_ENV
           fi
-          
-          # إصلاحات عامة للجميع
-          # حذف Version Code القديم لتجنب الأخطاء
+
+          # Common Cleanups
           sed -i '/flutterVersionName/d' android/local.properties 2>/dev/null || true
           sed -i '/flutterVersionCode/d' android/local.properties 2>/dev/null || true
 
-          # إنشاء ملف firebase وهمي للجميع
-          if grep -r "firebase_options.dart" lib/ > /dev/null; then
-            if [ ! -f "lib/firebase_options.dart" ]; then
-              echo "⚠️ Mocking missing firebase_options.dart..."
-              cat <<EOF > lib/firebase_options.dart
-          import 'package:firebase_core/firebase_core.dart';
-          import 'package:flutter/foundation.dart';
-          class DefaultFirebaseOptions {
-            static FirebaseOptions get currentPlatform {
-              return const FirebaseOptions(
-                apiKey: 'dummy', appId: 'dummy', messagingSenderId: 'dummy', projectId: 'dummy'
-              );
-            }
-          }
-          EOF
-            fi
-          fi
-
-      - name: 6. Refactor Package & Icon
+      - name: 6. Refactor Package Name & Icon
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          # سكربت بايثون القوي لتغيير الحزمة (نفس السابق لأنه ممتاز)
-          cat <<EOF > refactor_engine.py
+          cat <<EOF > refactor.py
           import os, re
-          new_package = "${PACKAGE_NAME}"
-          app_name = "${APP_NAME}"
-          new_path = new_package.replace('.', '/')
-          android_root = "android/app/src/main"
+          pkg = "${PACKAGE_NAME}"
+          name = "${APP_NAME}"
+          path = pkg.replace('.', '/')
           
-          # 1. Manifest Update
-          manifest_path = os.path.join(android_root, "AndroidManifest.xml")
-          if os.path.exists(manifest_path):
-              with open(manifest_path, 'r', encoding='utf-8', errors='ignore') as f: content = f.read()
-              content = re.sub(r'package="[^"]+"', f'package="{new_package}"', content)
-              content = re.sub(r'android:label="[^"]+"', 'android:label="@string/app_name"', content)
-              with open(manifest_path, 'w', encoding='utf-8') as f: f.write(content)
-
-          # 2. Strings.xml
-          strings_path = os.path.join(android_root, "res/values/strings.xml")
-          os.makedirs(os.path.dirname(strings_path), exist_ok=True)
-          with open(strings_path, 'w', encoding='utf-8') as f:
-              f.write(f'<resources><string name="app_name">{app_name}</string></resources>')
-
-          # 3. Gradle ID
-          gradle_path = "android/app/build.gradle"
-          if os.path.exists(gradle_path):
-              with open(gradle_path, 'r') as f: content = f.read()
-              content = re.sub(r'applicationId\s+["\'].*?["\']', f'applicationId "{new_package}"', content)
-              with open(gradle_path, 'w') as f: f.write(content)
-
-          # 4. Move Files
-          java_src = os.path.join(android_root, "java")
-          kotlin_src = os.path.join(android_root, "kotlin")
-          src_dir = kotlin_src if os.path.exists(kotlin_src) else java_src
+          # Manifest
+          m = "android/app/src/main/AndroidManifest.xml"
+          if os.path.exists(m):
+              with open(m, 'r') as f: s = f.read()
+              s = re.sub(r'package="[^"]+"', f'package="{pkg}"', s)
+              s = re.sub(r'android:label="[^"]+"', 'android:label="@string/app_name"', s)
+              with open(m, 'w') as f: f.write(s)
           
-          if os.path.exists(src_dir):
-              for root, dirs, files in os.walk(src_dir):
-                  if "MainActivity.kt" in files or "MainActivity.java" in files:
-                      main_file = "MainActivity.kt" if "MainActivity.kt" in files else "MainActivity.java"
-                      new_full_path = os.path.join(src_dir, new_path)
-                      os.makedirs(new_full_path, exist_ok=True)
-                      old_file_path = os.path.join(root, main_file)
-                      
-                      with open(old_file_path, 'r', encoding='utf-8', errors='ignore') as f: code = f.read()
-                      code = re.sub(r'package\s+[\w\.]+', f'package {new_package}', code)
-                      
-                      with open(os.path.join(new_full_path, main_file), 'w', encoding='utf-8') as f: f.write(code)
-                      print(f"Moved {main_file}")
-                      break
+          # Strings
+          s_path = "android/app/src/main/res/values/strings.xml"
+          os.makedirs(os.path.dirname(s_path), exist_ok=True)
+          with open(s_path, 'w') as f: f.write(f'<resources><string name="app_name">{name}</string></resources>')
+          
+          # Gradle
+          g = "android/app/build.gradle"
+          if os.path.exists(g):
+              with open(g, 'r') as f: s = f.read()
+              s = re.sub(r'applicationId\s+["\'].*?["\']', f'applicationId "{pkg}"', s)
+              with open(g, 'w') as f: f.write(s)
+              
+          # Move MainActivity
+          for root, dirs, files in os.walk("android/app/src/main"):
+              if "MainActivity.java" in files or "MainActivity.kt" in files:
+                  f_name = "MainActivity.kt" if "MainActivity.kt" in files else "MainActivity.java"
+                  old = os.path.join(root, f_name)
+                  new_dir = os.path.join("android/app/src/main", "java" if "java" in root else "kotlin", path)
+                  os.makedirs(new_dir, exist_ok=True)
+                  with open(old, 'r') as f: c = f.read()
+                  c = re.sub(r'package\s+[\w\.]+', f'package {pkg}', c)
+                  with open(os.path.join(new_dir, f_name), 'w') as f: f.write(c)
+                  break
           EOF
-          python3 refactor_engine.py
+          python3 refactor.py
 
-          # تبديل الأيقونات
+          # Icons
           wget -q -O icon.png "$ICON_URL"
           rm -rf android/app/src/main/res/mipmap-*
-          for size in "mdpi 48" "hdpi 72" "xhdpi 96" "xxhdpi 144" "xxxhdpi 192"; do
-             read -r name dim <<< "$size"
-             mkdir -p android/app/src/main/res/mipmap-$name
-             convert icon.png -resize ${dim}x${dim} android/app/src/main/res/mipmap-$name/ic_launcher.png
+          for s in "mdpi 48" "hdpi 72" "xhdpi 96" "xxhdpi 144" "xxxhdpi 192"; do
+             read -r n d <<< "$s"
+             mkdir -p android/app/src/main/res/mipmap-$n
+             convert icon.png -resize ${d}x${d} android/app/src/main/res/mipmap-$n/ic_launcher.png
           done
 
       - name: 7. Build APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           flutter pub get
-          
-          echo "🚀 Building with args: ${{ env.BUILD_ARGS }}"
+          echo "🚀 Building with: ${{ env.BUILD_ARGS }}"
           flutter build apk ${{ env.BUILD_ARGS }}
 
-          # إعادة التسمية والنقل
-          APK_PATH=$(find build/app/outputs/flutter-apk -name "*.apk" | head -n 1)
-          mv "$APK_PATH" "build/app/outputs/flutter-apk/${SAFE_NAME}.apk"
-          echo "APK_PATH=$(pwd)/build/app/outputs/flutter-apk/${SAFE_NAME}.apk" >> $GITHUB_ENV
+          APK=$(find build/app/outputs/flutter-apk -name "*.apk" | head -n 1)
+          mv "$APK" "${SAFE_NAME}.apk"
+          echo "APK_PATH=$(pwd)/${SAFE_NAME}.apk" >> $GITHUB_ENV
 
       - name: 8. Upload Release
         uses: softprops/action-gh-release@v1
@@ -227,8 +206,8 @@ jobs:
           tag_name: build-${{ env.BUILD_ID }}
           name: "${{ env.APP_NAME }}"
           body: |
-            Build ID: ${{ env.BUILD_ID }}
-            Mode: ${{ env.IS_LEGACY == 'true' && 'Legacy (Old Flutter)' || 'Modern (Latest Flutter)' }}
+             Build ID: ${{ env.BUILD_ID }}
+             Mode: ${{ env.IS_LEGACY == 'true' && 'Legacy 🏚️' || 'Modern ✨' }}
           files: ${{ env.APK_PATH }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

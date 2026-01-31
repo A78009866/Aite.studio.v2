@@ -162,24 +162,43 @@ jobs:
       # ========================================================
       # 🚀 SEND APK TO TELEGRAM
       # ========================================================
+            # ========================================================
+      # 🚀 SEND APK TO TELEGRAM (DEBUG MODE)
+      # ========================================================
       - name: Send APK to Telegram
         if: success()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           APP_NAME="${{ github.event.client_payload.app_name || github.event.inputs.app_name }}"
           PKG_NAME="${{ github.event.client_payload.package_name || github.event.inputs.package_name }}"
           
-          echo "🚀 Sending APK to Telegram..."
+          # فحص أمني: هل المتغيرات موجودة؟
+          if [ -z "$TG_TOKEN" ]; then
+            echo "❌ Error: TELEGRAM_BOT_TOKEN is empty or missing in Secrets!"
+            exit 1
+          fi
           
-          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument \
-          -F chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-          -F document=@$GITHUB_WORKSPACE/app.apk \
-          -F caption="✅ *Build Success!*
+          if [ -z "$TG_CHAT" ]; then
+            echo "❌ Error: TELEGRAM_CHAT_ID is empty or missing in Secrets!"
+            exit 1
+          fi
+
+          echo "🚀 Sending APK to Telegram..."
+          echo "Debug: Chat ID starts with ${TG_CHAT:0:2}..."
+          
+          curl -v -F "chat_id=$TG_CHAT" \
+          -F "document=@$GITHUB_WORKSPACE/app.apk" \
+          -F "caption=✅ *Build Success!*
           
           📱 *App Name:* $APP_NAME
           📦 *Package:* $PKG_NAME
           
           _Built by Aite.studio_" \
-          -F parse_mode=Markdown
+          -F "parse_mode=Markdown" \
+          https://api.telegram.org/bot$TG_TOKEN/sendDocument
+
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

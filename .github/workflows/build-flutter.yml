@@ -43,7 +43,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq wget unzip imagemagick
           
-      # نستخدم Java 17 وهي المعيار الأساسي لنسخ Flutter و Gradle الحديثة
+      # نستخدم Java 17 وهي المعيار الأساسي
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -73,7 +73,7 @@ jobs:
       - name: 🛠️ Smart Auto-Fix & Upgrade Tools
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          # --- 1. Fix Missing Firebase Options (Dummy File) ---
+          # --- 1. Fix Missing Firebase Options (Dart Side) ---
           if [ ! -f "lib/firebase_options.dart" ]; then
             echo "⚠️ firebase_options.dart missing. Generating dummy file."
             mkdir -p lib
@@ -96,31 +96,61 @@ jobs:
           EOF
           fi
 
-          # --- 2. Smart Project Migrator (Upgrade to Gradle 8.9) ---
-          # تم التحديث لحل مشكلة: Minimum supported Gradle version is 8.9
-          
+          # --- 2. Fix Missing Google Services JSON (Android Side) ---
+          # هذا هو الحل للخطأ الحالي: إنشاء ملف JSON وهمي لإرضاء Gradle Plugin
+          if [ ! -f "android/app/google-services.json" ]; then
+            echo "⚠️ google-services.json missing. Generating dummy file."
+            cat <<EOF > android/app/google-services.json
+          {
+            "project_info": {
+              "project_number": "123456789012",
+              "project_id": "dummy-project",
+              "storage_bucket": "dummy-project.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789012:android:321abc456def7890",
+                  "android_client_info": {
+                    "package_name": "${PACKAGE_NAME}"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [ { "current_key": "AIzaSyDummyKey" } ],
+                "services": {
+                  "analytics_service": { "status": 1 },
+                  "appinvite_service": { "status": 1, "other_platform_oauth_client": [] },
+                  "ads_service": { "status": 2 }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+          fi
+
+          # --- 3. Smart Project Migrator (Upgrade to Gradle 8.9) ---
           echo "🔄 Upgrading Gradle Wrapper to 8.9..."
           if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
              sed -i 's/gradle-.*-all.zip/gradle-8.9-all.zip/' android/gradle/wrapper/gradle-wrapper.properties || true
           fi
           
           echo "🔄 checking Android Gradle Plugin compatibility..."
-          # نحاول ضبط AGP ليكون متوافقاً، لكن إذا فشل الاستبدال، سيستخدم المشروع الإصدار المعرف فيه (وهو غالبًا حديث ويتطلب 8.9)
           sed -i 's/com.android.tools.build:gradle:[3-7].*/com.android.tools.build:gradle:8.2.1"/' android/build.gradle || true
           sed -i 's/com.android.tools.build:gradle:8.0.*/com.android.tools.build:gradle:8.2.1"/' android/build.gradle || true
 
           echo "🔄 Upgrading Kotlin to 1.9.20..."
-          sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.9.20"/' android/build.gradle || true
+          # تحسين أمر الاستبدال ليشمل احتمالات المسافات المختلفة
+          sed -i 's/ext.kotlin_version\s*=\s*.*/ext.kotlin_version = "1.9.20"/' android/build.gradle || true
           
-          # إجبار Java 17 في خصائص Gradle
+          # إجبار Java 17
           mkdir -p android
           if [ -f "android/gradle.properties" ]; then
-             # إزالة أي تعريف قديم لـ java.home لتجنب التعارض
              sed -i '/org.gradle.java.home/d' android/gradle.properties || true
              echo "org.gradle.java.home=$JAVA_HOME_17_X64" >> android/gradle.properties
           fi
 
-          # --- 3. Update App Name, Package & Icon ---
+          # --- 4. Update App Name, Package & Icon ---
           cat <<EOF > update_project_info.py
           import os
           import xml.etree.ElementTree as ET

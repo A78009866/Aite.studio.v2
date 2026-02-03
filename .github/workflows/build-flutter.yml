@@ -1,77 +1,337 @@
-name: Ultimate Flutter Reconstruction Build (No-Fail Edition)
+name: Smart Flutter Cloud Build (Clean Transplant + Permissions)
 
 on:
+  repository_dispatch:
+    types: [build-flutter]
   workflow_dispatch:
     inputs:
-      app_name: { description: 'App Name', required: true }
-      package_name: { description: 'Package Name', required: true }
-      zip_url: { description: 'Project ZIP URL', required: true }
+      app_name:
+        description: 'App Name'
+        required: true
+      package_name:
+        description: 'Package Name'
+        required: true
+      icon_url:
+        description: 'Icon URL'
+        required: true
+      zip_url:
+        description: 'Project ZIP URL'
+        required: true
+
+env:
+  # مسارات العمل
+  WORKSPACE: ${{ github.workspace }}
+  USER_SOURCE: ${{ github.workspace }}/user_source
+  CLEAN_PROJECT: ${{ github.workspace }}/clean_build
+  
+  # البيانات القادمة من السيرفر
+  BUILD_ID: ${{ github.event.client_payload.request_id || github.run_id }}
+  APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name }}
+  SAFE_NAME: ${{ github.event.client_payload.safe_name || 'app-release' }}
+  PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name }}
+  ICON_URL: ${{ github.event.client_payload.icon_url || github.event.inputs.icon_url }}
+  ZIP_URL: ${{ github.event.client_payload.zip_url || github.event.inputs.zip_url }}
+  
+  # إعدادات الذكاء الاصطناعي
+  AI_BASE_URL: "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+  AI_MODEL: "glm-4" 
 
 jobs:
-  build-no-fail:
+  transplant-and-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    
     steps:
-      - name: Setup Environment
+      - name: 🛠️ Setup Environment
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wget unzip imagemagick
-          
-      - name: Setup Flutter
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq wget unzip imagemagick sed curl rsync grep
+
+      - name: ☕ Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 🐦 Setup Flutter (Stable)
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true
 
-      - name: 🚀 The Magic: Create Clean Project
+      - name: 📥 Download User Source
         run: |
-          # 1. إنشاء مشروع جديد كلياً لضمان ملفات أندرويد سليمة 100%
-          flutter create --org "com.clean" --project-name "rebuilt_app" temp_project
+          mkdir -p $USER_SOURCE
+          echo "Downloading Project from: $ZIP_URL"
+          wget -q --show-progress -O project.zip "$ZIP_URL"
+          unzip -q project.zip -d temp_extract
           
-          # 2. تحميل مشروع المستخدم المنكوب
-          wget -q -O user_project.zip "${{ github.event.inputs.zip_url }}"
-          mkdir user_source
-          unzip -q user_project.zip -d user_source
+          # التعامل الذكي مع المجلدات المتداخلة
+          if [ "$(ls -A temp_extract | wc -l)" == "1" ] && [ -d "temp_extract/$(ls -A temp_extract)" ]; then
+            mv temp_extract/*/* $USER_SOURCE/
+          else
+            mv temp_extract/* $USER_SOURCE/
+          fi
+          rm -rf temp_extract project.zip
           
-          # تحديد مسار كود المستخدم (بما أن المجلدات قد تختلف داخل الـ ZIP)
-          USER_SRC=$(find user_source -name "lib" -type d | head -n 1)
-          USER_DIR=$(dirname "$USER_SRC")
+          echo "✅ User source extracted to $USER_SOURCE"
 
-          # 3. نقل "تخصيص المستخدم" فقط (الجوهر)
-          rm -rf temp_project/lib
-          cp -r "$USER_DIR/lib" temp_project/
-          [ -d "$USER_DIR/assets" ] && cp -r "$USER_DIR/assets" temp_project/
-          cp "$USER_DIR/pubspec.yaml" temp_project/ || echo "Using default pubspec"
+      - name: 🏗️ Create Fresh Project & Transplant
+        run: |
+          echo "🚀 Creating a fresh Flutter project..."
+          
+          # 1. استخراج المنظمة واسم المشروع
+          ORG_NAME=$(echo $PACKAGE_NAME | rev | cut -d. -f2- | rev)
+          PROJ_NAME=$(echo $PACKAGE_NAME | rev | cut -d. -f1 | rev)
+          
+          # 2. إنشاء هيكل جديد نظيف (يضمن توافق Gradle و Kotlin)
+          mkdir -p $CLEAN_PROJECT
+          cd ${{ github.workspace }}
+          flutter create --org $ORG_NAME --project-name $PROJ_NAME clean_build
+          
+          echo "♻️ Transplanting Organs (Code & Assets)..."
+          
+          # 3. تنظيف الكود الافتراضي
+          rm -rf $CLEAN_PROJECT/lib/*
+          rm -rf $CLEAN_PROJECT/test
+          
+          # 4. نقل القلب (Lib)
+          cp -r $USER_SOURCE/lib/* $CLEAN_PROJECT/lib/
+          
+          # 5. نقل الأصول (Assets)
+          if [ -d "$USER_SOURCE/assets" ]; then
+            cp -r $USER_SOURCE/assets $CLEAN_PROJECT/
+          fi
+          
+          # 6. نقل إعدادات Google Firebase (إذا وجدت)
+          if [ -f "$USER_SOURCE/android/app/google-services.json" ]; then
+            echo "🔥 Found google-services.json, transplanting..."
+            cp $USER_SOURCE/android/app/google-services.json $CLEAN_PROJECT/android/app/
+            # إضافة التبعيات لـ Firebase في Gradle
+             sed -i '/dependencies {/a \        classpath "com.google.gms:google-services:4.3.15"' $CLEAN_PROJECT/android/build.gradle
+             sed -i '/apply plugin: .com.android.application./a apply plugin: "com.google.gms.google-services"' $CLEAN_PROJECT/android/app/build.gradle
+          fi
 
-          # 4. هندسة تغيير اسم الحزمة (Package Name) برمجياً في كل الملفات
-          cd temp_project
-          flutter pub add change_app_package_name
+          # 7. دمج Pubspec بذكاء
+          cp $USER_SOURCE/pubspec.yaml $CLEAN_PROJECT/
+          cd $CLEAN_PROJECT
+          # إجبار إصدار SDK حديث
+          sed -i 's/sdk: ">=2.0.[0-9].*"/sdk: ">=3.0.0 <4.0.0"/' pubspec.yaml || true
+          sed -i 's/sdk: ">=2.12.[0-9].*"/sdk: ">=3.0.0 <4.0.0"/' pubspec.yaml || true
+          sed -i 's/sdk: ">=2.7.[0-9].*"/sdk: ">=3.0.0 <4.0.0"/' pubspec.yaml || true
+          
+          # 8. تعديل اسم التطبيق
+          sed -i 's/android:label="clean_build"/android:label="'"$APP_NAME"'"/' android/app/src/main/AndroidManifest.xml
+          
+          echo "✅ Basic Transplant Complete!"
+
+      - name: 🛡️ Transplant Permissions (The Fixer)
+        run: |
+          echo "🕵️ Scanning old manifest for permissions..."
+          OLD_MANIFEST="$USER_SOURCE/android/app/src/main/AndroidManifest.xml"
+          NEW_MANIFEST="$CLEAN_PROJECT/android/app/src/main/AndroidManifest.xml"
+          
+          if [ -f "$OLD_MANIFEST" ]; then
+            # استخراج سطور الصلاحيات <uses-permission ... />
+            grep "<uses-permission" "$OLD_MANIFEST" > permissions.txt || true
+            
+            if [ -s permissions.txt ]; then
+              echo "✅ Found permissions to transplant:"
+              cat permissions.txt
+              
+              # حقن الصلاحيات قبل وسم <application> في المانيفست الجديد
+              # نستخدم sed لقراءة محتوى permissions.txt وإدخاله قبل <application
+              sed -i '/<application/e cat permissions.txt' "$NEW_MANIFEST"
+              echo "💉 Permissions injected successfully."
+            else
+              echo "ℹ️ No permissions found in old manifest."
+            fi
+          else
+            echo "⚠️ Old AndroidManifest not found, skipping permissions transplant."
+          fi
+
+      - name: 🎨 Process Icon & Signing
+        working-directory: ${{ env.CLEAN_PROJECT }}
+        run: |
+          # أيقونات
+          rm -rf android/app/src/main/res/mipmap-*
+          wget -q -O icon.png "$ICON_URL"
+          mkdir -p android/app/src/main/res/mipmap-xxhdpi
+          convert icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          
+          # توقيع (Debug Key)
+          echo "storePassword=android" > android/key.properties
+          echo "keyPassword=android" >> android/key.properties
+          echo "keyAlias=androiddebugkey" >> android/key.properties
+          echo "storeFile=../debug.keystore" >> android/key.properties
+          
+          cd android
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: 📦 Resolve Dependencies
+        working-directory: ${{ env.CLEAN_PROJECT }}
+        continue-on-error: true
+        run: |
+          echo "🔄 Updating dependencies to match new environment..."
+          flutter pub upgrade --major-versions
           flutter pub get
-          flutter pub run change_app_package_name:main ${{ github.event.inputs.package_name }}
 
-      - name: 🛡️ Neutralize Problematic Files (Firebase/Signing)
-        working-directory: temp_project
+      - name: 🔨 Build APK (First Attempt)
+        id: build_1
+        working-directory: ${{ env.CLEAN_PROJECT }}
+        continue-on-error: true
         run: |
-          # حذف أي إشارات لـ Firebase قد تسبب فشل بسبب نقص الملفات
-          # سنقوم بحذف بلجن google-services من build.gradle لضمان البناء
-          sed -i '/com.google.gms:google-services/d' android/build.gradle
-          sed -i '/apply plugin: .com.google.gms.google-services./d' android/app/build.gradle
+          flutter build apk --release --no-android-gradle-daemon > build_log.txt 2>&1
+        
+      - name: 🤖 AI Code Doctor (Fix Dart & Pubspec)
+        if: steps.build_1.outcome == 'failure'
+        working-directory: ${{ env.CLEAN_PROJECT }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ env.AI_BASE_URL }}
+          AI_MODEL: ${{ env.AI_MODEL }}
+        run: |
+          echo "❌ Build Failed. AI Doctor scrubbing in..."
           
-          # توليد مفتاح توقيع وهمي لكي يكتمل البناء
-          keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          
-          # إجبار التوقيع على استخدام الديباج حتى في حالة الريليز
-          sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/g' android/app/build.gradle
+          cat > ai_repair.js << 'EOF'
+          const fs = require('fs');
+          const https = require('https');
+          const { URL } = require('url');
 
-      - name: 🛠️ Final Build
-        working-directory: temp_project
-        run: |
-          # تنظيف الاعتمادات وحل الصراعات تلقائياً
+          const API_KEY = process.env.OPENAI_API_KEY;
+          const BASE_URL = process.env.AI_BASE_URL;
+          const MODEL = process.env.AI_MODEL;
+
+          async function callAI(prompt) {
+            const endpoint = new URL(BASE_URL);
+            const postData = JSON.stringify({
+              model: MODEL,
+              messages: [
+                { role: "system", content: "You are an Expert Flutter Engineer. Your goal is to fix compilation errors by migrating code to Flutter 3.19+ (Null Safety). Return ONLY the fixed code." },
+                { role: "user", content: prompt }
+              ],
+              temperature: 0.1
+            });
+
+            return new Promise((resolve, reject) => {
+              const req = https.request({
+                hostname: endpoint.hostname,
+                path: endpoint.pathname + endpoint.search,
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}` }
+              }, (res) => {
+                let body = '';
+                res.on('data', d => body += d);
+                res.on('end', () => {
+                  try {
+                    const parsed = JSON.parse(body);
+                    if(parsed.choices && parsed.choices[0]) resolve(parsed.choices[0].message.content);
+                    else reject("AI Error");
+                  } catch(e) { reject(e); }
+                });
+              });
+              req.on('error', reject);
+              req.write(postData);
+              req.end();
+            });
+          }
+
+          function extractCode(response) {
+            const match = response.match(/```(?:dart|yaml)?\n([\s\S]*?)\n```/);
+            return match ? match[1] : response;
+          }
+
+          async function main() {
+            const log = fs.readFileSync('build_log.txt', 'utf8');
+            
+            // 1. Check for Pubspec/Version Errors first
+            if (log.includes("version solving failed") || log.includes("Because")) {
+                 console.log("📦 Fixing dependencies in pubspec.yaml...");
+                 const pubspec = fs.readFileSync('pubspec.yaml', 'utf8');
+                 const prompt = `Fix these version conflicts for Flutter 3.x. Allow newer versions or use 'any' if strict.\n\nERROR:\n${log.slice(-1500)}\n\nPUBSPEC:\n${pubspec}\n\nOUTPUT: Full valid pubspec.yaml only.`;
+                 try {
+                    const fixed = extractCode(await callAI(prompt));
+                    if (fixed.includes("dependencies:")) {
+                        fs.writeFileSync('pubspec.yaml', fixed);
+                        console.log("✅ pubspec.yaml rewrite successful.");
+                    }
+                 } catch (e) { console.error(e); }
+            }
+
+            // 2. Fix Dart Code Errors
+            const errorRegex = /lib\/([^:]+):(\d+):(\d+): Error: (.*)/g;
+            let match;
+            const processedFiles = new Set();
+            let count = 0;
+
+            while ((match = errorRegex.exec(log)) !== null && count < 5) {
+                const filePath = `lib/${match[1]}`;
+                const errorMsg = match[4];
+
+                if (processedFiles.has(filePath)) continue;
+                if (!fs.existsSync(filePath)) continue;
+
+                console.log(`🔧 Fixing ${filePath} -> ${errorMsg.substring(0, 60)}...`);
+                
+                const content = fs.readFileSync(filePath, 'utf8');
+                const prompt = `Migrate this Dart code to Flutter 3.x with Null Safety. Fix this error:\n"${errorMsg}"\n\nCODE:\n${content}\n\nOUTPUT: Full corrected Dart file code ONLY.`;
+                
+                try {
+                    const fixedCode = extractCode(await callAI(prompt));
+                    if (fixedCode.length > 50) {
+                        fs.writeFileSync(filePath, fixedCode);
+                        console.log(`✅ Fixed ${filePath}`);
+                        processedFiles.add(filePath);
+                        count++;
+                    }
+                } catch (e) { console.error(`Failed ${filePath}`, e); }
+            }
+          }
+
+          main();
+          EOF
+          
+          node ai_repair.js
           flutter pub get
-          flutter build apk --release --no-android-gradle-daemon \
-            --split-debug-info=build/app/outputs/symbols \
-            --extra-gen-snapshot-options=--no-use-integer-division
 
-      - name: Upload Finished APK
-        uses: actions/upload-artifact@v4
+      - name: 🔄 Retry Build
+        if: steps.build_1.outcome == 'failure'
+        working-directory: ${{ env.CLEAN_PROJECT }}
+        run: |
+          echo "🔄 Retrying build..."
+          flutter build apk --release --no-android-gradle-daemon
+
+      - name: 📤 Prepare & Upload Artifact
+        id: prepare_artifact
+        run: |
+          APK_PATH=$(find $CLEAN_PROJECT/build/app/outputs/flutter-apk -name "*.apk" -not -name "*-unsigned.apk" | head -n 1)
+          
+          if [ -f "$APK_PATH" ]; then
+            echo "✅ Build Success!"
+            mv "$APK_PATH" "$WORKSPACE/${SAFE_NAME}.apk"
+            echo "FINAL_APK=$WORKSPACE/${SAFE_NAME}.apk" >> $GITHUB_ENV
+          else
+            echo "❌ Build Failed."
+            exit 1
+          fi
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v1
         with:
-          name: ${{ github.event.inputs.app_name }}
-          path: temp_project/build/app/outputs/flutter-apk/app-release.apk
+          tag_name: build-${{ env.BUILD_ID }}
+          name: "${{ env.APP_NAME }}"
+          body: |
+            ✅ **بناء ناجح (نظام الزراعة النظيفة)**
+            
+            📱 **التطبيق:** ${{ env.APP_NAME }}
+            📦 **الحزمة:** ${{ env.PACKAGE_NAME }}
+            🛠️ **الإصلاحات:**
+            - تم إنشاء مشروع حديث نظيف.
+            - تم نقل الكود والأصول.
+            - تم استخراج ونقل الصلاحيات (Permissions) بنجاح.
+            - تم تحديث المكتبات تلقائياً.
+          files: ${{ env.FINAL_APK }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,4 +1,4 @@
-name: Smart Flutter Cloud Build
+name: Smart Flutter Cloud Build (AI Powered)
 
 on:
   repository_dispatch:
@@ -17,10 +17,6 @@ on:
       zip_url:
         description: 'Project ZIP URL'
         required: true
-      build_mode:
-        description: 'Build Mode'
-        default: 'release'
-        required: false
 
 env:
   PROJECT_DIR: ${{ github.workspace }}/flutter_project
@@ -30,36 +26,27 @@ env:
   PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name }}
   ICON_URL: ${{ github.event.client_payload.icon_url || github.event.inputs.icon_url }}
   ZIP_URL: ${{ github.event.client_payload.zip_url || github.event.inputs.zip_url }}
-  BUILD_MODE: ${{ github.event.client_payload.build_mode || github.event.inputs.build_mode || 'release' }}
+  # يمكنك استخدام gpt-4o أو gpt-3.5-turbo أو أي نموذج متوافق
+  AI_MODEL: "gpt-4o" 
 
 jobs:
   analyze-and-build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    permissions:
+      contents: write
     
     steps:
-      - name: Setup System Environment
+      - name: Setup Environment
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq wget unzip imagemagick sed
-          
+          sudo apt-get install -y -qq wget unzip imagemagick sed curl
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-
-      - name: Download and Extract Project
-        run: |
-          wget -q --show-progress -O project.zip "$ZIP_URL"
-          mkdir -p $PROJECT_DIR
-          unzip -q project.zip -d temp_extract
-          if [ "$(ls -A temp_extract | wc -l)" == "1" ] && [ -d "temp_extract/$(ls -A temp_extract)" ]; then
-            mv temp_extract/*/* $PROJECT_DIR/
-          else
-            mv temp_extract/* $PROJECT_DIR/
-          fi
-          rm -rf temp_extract project.zip
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -67,248 +54,187 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Smart Fix Legacy Projects (Pubspec)
+      - name: Download Project
+        run: |
+          wget -q --show-progress -O project.zip "$ZIP_URL"
+          mkdir -p $PROJECT_DIR
+          unzip -q project.zip -d temp_extract
+          # نقل الملفات بذكاء سواء كانت في مجلد فرعي أو في الجذر مباشرة
+          if [ "$(ls -A temp_extract | wc -l)" == "1" ] && [ -d "temp_extract/$(ls -A temp_extract)" ]; then
+            mv temp_extract/*/* $PROJECT_DIR/
+          else
+            mv temp_extract/* $PROJECT_DIR/
+          fi
+          rm -rf temp_extract project.zip
+
+      # --- 1. التحضير الأولي والإصلاحات التقليدية ---
+      - name: Basic Fixes & Config
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
+          # 1. إنشاء ملف key.properties
+          echo "storePassword=android" > android/key.properties
+          echo "keyPassword=android" >> android/key.properties
+          echo "keyAlias=androiddebugkey" >> android/key.properties
+          echo "storeFile=../debug.keystore" >> android/key.properties
+
+          # 2. إنشاء Keystore
+          cd android
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          cd ..
+
+          # 3. إصلاح Google Services (وهمي إذا لم يوجد)
+          if [ ! -f "android/app/google-services.json" ]; then
+             echo '{"project_info":{"project_number":"0","project_id":"dummy","storage_bucket":"dummy"},"client":[{"client_info":{"mobilesdk_app_id":"1:0:android:0","android_client_info":{"package_name":"'"$PACKAGE_NAME"'"}},"api_key":[{"current_key":"dummy"}]}]}' > android/app/google-services.json
+          fi
+
+          # 4. معالجة الأيقونة
+          rm -rf android/app/src/main/res/mipmap-*
+          wget -q -O icon.png "$ICON_URL"
+          mkdir -p android/app/src/main/res/mipmap-xxhdpi
+          convert icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          # (يمكنك إضافة بقية الأحجام هنا)
+
+          # 5. تحديث Pubspec لضمان التوافق
           if [ -f "pubspec.yaml" ]; then
             sed -i 's/sdk: ">=2.0.[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
-            sed -i 's/sdk: ">=2.[1-9].[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
-            sed -i "s/sdk: '>=2.0.[0-9].*'/sdk: '>=2.12.0 <4.0.0'/" pubspec.yaml || true
           fi
 
-      - name: Fix Firebase & Resources
+      # --- 2. محاولة البناء الأولى ---
+      - name: First Build Attempt
+        id: build_1
         working-directory: ${{ env.PROJECT_DIR }}
+        continue-on-error: true
         run: |
-          # Firebase Options
-          if [ ! -f "lib/firebase_options.dart" ]; then
-            mkdir -p lib
-            cat > lib/firebase_options.dart << 'EOF'
-          import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
-          import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform, kIsWeb;
-          class DefaultFirebaseOptions {
-            static FirebaseOptions get currentPlatform {
-              if (kIsWeb) return android;
-              switch (defaultTargetPlatform) {
-                case TargetPlatform.android: return android;
-                default: throw UnsupportedError('Platform not supported');
-              }
-            }
-            static const FirebaseOptions android = FirebaseOptions(
-              apiKey: 'DUMMY_KEY', appId: '1:123:android:123', messagingSenderId: '123', projectId: 'dummy', storageBucket: 'dummy'
-            );
-          }
-          EOF
-          fi
-
-          # Google Services JSON
-          mkdir -p android/app
-          if [ ! -f "android/app/google-services.json" ]; then
-            cat > android/app/google-services.json << EOF
-          {
-            "project_info": { "project_number": "123", "project_id": "dummy", "storage_bucket": "dummy" },
-            "client": [{
-              "client_info": { "mobilesdk_app_id": "1:123:android:123", "android_client_info": { "package_name": "${PACKAGE_NAME}" } },
-              "api_key": [{ "current_key": "dummy" }],
-              "services": { "appinvite_service": { "status": 1 } }
-            }]
-          }
-          EOF
-          fi
-
-          # AndroidManifest fixes
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ]; then
-            sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$MANIFEST"
-            if ! grep -q 'android:exported="true"' "$MANIFEST"; then
-               sed -i 's/<activity/<activity android:exported="true"/g' "$MANIFEST"
-            fi
-          fi
-          
-          # Strings.xml
-          mkdir -p android/app/src/main/res/values
-          cat > android/app/src/main/res/values/strings.xml << EOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <string name="app_name">${APP_NAME}</string>
-          </resources>
-          EOF
-
-      - name: Replace build.gradle (Clean & Fixed)
-        working-directory: ${{ env.PROJECT_DIR }}/android/app
-        run: |
-          cp build.gradle build.gradle.backup
-          
-          # We add google-services plugin here. 
-          # Note: If the project uses the new "plugins DSL" in settings.gradle, this is fine.
-          # If it uses the old "apply plugin" method, this is also fine as we replaced the whole file.
-          cat > build.gradle << 'GRADLE_EOF'
-          plugins {
-              id "com.android.application"
-              id "kotlin-android"
-              id "dev.flutter.flutter-gradle-plugin"
-              id "com.google.gms.google-services"
-          }
-          
-          def localProperties = new Properties()
-          def localPropertiesFile = rootProject.file('local.properties')
-          if (localPropertiesFile.exists()) {
-              localPropertiesFile.withReader('UTF-8') { reader ->
-                  localProperties.load(reader)
-              }
-          }
-          
-          def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
-          if (flutterVersionCode == null) {
-              flutterVersionCode = '1'
-          }
-          
-          def flutterVersionName = localProperties.getProperty('flutter.versionName')
-          if (flutterVersionName == null) {
-              flutterVersionName = '1.0'
-          }
-          
-          android {
-              namespace "PLACEHOLDER_PACKAGE"
-              compileSdkVersion flutter.compileSdkVersion
-              ndkVersion flutter.ndkVersion
-              
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-              
-              kotlinOptions {
-                  jvmTarget = '17'
-              }
-              
-              sourceSets {
-                  main.java.srcDirs += 'src/main/kotlin'
-              }
-              
-              defaultConfig {
-                  applicationId "PLACEHOLDER_PACKAGE"
-                  minSdkVersion 21
-                  targetSdkVersion flutter.targetSdkVersion
-                  versionCode flutterVersionCode.toInteger()
-                  versionName flutterVersionName
-                  multiDexEnabled true
-              }
-              
-              signingConfigs {
-                  release {
-                      storeFile file("../debug.keystore")
-                      storePassword "android"
-                      keyAlias "androiddebugkey"
-                      keyPassword "android"
-                  }
-              }
-              
-              buildTypes {
-                  release {
-                      signingConfig signingConfigs.release
-                      minifyEnabled false
-                      shrinkResources false
-                  }
-              }
-          }
-          
-          dependencies {
-              implementation platform('com.google.firebase:firebase-bom:32.7.0')
-          }
-          
-          flutter {
-              source '../..'
-          }
-          GRADLE_EOF
-          
-          sed -i "s/PLACEHOLDER_PACKAGE/${PACKAGE_NAME}/g" build.gradle
-
-      - name: Fix Gradle Settings & Root (Smart)
-        working-directory: ${{ env.PROJECT_DIR }}/android
-        run: |
-          sed -i 's/gradle-[0-9.]*-/gradle-8.9-/' gradle/wrapper/gradle-wrapper.properties 2>/dev/null || true
-          
-          if [ -f "settings.gradle" ]; then
-             # ONLY inject if plugins block exists AND google-services is NOT present
-             if grep -q "plugins {" "settings.gradle"; then
-                if ! grep -q "com.google.gms.google-services" "settings.gradle"; then
-                   sed -i '/plugins {/a \    id "com.google.gms.google-services" version "4.4.0" apply false' settings.gradle
-                fi
-             fi
-             
-             # Kotlin fixes
-             sed -i "s/kotlin(\"android\") version \"[^\"]*\"/kotlin(\"android\") version \"1.9.20\"/g" settings.gradle || true
-             sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '1.9.20'/g" settings.gradle || true
-          fi
-          
-          # Legacy build.gradle check (if settings.gradle doesn't use plugins block)
-          if [ -f "build.gradle" ]; then
-             if grep -q "buildscript" "build.gradle"; then
-                if ! grep -q "google-services" "build.gradle"; then
-                   sed -i '/dependencies {/a \        classpath "com.google.gms:google-services:4.4.0"' build.gradle
-                fi
-             fi
-          fi
-
-      - name: Setup Signing Key
-        working-directory: ${{ env.PROJECT_DIR }}/android
-        run: |
-          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-
-      - name: Process Icon
-        run: |
-          rm -rf $PROJECT_DIR/android/app/src/main/res/mipmap-*
-          declare -a sizes=("48x48:mdpi" "72x72:hdpi" "96x96:xhdpi" "144x144:xxhdpi" "192x192:xxxhdpi")
-          wget -q -O icon.png "$ICON_URL"
-          for size in "${sizes[@]}"; do
-             IFS=":" read -r px name <<< "$size"
-             mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-$name
-             convert icon.png -resize $px $PROJECT_DIR/android/app/src/main/res/mipmap-$name/ic_launcher.png
-          done
-
-      - name: Build APK (with Auto Fix)
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          flutter clean
-          
-          # Fix legacy issues
-          dart fix --apply || true
-          
           flutter pub get
+          flutter build apk --release --no-android-gradle-daemon > build_log.txt 2>&1
+        
+      # --- 3. التدخل الذكي (AI Auto-Fix) يعمل فقط عند الفشل ---
+      - name: AI Auto-Fix (If Failed)
+        if: steps.build_1.outcome == 'failure'
+        working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.AI_API_KEY }}
+        run: |
+          echo "❌ Build Failed. Starting AI Repair..."
           
-          flutter build apk --$BUILD_MODE \
-            --target-platform=android-arm,android-arm64,android-x64 \
-            --no-android-gradle-daemon \
-            --release || \
-          flutter build apk --$BUILD_MODE \
-            --target-platform=android-arm,android-arm64,android-x64 \
-            --no-android-gradle-daemon \
-            --android-skip-build-dependency-validation
+          # إنشاء سكربت المعالجة
+          cat > ai_repair.js << 'EOF'
+          const fs = require('fs');
+          const https = require('https');
+
+          const API_KEY = process.env.OPENAI_API_KEY;
+          if (!API_KEY) { console.error("No API Key found!"); process.exit(1); }
+
+          async function callAI(prompt) {
+            const data = JSON.stringify({
+              model: "gpt-4o", // أو gpt-3.5-turbo
+              messages: [
+                { role: "system", content: "You are a senior Flutter DevOps engineer. You fix build errors by correcting 'pubspec.yaml' and 'android/build.gradle'. Return ONLY the full corrected file content within code blocks." },
+                { role: "user", content: prompt }
+              ]
+            });
+
+            return new Promise((resolve, reject) => {
+              const req = https.request({
+                hostname: 'api.openai.com',
+                path: '/v1/chat/completions',
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${API_KEY}`
+                }
+              }, (res) => {
+                let body = '';
+                res.on('data', d => body += d);
+                res.on('end', () => {
+                  try {
+                    const parsed = JSON.parse(body);
+                    if(parsed.error) reject(parsed.error.message);
+                    else resolve(parsed.choices[0].message.content);
+                  } catch(e) { reject(e); }
+                });
+              });
+              req.on('error', reject);
+              req.write(data);
+              req.end();
+            });
+          }
+
+          function extractCode(response) {
+            const match = response.match(/```(?:yaml|gradle)?\n([\s\S]*?)\n```/);
+            return match ? match[1] : response;
+          }
+
+          async function main() {
+            // قراءة الخطأ
+            const log = fs.readFileSync('build_log.txt', 'utf8').slice(-3000); // آخر 3000 حرف
+            const pubspec = fs.readFileSync('pubspec.yaml', 'utf8');
+            let gradle = "";
+            try { gradle = fs.readFileSync('android/app/build.gradle', 'utf8'); } catch(e){}
+
+            console.log("Analyze Error...");
+
+            // 1. إصلاح Pubspec (Dependency Hell)
+            if (log.includes("version solving failed") || log.includes("Error: Method not found")) {
+                console.log("Fixing pubspec.yaml...");
+                const prompt = `Fix this Flutter dependency error. \n\nERROR:\n${log}\n\nCURRENT PUBSPEC:\n${pubspec}\n\nProvide the FULL corrected pubspec.yaml file only.`;
+                const newPubspec = extractCode(await callAI(prompt));
+                fs.writeFileSync('pubspec.yaml', newPubspec);
+                console.log("✅ pubspec.yaml updated.");
+            }
+
+            // 2. إصلاح Gradle (Kotlin/Namespace issues)
+            if (log.includes("Namespace") || log.includes("Gradle") || log.includes("minSdkVersion")) {
+                console.log("Fixing build.gradle...");
+                const prompt = `Fix this Android Gradle error in Flutter. \n\nERROR:\n${log}\n\nCURRENT GRADLE:\n${gradle}\n\nProvide the FULL corrected android/app/build.gradle file only. Ensure namespace is present.`;
+                const newGradle = extractCode(await callAI(prompt));
+                fs.writeFileSync('android/app/build.gradle', newGradle);
+                console.log("✅ build.gradle updated.");
+            }
+          }
+
+          main().catch(console.error);
+          EOF
+
+          # تشغيل السكربت (يتطلب Node.js وهو موجود افتراضيًا)
+          node ai_repair.js
           
-          APK_DIR="build/app/outputs/flutter-apk"
-          GENERATED_APK=$(find $APK_DIR -name "*.apk" -not -name "*-unsigned.apk" | head -n 1)
-          
-          if [ -f "$GENERATED_APK" ]; then
-            FINAL_APK="$APK_DIR/${SAFE_NAME}.apk"
-            cp "$GENERATED_APK" "$FINAL_APK"
-            echo "✅ Build Successful: $FINAL_APK"
-            echo "APK_PATH=$PWD/$FINAL_APK" >> $GITHUB_ENV
+          # تنظيف ومحاولة تجهيز المكتبات مرة أخرى
+          flutter clean
+          flutter pub get
+
+      # --- 4. محاولة البناء الثانية (بعد الإصلاح) ---
+      - name: Retry Build (After AI Fix)
+        if: steps.build_1.outcome == 'failure'
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          echo "🔄 Retrying build after AI fixes..."
+          flutter build apk --release --no-android-gradle-daemon
+
+      # --- 5. استخراج الناتج النهائي ---
+      - name: Prepare Artifact
+        id: prepare_artifact
+        run: |
+          APK_PATH=$(find $PROJECT_DIR/build/app/outputs/flutter-apk -name "*.apk" -not -name "*-unsigned.apk" | head -n 1)
+          if [ -f "$APK_PATH" ]; then
+            echo "✅ Build Success!"
+            mv "$APK_PATH" "$PROJECT_DIR/${SAFE_NAME}.apk"
+            echo "FINAL_APK=$PROJECT_DIR/${SAFE_NAME}.apk" >> $GITHUB_ENV
           else
-            echo "❌ Build Failed: APK not found"
+            echo "❌ Build Failed even after AI attempt."
             exit 1
           fi
 
-      - name: Upload to GitHub Release
+      - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: build-${{ env.BUILD_ID }}
           name: "${{ env.APP_NAME }}"
           body: |
-            ✅ **تم البناء بنجاح**
+            ✅ **تم البناء بنجاح** (Smart Build)
             📱 **التطبيق:** ${{ env.APP_NAME }}
             📦 **الحزمة:** ${{ env.PACKAGE_NAME }}
-            ⚠️ **هام:** يجب حذف أي نسخة سابقة من الهاتف قبل تثبيت هذه النسخة.
-          files: |
-            ${{ env.APK_PATH }}
+            ✨ **تم الإصلاح الذاتي:** ${{ steps.build_1.outcome == 'failure' }}
+          files: ${{ env.FINAL_APK }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

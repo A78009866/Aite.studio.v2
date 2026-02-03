@@ -1,88 +1,314 @@
-name: Build Flutter APK with AI Repair
+name: Smart Flutter Cloud Build
 
 on:
   repository_dispatch:
     types: [build-flutter]
   workflow_dispatch:
     inputs:
-      zip_url:
-        required: true
       app_name:
+        description: 'App Name'
         required: true
+      package_name:
+        description: 'Package Name'
+        required: true
+      icon_url:
+        description: 'Icon URL'
+        required: true
+      zip_url:
+        description: 'Project ZIP URL'
+        required: true
+      build_mode:
+        description: 'Build Mode'
+        default: 'release'
+        required: false
+
+env:
+  PROJECT_DIR: ${{ github.workspace }}/flutter_project
+  BUILD_ID: ${{ github.event.client_payload.request_id || github.run_id }}
+  APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name }}
+  SAFE_NAME: ${{ github.event.client_payload.safe_name || 'app-release' }}
+  PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name }}
+  ICON_URL: ${{ github.event.client_payload.icon_url || github.event.inputs.icon_url }}
+  ZIP_URL: ${{ github.event.client_payload.zip_url || github.event.inputs.zip_url }}
+  BUILD_MODE: ${{ github.event.client_payload.build_mode || github.event.inputs.build_mode || 'release' }}
 
 jobs:
-  build:
+  analyze-and-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      # تثبيت Node.js لتشغيل سكريبت الإصلاح
-      - name: Setup Node.js (for AI script)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-      - run: npm install axios
-
-      # إعداد بيئة جافا
+      - name: Setup System Environment
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq wget unzip imagemagick sed
+          
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # إعداد Flutter
+      - name: Download and Extract Project
+        run: |
+          wget -q --show-progress -O project.zip "$ZIP_URL"
+          mkdir -p $PROJECT_DIR
+          unzip -q project.zip -d temp_extract
+          if [ "$(ls -A temp_extract | wc -l)" == "1" ] && [ -d "temp_extract/$(ls -A temp_extract)" ]; then
+            mv temp_extract/*/* $PROJECT_DIR/
+          else
+            mv temp_extract/* $PROJECT_DIR/
+          fi
+          rm -rf temp_extract project.zip
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.0'
           channel: 'stable'
+          cache: true
 
-      # تحميل مشروع المستخدم
-      - name: Download & Unzip Project
+      - name: Smart Fix Legacy Projects (Pubspec)
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          wget -O project.zip "${{ github.event.client_payload.zip_url || inputs.zip_url }}"
-          unzip project.zip -d flutter_project
-          # نقل الملفات للمسار الرئيسي إذا كانت داخل مجلد فرعي
-          if [ -d "flutter_project/android" ]; then
-             mv flutter_project/* .
-          else
-             # البحث عن المجلد الذي يحتوي على pubspec.yaml
-             DIR=$(find flutter_project -name "pubspec.yaml" -exec dirname {} \;)
-             mv $DIR/* .
+          if [ -f "pubspec.yaml" ]; then
+            sed -i 's/sdk: ">=2.0.[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
+            sed -i 's/sdk: ">=2.[1-9].[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
+            sed -i "s/sdk: '>=2.0.[0-9].*'/sdk: '>=2.12.0 <4.0.0'/" pubspec.yaml || true
           fi
 
-      - name: Flutter Pub Get
-        run: flutter pub get
-
-      # المحاولة الأولى للبناء
-      - name: First Build Attempt
-        id: build_1
-        continue-on-error: true
-        run: flutter build apk --release > build_log.txt 2>&1
-
-      # --- مرحلة الذكاء الاصطناعي ---
-      - name: 🚑 AI Auto-Repair
-        if: steps.build_1.outcome == 'failure'
-        env:
-          AI_API_KEY: ${{ secrets.AI_API_KEY }} # المفتاح مخزن في GitHub Secrets
-        run: node ai-repair.js
-
-      # المحاولة الثانية (بعد الإصلاح)
-      - name: Retry Build (After AI Fix)
-        if: steps.build_1.outcome == 'failure'
-        run: flutter build apk --release
-
-      # إرسال الملف إلى تيليجرام (كما في كودك السابق)
-      - name: Send to Telegram
-        if: success()
-        env:
-            TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-            TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: Fix Firebase & Resources
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-            APK_PATH=$(find build/app/outputs/flutter-apk -name "app-release.apk")
-            curl -v -F "chat_id=$TG_CHAT" \
-            -F "document=@$APK_PATH" \
-            -F "caption=✅ *Flutter Build Success (AI Assisted)*" \
-            https://api.telegram.org/bot$TG_TOKEN/sendDocument
+          # Firebase Options
+          if [ ! -f "lib/firebase_options.dart" ]; then
+            mkdir -p lib
+            cat > lib/firebase_options.dart << 'EOF'
+          import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+          import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform, kIsWeb;
+          class DefaultFirebaseOptions {
+            static FirebaseOptions get currentPlatform {
+              if (kIsWeb) return android;
+              switch (defaultTargetPlatform) {
+                case TargetPlatform.android: return android;
+                default: throw UnsupportedError('Platform not supported');
+              }
+            }
+            static const FirebaseOptions android = FirebaseOptions(
+              apiKey: 'DUMMY_KEY', appId: '1:123:android:123', messagingSenderId: '123', projectId: 'dummy', storageBucket: 'dummy'
+            );
+          }
+          EOF
+          fi
+
+          # Google Services JSON
+          mkdir -p android/app
+          if [ ! -f "android/app/google-services.json" ]; then
+            cat > android/app/google-services.json << EOF
+          {
+            "project_info": { "project_number": "123", "project_id": "dummy", "storage_bucket": "dummy" },
+            "client": [{
+              "client_info": { "mobilesdk_app_id": "1:123:android:123", "android_client_info": { "package_name": "${PACKAGE_NAME}" } },
+              "api_key": [{ "current_key": "dummy" }],
+              "services": { "appinvite_service": { "status": 1 } }
+            }]
+          }
+          EOF
+          fi
+
+          # AndroidManifest fixes
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' "$MANIFEST"
+            if ! grep -q 'android:exported="true"' "$MANIFEST"; then
+               sed -i 's/<activity/<activity android:exported="true"/g' "$MANIFEST"
+            fi
+          fi
+          
+          # Strings.xml
+          mkdir -p android/app/src/main/res/values
+          cat > android/app/src/main/res/values/strings.xml << EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">${APP_NAME}</string>
+          </resources>
+          EOF
+
+      - name: Replace build.gradle (Clean & Fixed)
+        working-directory: ${{ env.PROJECT_DIR }}/android/app
+        run: |
+          cp build.gradle build.gradle.backup
+          
+          # We add google-services plugin here. 
+          # Note: If the project uses the new "plugins DSL" in settings.gradle, this is fine.
+          # If it uses the old "apply plugin" method, this is also fine as we replaced the whole file.
+          cat > build.gradle << 'GRADLE_EOF'
+          plugins {
+              id "com.android.application"
+              id "kotlin-android"
+              id "dev.flutter.flutter-gradle-plugin"
+              id "com.google.gms.google-services"
+          }
+          
+          def localProperties = new Properties()
+          def localPropertiesFile = rootProject.file('local.properties')
+          if (localPropertiesFile.exists()) {
+              localPropertiesFile.withReader('UTF-8') { reader ->
+                  localProperties.load(reader)
+              }
+          }
+          
+          def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+          if (flutterVersionCode == null) {
+              flutterVersionCode = '1'
+          }
+          
+          def flutterVersionName = localProperties.getProperty('flutter.versionName')
+          if (flutterVersionName == null) {
+              flutterVersionName = '1.0'
+          }
+          
+          android {
+              namespace "PLACEHOLDER_PACKAGE"
+              compileSdkVersion flutter.compileSdkVersion
+              ndkVersion flutter.ndkVersion
+              
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+              
+              sourceSets {
+                  main.java.srcDirs += 'src/main/kotlin'
+              }
+              
+              defaultConfig {
+                  applicationId "PLACEHOLDER_PACKAGE"
+                  minSdkVersion 21
+                  targetSdkVersion flutter.targetSdkVersion
+                  versionCode flutterVersionCode.toInteger()
+                  versionName flutterVersionName
+                  multiDexEnabled true
+              }
+              
+              signingConfigs {
+                  release {
+                      storeFile file("../debug.keystore")
+                      storePassword "android"
+                      keyAlias "androiddebugkey"
+                      keyPassword "android"
+                  }
+              }
+              
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                      minifyEnabled false
+                      shrinkResources false
+                  }
+              }
+          }
+          
+          dependencies {
+              implementation platform('com.google.firebase:firebase-bom:32.7.0')
+          }
+          
+          flutter {
+              source '../..'
+          }
+          GRADLE_EOF
+          
+          sed -i "s/PLACEHOLDER_PACKAGE/${PACKAGE_NAME}/g" build.gradle
+
+      - name: Fix Gradle Settings & Root (Smart)
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        run: |
+          sed -i 's/gradle-[0-9.]*-/gradle-8.9-/' gradle/wrapper/gradle-wrapper.properties 2>/dev/null || true
+          
+          if [ -f "settings.gradle" ]; then
+             # ONLY inject if plugins block exists AND google-services is NOT present
+             if grep -q "plugins {" "settings.gradle"; then
+                if ! grep -q "com.google.gms.google-services" "settings.gradle"; then
+                   sed -i '/plugins {/a \    id "com.google.gms.google-services" version "4.4.0" apply false' settings.gradle
+                fi
+             fi
+             
+             # Kotlin fixes
+             sed -i "s/kotlin(\"android\") version \"[^\"]*\"/kotlin(\"android\") version \"1.9.20\"/g" settings.gradle || true
+             sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '1.9.20'/g" settings.gradle || true
+          fi
+          
+          # Legacy build.gradle check (if settings.gradle doesn't use plugins block)
+          if [ -f "build.gradle" ]; then
+             if grep -q "buildscript" "build.gradle"; then
+                if ! grep -q "google-services" "build.gradle"; then
+                   sed -i '/dependencies {/a \        classpath "com.google.gms:google-services:4.4.0"' build.gradle
+                fi
+             fi
+          fi
+
+      - name: Setup Signing Key
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        run: |
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Process Icon
+        run: |
+          rm -rf $PROJECT_DIR/android/app/src/main/res/mipmap-*
+          declare -a sizes=("48x48:mdpi" "72x72:hdpi" "96x96:xhdpi" "144x144:xxhdpi" "192x192:xxxhdpi")
+          wget -q -O icon.png "$ICON_URL"
+          for size in "${sizes[@]}"; do
+             IFS=":" read -r px name <<< "$size"
+             mkdir -p $PROJECT_DIR/android/app/src/main/res/mipmap-$name
+             convert icon.png -resize $px $PROJECT_DIR/android/app/src/main/res/mipmap-$name/ic_launcher.png
+          done
+
+      - name: Build APK (with Auto Fix)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          flutter clean
+          
+          # Fix legacy issues
+          dart fix --apply || true
+          
+          flutter pub get
+          
+          flutter build apk --$BUILD_MODE \
+            --target-platform=android-arm,android-arm64,android-x64 \
+            --no-android-gradle-daemon \
+            --release || \
+          flutter build apk --$BUILD_MODE \
+            --target-platform=android-arm,android-arm64,android-x64 \
+            --no-android-gradle-daemon \
+            --android-skip-build-dependency-validation
+          
+          APK_DIR="build/app/outputs/flutter-apk"
+          GENERATED_APK=$(find $APK_DIR -name "*.apk" -not -name "*-unsigned.apk" | head -n 1)
+          
+          if [ -f "$GENERATED_APK" ]; then
+            FINAL_APK="$APK_DIR/${SAFE_NAME}.apk"
+            cp "$GENERATED_APK" "$FINAL_APK"
+            echo "✅ Build Successful: $FINAL_APK"
+            echo "APK_PATH=$PWD/$FINAL_APK" >> $GITHUB_ENV
+          else
+            echo "❌ Build Failed: APK not found"
+            exit 1
+          fi
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: build-${{ env.BUILD_ID }}
+          name: "${{ env.APP_NAME }}"
+          body: |
+            ✅ **تم البناء بنجاح**
+            📱 **التطبيق:** ${{ env.APP_NAME }}
+            📦 **الحزمة:** ${{ env.PACKAGE_NAME }}
+            ⚠️ **هام:** يجب حذف أي نسخة سابقة من الهاتف قبل تثبيت هذه النسخة.
+          files: |
+            ${{ env.APK_PATH }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -26,7 +26,6 @@ env:
   PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name }}
   ICON_URL: ${{ github.event.client_payload.icon_url || github.event.inputs.icon_url }}
   ZIP_URL: ${{ github.event.client_payload.zip_url || github.event.inputs.zip_url }}
-  # إعدادات Z.AI (ZhipuAI)
   AI_BASE_URL: "https://open.bigmodel.cn/api/paas/v4/chat/completions"
   AI_MODEL: "glm-4" 
 
@@ -67,27 +66,39 @@ jobs:
           fi
           rm -rf temp_extract project.zip
 
-      - name: Basic Fixes & Config
+      - name: Smart Pre-Build Sanitization
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
+          echo "🧹 Cleaning up problematic Gradle configurations..."
+          
+          # 1. حذف استدعاء ملفات التوقيع الخارجية المفقودة
+          # هذا الأمر يحذف أي سطر يحتوي على 'signing.gradle'
+          find . -name "build.gradle" -exec sed -i '/signing\.gradle/d' {} +
+          find . -name "build.gradle" -exec sed -i '/apply from:.*signing/d' {} +
+          
+          # 2. إنشاء ملف key.properties محلي
           echo "storePassword=android" > android/key.properties
           echo "keyPassword=android" >> android/key.properties
           echo "keyAlias=androiddebugkey" >> android/key.properties
           echo "storeFile=../debug.keystore" >> android/key.properties
 
+          # 3. إنشاء Keystore
           cd android
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           cd ..
 
+          # 4. إصلاح Google Services
           if [ ! -f "android/app/google-services.json" ]; then
              echo '{"project_info":{"project_number":"0","project_id":"dummy","storage_bucket":"dummy"},"client":[{"client_info":{"mobilesdk_app_id":"1:0:android:0","android_client_info":{"package_name":"'"$PACKAGE_NAME"'"}},"api_key":[{"current_key":"dummy"}]}]}' > android/app/google-services.json
           fi
 
+          # 5. معالجة الأيقونة
           rm -rf android/app/src/main/res/mipmap-*
           wget -q -O icon.png "$ICON_URL"
           mkdir -p android/app/src/main/res/mipmap-xxhdpi
           convert icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
 
+          # 6. إصلاح Pubspec
           if [ -f "pubspec.yaml" ]; then
             sed -i 's/sdk: ">=2.0.[0-9].*"/sdk: ">=2.12.0 <4.0.0"/' pubspec.yaml || true
           fi
@@ -116,18 +127,17 @@ jobs:
           const { URL } = require('url');
 
           const API_KEY = process.env.OPENAI_API_KEY;
-          const BASE_URL = process.env.AI_BASE_URL; // e.g. https://open.bigmodel.cn/api/paas/v4/chat/completions
+          const BASE_URL = process.env.AI_BASE_URL;
           const MODEL = process.env.AI_MODEL || "glm-4";
 
           if (!API_KEY) { console.error("No API Key found!"); process.exit(1); }
 
           async function callAI(prompt) {
             const endpoint = new URL(BASE_URL);
-            
             const postData = JSON.stringify({
               model: MODEL,
               messages: [
-                { role: "system", content: "You are a senior Flutter DevOps engineer. You fix build errors by correcting 'pubspec.yaml' and 'android/build.gradle'. Return ONLY the full corrected file content within code blocks." },
+                { role: "system", content: "You are a senior Flutter DevOps engineer. You fix build errors. Return ONLY the full corrected file content within code blocks." },
                 { role: "user", content: prompt }
               ],
               temperature: 0.1
@@ -138,10 +148,7 @@ jobs:
                 hostname: endpoint.hostname,
                 path: endpoint.pathname + endpoint.search,
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${API_KEY}`
-                }
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}` }
               }, (res) => {
                 let body = '';
                 res.on('data', d => body += d);
@@ -150,7 +157,7 @@ jobs:
                     const parsed = JSON.parse(body);
                     if(parsed.error) reject(JSON.stringify(parsed.error));
                     else if(parsed.choices && parsed.choices[0]) resolve(parsed.choices[0].message.content);
-                    else reject("Invalid response format: " + body);
+                    else reject("Invalid response: " + body);
                   } catch(e) { reject(e); }
                 });
               });
@@ -161,36 +168,35 @@ jobs:
           }
 
           function extractCode(response) {
-            // تنظيف النص لاستخراج الكود فقط
             const match = response.match(/```(?:yaml|gradle|groovy)?\n([\s\S]*?)\n```/);
             return match ? match[1] : response;
           }
 
           async function main() {
-            const log = fs.readFileSync('build_log.txt', 'utf8').slice(-3500);
+            const log = fs.readFileSync('build_log.txt', 'utf8').slice(-4000);
             const pubspec = fs.readFileSync('pubspec.yaml', 'utf8');
             let gradle = "";
             try { gradle = fs.readFileSync('android/app/build.gradle', 'utf8'); } catch(e){}
 
             console.log(`🤖 Consulting Z.AI (${MODEL})...`);
 
-            // 1. إصلاح Pubspec
-            if (log.includes("version solving failed") || log.includes("Error: Method not found") || log.includes("depends on")) {
-                console.log("Fixing pubspec.yaml...");
-                const prompt = `Fix this Flutter dependency error (resolve version conflicts).\n\nERROR LOG:\n${log}\n\nCURRENT PUBSPEC:\n${pubspec}\n\nOUTPUT: Full corrected pubspec.yaml only.`;
-                try {
-                    const newPubspec = extractCode(await callAI(prompt));
-                    if(newPubspec.length > 50) {
-                        fs.writeFileSync('pubspec.yaml', newPubspec);
-                        console.log("✅ pubspec.yaml updated.");
+            // 1. إصلاح الملفات المفقودة (مثل signing.gradle)
+            if (log.includes("Could not read script") || log.includes("does not exist")) {
+                 console.log("Fixing missing script references in build.gradle...");
+                 const prompt = `The build failed because a script file is missing. \n\nERROR:\n${log}\n\nCURRENT GRADLE:\n${gradle}\n\nTASK: Remove the line causing the import error (e.g. apply from: 'signing.gradle') and return the clean build.gradle file.`;
+                 try {
+                    const newGradle = extractCode(await callAI(prompt));
+                    if(newGradle.length > 50) {
+                        fs.writeFileSync('android/app/build.gradle', newGradle);
+                        console.log("✅ build.gradle cleaned.");
                     }
-                } catch(err) { console.error("Z.AI Error (Pubspec):", err); }
+                 } catch(err) { console.error("Z.AI Error (Script Fix):", err); }
             }
 
-            // 2. إصلاح Gradle (مشكلة Kotlin التي ظهرت في سجلك)
-            if (log.includes("Namespace") || log.includes("Gradle") || log.includes("minSdkVersion") || log.includes("Kotlin")) {
-                console.log("Fixing build.gradle...");
-                const prompt = `Fix this Android Gradle error. Ensure 'namespace' is defined. Fix Kotlin version mismatch if mentioned.\n\nERROR LOG:\n${log}\n\nCURRENT GRADLE:\n${gradle}\n\nOUTPUT: Full corrected android/app/build.gradle only.`;
+            // 2. إصلاح مشاكل Kotlin/Gradle
+            else if (log.includes("Namespace") || log.includes("Gradle") || log.includes("Kotlin") || log.includes("minSdkVersion")) {
+                console.log("Fixing Gradle/Kotlin issues...");
+                const prompt = `Fix this Android Gradle error. Ensure 'namespace' is defined. If Kotlin version is deprecated, update it.\n\nERROR:\n${log}\n\nCURRENT GRADLE:\n${gradle}\n\nOUTPUT: Full corrected android/app/build.gradle only.`;
                 try {
                     const newGradle = extractCode(await callAI(prompt));
                     if(newGradle.length > 50) {
@@ -198,6 +204,16 @@ jobs:
                         console.log("✅ build.gradle updated.");
                     }
                 } catch(err) { console.error("Z.AI Error (Gradle):", err); }
+            }
+
+            // 3. إصلاح Pubspec
+            if (log.includes("version solving failed") || log.includes("depends on")) {
+                console.log("Fixing pubspec.yaml...");
+                const prompt = `Fix this Flutter dependency error.\n\nERROR:\n${log}\n\nCURRENT PUBSPEC:\n${pubspec}\n\nOUTPUT: Full corrected pubspec.yaml only.`;
+                try {
+                    const newPubspec = extractCode(await callAI(prompt));
+                    if(newPubspec.length > 50) fs.writeFileSync('pubspec.yaml', newPubspec);
+                } catch(err) { console.error("Z.AI Error (Pubspec):", err); }
             }
           }
 
@@ -237,6 +253,7 @@ jobs:
           body: |
             ✅ **تم البناء بنجاح** (Z.AI Powered)
             📱 **التطبيق:** ${{ env.APP_NAME }}
+            📦 **الحزمة:** ${{ env.PACKAGE_NAME }}
             ✨ **تم الإصلاح الذاتي:** ${{ steps.build_1.outcome == 'failure' }}
           files: ${{ env.FINAL_APK }}
         env:

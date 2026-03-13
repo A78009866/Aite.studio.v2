@@ -335,3 +335,34 @@ jobs:
           files: ${{ env.FINAL_APK }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Send APK to Telegram
+        if: success()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TG_TOKEN" ]; then
+            echo "⚠️ TELEGRAM_BOT_TOKEN not set, skipping Telegram notification."
+            exit 0
+          fi
+
+          if [ -z "$TG_CHAT" ]; then
+            echo "⚠️ TELEGRAM_CHAT_ID not set, skipping Telegram notification."
+            exit 0
+          fi
+
+          echo "🚀 Sending APK to Telegram..."
+
+          curl -s -F "chat_id=$TG_CHAT" \
+            -F "document=@$FINAL_APK" \
+            -F "caption=✅ *Flutter Build Success!*
+
+          📱 *App Name:* $APP_NAME
+          📦 *Package:* $PACKAGE_NAME
+
+          _Built by Aite.studio_" \
+            -F "parse_mode=Markdown" \
+            https://api.telegram.org/bot$TG_TOKEN/sendDocument
+
+          echo "✅ APK sent to Telegram!"

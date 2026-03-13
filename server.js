@@ -16,10 +16,10 @@ const app = express();
 // Configuration
 // =============================================================================
 const CONFIG = {
-  MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE) || 500 * 1024 * 1024,
-  MAX_ICON_SIZE: 10 * 1024 * 1024,
+  MAX_FILE_SIZE: Infinity,
+  MAX_ICON_SIZE: Infinity,
   TEMP_DIR: process.env.TEMP_DIR || '/tmp/aite-studio',
-  UPLOAD_TIMEOUT: parseInt(process.env.UPLOAD_TIMEOUT) || 300000,
+  UPLOAD_TIMEOUT: parseInt(process.env.UPLOAD_TIMEOUT) || 600000,
 };
 
 // =============================================================================
@@ -32,8 +32,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID']
 }));
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '4gb' }));
+app.use(express.urlencoded({ extended: true, limit: '4gb' }));
 
 // =============================================================================
 // Cloudinary Configuration
@@ -83,16 +83,20 @@ class FlutterProjectAnalyzer {
   }
 
   async analyzeFromFolder(files) {
-    console.log('[FlutterAnalyzer] Analyzing folder upload...');
+    console.log('[FlutterAnalyzer] Analyzing folder upload... files=' + files.length);
     const projectDir = path.join(this.tempDir, 'project');
     await fs.mkdir(projectDir, { recursive: true });
 
     for (const file of files) {
-      const relativePath = file.relativePath || file.originalname;
-      const safePath = relativePath.replace(/^\.\.\//, '').replace(/^\//, '');
+      const relativePath = file.originalname || file.name || 'unknown';
+      const safePath = relativePath.replace(/\.\.\//g, '').replace(/^\//, '');
       const destPath = path.join(projectDir, safePath);
       await fs.mkdir(path.dirname(destPath), { recursive: true });
-      await fs.copyFile(file.path, destPath);
+      try {
+        await fs.copyFile(file.path, destPath);
+      } catch (copyErr) {
+        console.warn('[FlutterAnalyzer] Could not copy: ' + relativePath + ' - ' + copyErr.message);
+      }
     }
 
     this.projectRoot = await this.findProjectRoot(projectDir);
@@ -317,7 +321,7 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
   storage: diskStorage,
-  limits: { fileSize: CONFIG.MAX_FILE_SIZE, files: 5000 },
+  limits: { fileSize: Infinity, files: 50000, fieldSize: Infinity, fieldNameSize: 1000 },
   fileFilter: fileFilter
 });
 
@@ -379,10 +383,7 @@ app.post('/build-flutter',
 
       console.log('[' + requestId + '] Icon=' + iconFile.originalname + ' Type=' + uploadType + ' Files=' + projectFiles.length);
 
-      if (iconFile.size > CONFIG.MAX_ICON_SIZE) {
-        await cleanupTemp(tempDir);
-        return res.status(400).json(makeErrorResponse('ICON_TOO_LARGE', 'Icon max size is ' + formatFileSize(CONFIG.MAX_ICON_SIZE)));
-      }
+      // No icon size limit
 
       const safeAppName = sanitizeFilename(appName);
 
@@ -416,12 +417,6 @@ app.post('/build-flutter',
         if (isDirectZip && projectFiles.length === 1) {
           projectInfo = await analyzer.analyzeFromZip(firstFile.path);
         } else {
-          for (let i = 0; i < projectFiles.length; i++) {
-            const f = projectFiles[i];
-            if (req.body['relativePath_' + f.originalname]) {
-              f.relativePath = req.body['relativePath_' + f.originalname];
-            }
-          }
           projectInfo = await analyzer.analyzeFromFolder(projectFiles);
         }
 

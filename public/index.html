@@ -931,21 +931,24 @@
             if (currentUploadType === 'zip') {
                 fd.append('projectFiles', projectFiles[0], projectFiles[0].name);
             } else {
-                projectFiles.forEach(function(file) {
-                    fd.append('projectFiles', file, file.name);
-                    if (file.webkitRelativePath) {
-                        fd.append('relativePath_' + file.name, file.webkitRelativePath);
-                    }
+                projectFiles.forEach(function(file, index) {
+                    var fileName = file.webkitRelativePath || file.name;
+                    fd.append('projectFiles', file, fileName);
                 });
             }
 
             try {
                 var res = await fetch('/build-flutter', { method: 'POST', body: fd });
-                var data = await res.json();
+                var data;
+                try {
+                    data = await res.json();
+                } catch (parseErr) {
+                    throw new Error('Server error (' + res.status + ')');
+                }
                 if (data.success) {
                     startPolling(data.build_id, data.safe_app_name, data.icon_url, data.app_name, data.package_name);
                 } else {
-                    throw new Error(data.error || 'Build failed');
+                    throw new Error(data.error || data.details || 'Build failed');
                 }
             } catch (err) {
                 handleError(err.message);

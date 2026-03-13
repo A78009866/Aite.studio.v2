@@ -19,7 +19,7 @@ const app = express();
 const CONFIG = {
   MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE) || 500 * 1024 * 1024,
   MAX_ICON_SIZE: 10 * 1024 * 1024,
-  TEMP_DIR: process.env.TEMP_DIR || '/tmp/aite-studio',
+  TEMP_DIR: process.env.TEMP_DIR || '/tmp/flutter-builder',
   UPLOAD_TIMEOUT: parseInt(process.env.UPLOAD_TIMEOUT) || 300000,
 };
 
@@ -47,257 +47,85 @@ cloudinary.config({
 });
 
 // =============================================================================
-// Intelligent File Structure Analyzer
+// Flutter Project Analyzer
 // =============================================================================
 
-class ProjectAnalyzer {
-  constructor(files, tempDir) {
-    this.files = files;
+class FlutterProjectAnalyzer {
+  constructor(tempDir) {
     this.tempDir = tempDir;
     this.structure = {
-      hasRootIndex: false,
-      htmlFiles: [],
-      entryPoint: null,
+      hasPubspec: false,
+      hasLib: false,
+      hasAndroid: false,
+      hasAssets: false,
+      hasGoogleServices: false,
       isNested: false,
       rootFolder: null,
-      assetFolders: [],
-      type: 'unknown' // 'single_html', 'flat', 'nested', 'build_output'
+      dartFiles: [],
+      projectName: null,
+      type: 'unknown'
     };
   }
 
-  async analyze() {
-    console.log('[Analyzer] Starting project analysis...');
-    
-    // Get all file paths
-    const paths = this.files.map(f => f.relativePath || f.originalname);
-    console.log(`[Analyzer] Total files: ${paths.length}`);
-    
-    // Find HTML files
-    this.structure.htmlFiles = paths.filter(p => 
-      p.toLowerCase().endsWith('.html') || p.toLowerCase().endsWith('.htm')
-    );
-    
-    console.log(`[Analyzer] HTML files found: ${this.structure.htmlFiles.length}`);
-    this.structure.htmlFiles.forEach(f => console.log(`  - ${f}`));
-    
-    // Check for root-level index.html
-    this.structure.hasRootIndex = this.structure.htmlFiles.some(p => {
-      const parts = p.split('/');
-      return parts[parts.length - 1].toLowerCase().startsWith('index') && parts.length <= 2;
-    });
-    
-    // Detect if files are nested inside a single folder
+  analyzeFromZip(zipPath) {
+    console.log('[FlutterAnalyzer] Analyzing ZIP contents...');
+    const zip = new AdmZip(zipPath);
+    const entries = zip.getEntries();
+    const paths = entries.map(e => e.entryName);
+    return this._analyzePaths(paths);
+  }
+
+  analyzeFromFiles(files) {
+    console.log('[FlutterAnalyzer] Analyzing uploaded files...');
+    const paths = files.map(f => f.relativePath || f.webkitRelativePath || f.originalname);
+    return this._analyzePaths(paths);
+  }
+
+  _analyzePaths(paths) {
+    console.log(`[FlutterAnalyzer] Total entries: ${paths.length}`);
+
+    // Check for nested structure (single root folder)
     const firstParts = paths[0]?.split('/') || [];
     if (firstParts.length > 1) {
       const potentialRoot = firstParts[0];
-      const allInSameRoot = paths.every(p => p.startsWith(potentialRoot + '/'));
+      const allInSameRoot = paths.every(p => p.startsWith(potentialRoot + '/') || p === potentialRoot);
       if (allInSameRoot && paths.length > 1) {
         this.structure.isNested = true;
         this.structure.rootFolder = potentialRoot;
-        console.log(`[Analyzer] Detected nested structure in: ${potentialRoot}`);
+        console.log(`[FlutterAnalyzer] Detected nested structure in: ${potentialRoot}`);
       }
     }
-    
-    // Detect build output folders (www, dist, build)
-    const buildFolders = ['www', 'dist', 'build', 'public', 'output'];
-    for (const folder of buildFolders) {
-      const hasFolder = paths.some(p => p.startsWith(folder + '/') || p === folder);
-      const hasIndexInFolder = paths.some(p => 
-        p.startsWith(folder + '/') && p.toLowerCase().endsWith('index.html')
-      );
-      if (hasFolder && hasIndexInFolder) {
-        this.structure.type = 'build_output';
-        this.structure.buildFolder = folder;
-        console.log(`[Analyzer] Detected build output folder: ${folder}`);
-        break;
-      }
-    }
-    
-    // Determine entry point with priority
-    this.findEntryPoint();
-    
+
+    // Normalize paths
+    const normalizedPaths = this.structure.isNested
+      ? paths.map(p => p.replace(new RegExp('^' + this.structure.rootFolder + '/'), ''))
+      : paths;
+
+    // Check for key Flutter files
+    this.structure.hasPubspec = normalizedPaths.some(p => p === 'pubspec.yaml' || p.endsWith('/pubspec.yaml'));
+    this.structure.hasLib = normalizedPaths.some(p => p.startsWith('lib/') || p === 'lib');
+    this.structure.hasAndroid = normalizedPaths.some(p => p.startsWith('android/') || p === 'android');
+    this.structure.hasAssets = normalizedPaths.some(p => p.startsWith('assets/') || p === 'assets');
+    this.structure.hasGoogleServices = normalizedPaths.some(p => p.includes('google-services.json'));
+
+    // Find Dart files
+    this.structure.dartFiles = normalizedPaths.filter(p => p.endsWith('.dart'));
+    console.log(`[FlutterAnalyzer] Dart files found: ${this.structure.dartFiles.length}`);
+
     // Determine project type
-    if (this.structure.htmlFiles.length === 1 && !this.structure.isNested) {
-      this.structure.type = 'single_html';
-    } else if (this.structure.hasRootIndex && !this.structure.isNested) {
-      this.structure.type = 'flat';
-    } else if (this.structure.isNested) {
-      this.structure.type = 'nested';
+    if (this.structure.hasPubspec && (this.structure.hasLib || this.structure.dartFiles.length > 0)) {
+      this.structure.type = this.structure.isNested ? 'nested_flutter' : 'valid_flutter';
+    } else {
+      this.structure.type = 'invalid';
     }
-    
-    console.log(`[Analyzer] Project type: ${this.structure.type}`);
-    console.log(`[Analyzer] Entry point: ${this.structure.entryPoint}`);
-    
+
+    console.log(`[FlutterAnalyzer] Project type: ${this.structure.type}`);
+    console.log(`[FlutterAnalyzer] Has pubspec.yaml: ${this.structure.hasPubspec}`);
+    console.log(`[FlutterAnalyzer] Has lib/: ${this.structure.hasLib}`);
+    console.log(`[FlutterAnalyzer] Has android/: ${this.structure.hasAndroid}`);
+    console.log(`[FlutterAnalyzer] Has assets/: ${this.structure.hasAssets}`);
+
     return this.structure;
-  }
-  
-  findEntryPoint() {
-    const candidates = this.structure.htmlFiles;
-    
-    // Priority 1: Root-level index.html
-    const rootIndex = candidates.find(p => {
-      const parts = p.split('/');
-      const name = parts[parts.length - 1].toLowerCase();
-      return name.startsWith('index') && parts.length <= 2;
-    });
-    
-    if (rootIndex) {
-      this.structure.entryPoint = rootIndex;
-      return;
-    }
-    
-    // Priority 2: Any index.html in subdirectories
-    const anyIndex = candidates.find(p => 
-      p.toLowerCase().includes('index') || 
-      p.toLowerCase().includes('home')
-    );
-    
-    if (anyIndex) {
-      this.structure.entryPoint = anyIndex;
-      return;
-    }
-    
-    // Priority 3: First HTML file
-    if (candidates.length > 0) {
-      this.structure.entryPoint = candidates[0];
-    }
-  }
-  
-  async prepareForBuild() {
-    console.log('[Analyzer] Preparing files for build...');
-    
-    const wwwDir = path.join(this.tempDir, 'www');
-    await fs.mkdir(wwwDir, { recursive: true });
-    
-    // Strategy based on structure type
-    switch (this.structure.type) {
-      case 'single_html':
-        await this.prepareSingleHtml(wwwDir);
-        break;
-      case 'build_output':
-        await this.prepareBuildOutput(wwwDir);
-        break;
-      case 'nested':
-        await this.prepareNested(wwwDir);
-        break;
-      case 'flat':
-      default:
-        await this.prepareFlat(wwwDir);
-        break;
-    }
-    
-    // Ensure index.html exists at root of www
-    await this.ensureIndexHtml(wwwDir);
-    
-    return wwwDir;
-  }
-  
-  async prepareSingleHtml(wwwDir) {
-    console.log('[Analyzer] Preparing single HTML file...');
-    const file = this.files[0];
-    const destPath = path.join(wwwDir, 'index.html');
-    await fs.copyFile(file.path, destPath);
-  }
-  
-  async prepareBuildOutput(wwwDir) {
-    console.log(`[Analyzer] Preparing build output from ${this.structure.buildFolder}...`);
-    const buildDir = this.structure.buildFolder;
-    
-    for (const file of this.files) {
-      const relativePath = file.relativePath || file.originalname;
-      if (relativePath.startsWith(buildDir + '/')) {
-        const destRelative = relativePath.slice(buildDir.length + 1);
-        const destPath = path.join(wwwDir, destRelative);
-        await fs.mkdir(path.dirname(destPath), { recursive: true });
-        await fs.copyFile(file.path, destPath);
-      }
-    }
-  }
-  
-  async prepareNested(wwwDir) {
-    console.log(`[Analyzer] Preparing nested structure from ${this.structure.rootFolder}...`);
-    const root = this.structure.rootFolder;
-    
-    for (const file of this.files) {
-      const relativePath = file.relativePath || file.originalname;
-      if (relativePath.startsWith(root + '/')) {
-        const destRelative = relativePath.slice(root.length + 1);
-        const destPath = path.join(wwwDir, destRelative);
-        await fs.mkdir(path.dirname(destPath), { recursive: true });
-        await fs.copyFile(file.path, destPath);
-      }
-    }
-  }
-  
-  async prepareFlat(wwwDir) {
-    console.log('[Analyzer] Preparing flat structure...');
-    
-    for (const file of this.files) {
-      const relativePath = file.relativePath || file.originalname;
-      // Remove any parent directory references for safety
-      const safePath = relativePath.replace(/^\.\.\//, '').replace(/^\//, '');
-      const destPath = path.join(wwwDir, safePath);
-      
-      await fs.mkdir(path.dirname(destPath), { recursive: true });
-      await fs.copyFile(file.path, destPath);
-    }
-  }
-  
-  async ensureIndexHtml(wwwDir) {
-    const indexPath = path.join(wwwDir, 'index.html');
-    
-    // Check if index.html exists
-    try {
-      await fs.access(indexPath);
-      console.log('[Analyzer] index.html already exists');
-      return;
-    } catch {
-      console.log('[Analyzer] Creating index.html...');
-    }
-    
-    // Find the entry point file
-    const entryFile = this.structure.entryPoint;
-    if (!entryFile) {
-      throw new Error('No HTML entry point found');
-    }
-    
-    // Get just the filename
-    const entryName = path.basename(entryFile);
-    
-    // If entry point is not index.html, copy or redirect
-    if (entryName.toLowerCase() !== 'index.html') {
-      const entryPath = path.join(wwwDir, entryName);
-      
-      try {
-        // Try to copy the entry file to index.html
-        await fs.copyFile(entryPath, indexPath);
-        console.log(`[Analyzer] Copied ${entryName} to index.html`);
-      } catch (err) {
-        // If file doesn't exist at root, search for it
-        const files = await fs.readdir(wwwDir, { recursive: true });
-        const foundEntry = files.find(f => f.toLowerCase().endsWith(entryName.toLowerCase()));
-        
-        if (foundEntry) {
-          const sourcePath = path.join(wwwDir, foundEntry);
-          await fs.copyFile(sourcePath, indexPath);
-          console.log(`[Analyzer] Copied ${foundEntry} to index.html`);
-        } else {
-          // Create a redirect page
-          const redirectHtml = `<!DOCTYPE html>
-<html>
-<head>
-  <meta http-equiv="refresh" content="0; url=${entryName}">
-  <title>Redirecting...</title>
-</head>
-<body>
-  <p>Redirecting to <a href="${entryName}">${entryName}</a>...</p>
-</body>
-</html>`;
-          await fs.writeFile(indexPath, redirectHtml);
-          console.log(`[Analyzer] Created redirect to ${entryName}`);
-        }
-      }
-    }
   }
 }
 
@@ -433,7 +261,7 @@ const upload = multer({
   storage: diskStorage,
   limits: {
     fileSize: CONFIG.MAX_FILE_SIZE,
-    files: 2000 // Allow up to 2000 files for large projects
+    files: 5000 // Allow up to 5000 files for large Flutter projects
   },
   fileFilter: fileFilter
 });
@@ -446,33 +274,32 @@ const upload = multer({
 app.get('/health', (req, res) => {
   res.json(makeSuccessResponse({
     status: 'healthy',
-    version: '4.0.0-intelligent',
+    version: '1.0.0-flutter-builder',
     features: {
-      webToApk: true,
-      intelligentStructure: true,
-      htmlFile: true,
+      flutterBuild: true,
       folderUpload: true,
       zipUpload: true,
       nestedProjects: true,
-      buildOutputDetection: true
+      aiRepair: true,
+      oldProjectSupport: true
     }
   }));
 });
 
 // =============================================================================
-// Main Build Endpoint - Intelligent Web to APK
+// Main Build Endpoint - Flutter APK Builder
 // =============================================================================
 
-app.post('/build-web2apk', 
+app.post('/build-flutter', 
   upload.fields([
     { name: 'icon', maxCount: 1 },
-    { name: 'projectFiles', maxCount: 2000 }
+    { name: 'projectFiles', maxCount: 5000 }
   ]),
   async (req, res) => {
     const requestId = generateBuildId();
     const tempDir = req.tempDir;
     
-    console.log(`[${requestId}] 🚀 New intelligent build request`);
+    console.log(`[${requestId}] New Flutter build request`);
     
     try {
       const owner = process.env.GITHUB_REPO_OWNER;
@@ -516,7 +343,7 @@ app.post('/build-web2apk',
       const iconFile = req.files.icon[0];
       const projectFiles = req.files.projectFiles;
 
-      console.log(`[${requestId}] 📊 Upload summary:`);
+      console.log(`[${requestId}] Upload summary:`);
       console.log(`  - Icon: ${iconFile.originalname} (${formatFileSize(iconFile.size)})`);
       console.log(`  - Upload Type: ${uploadType}`);
       console.log(`  - Total Files: ${projectFiles.length}`);
@@ -532,12 +359,12 @@ app.post('/build-web2apk',
       const safeAppName = sanitizeFilename(appName);
 
       // Upload Icon
-      console.log(`[${requestId}] 📤 Uploading icon...`);
+      console.log(`[${requestId}] Uploading icon...`);
       let iconUpload;
       try {
         const iconBuffer = await fs.readFile(iconFile.path);
         iconUpload = await uploadToCloudinaryBuffer(iconBuffer, {
-          folder: 'aite_studio/icons',
+          folder: 'flutter_builder/icons',
           public_id: `${sanitizeFilename(packageName)}_icon_${requestId}`,
           resource_type: 'image',
           overwrite: true,
@@ -546,7 +373,7 @@ app.post('/build-web2apk',
             { quality: 'auto:good', fetch_format: 'png' }
           ]
         });
-        console.log(`[${requestId}] ✅ Icon uploaded: ${iconUpload.secure_url}`);
+        console.log(`[${requestId}] Icon uploaded: ${iconUpload.secure_url}`);
       } catch (err) {
         await cleanupTemp(tempDir);
         return res.status(500).json(makeErrorResponse(
@@ -556,116 +383,122 @@ app.post('/build-web2apk',
         ));
       }
 
-      // Intelligent Project Processing
-      console.log(`[${requestId}] 🧠 Analyzing project structure...`);
+      // Flutter Project Processing
+      console.log(`[${requestId}] Analyzing Flutter project structure...`);
       
       let zipBuffer;
       let zipUpload;
       
       try {
-        // Check if it's a direct ZIP upload
         const firstFile = projectFiles[0];
         const isDirectZip = uploadType === 'zip' || 
                            firstFile.originalname.toLowerCase().endsWith('.zip') ||
                            firstFile.mimetype === 'application/zip';
         
         if (isDirectZip && projectFiles.length === 1) {
-          // Use ZIP directly but analyze its structure
-          console.log(`[${requestId}] 📦 Using uploaded ZIP directly`);
-          zipBuffer = await fs.readFile(firstFile.path);
+          // Direct ZIP upload - analyze and use as-is
+          console.log(`[${requestId}] Processing uploaded ZIP...`);
+          const analyzer = new FlutterProjectAnalyzer(tempDir);
+          const structure = analyzer.analyzeFromZip(firstFile.path);
           
-          // Analyze ZIP contents for logging
-          try {
-            const zip = new AdmZip(firstFile.path);
-            const entries = zip.getEntries();
-            const htmlFiles = entries.filter(e => e.entryName.toLowerCase().endsWith('.html'));
-            console.log(`[${requestId}] 📂 ZIP contains ${entries.length} entries, ${htmlFiles.length} HTML files`);
-            
-            if (htmlFiles.length > 0) {
-              console.log(`[${requestId}] 📄 HTML files: ${htmlFiles.map(e => e.entryName).join(', ')}`);
-            }
-          } catch (zipErr) {
-            console.log(`[${requestId}] ⚠️ Could not analyze ZIP: ${zipErr.message}`);
+          console.log(`[${requestId}] Flutter analysis: ${structure.type}`);
+          console.log(`  - Dart files: ${structure.dartFiles.length}`);
+          console.log(`  - Has pubspec: ${structure.hasPubspec}`);
+          console.log(`  - Has lib/: ${structure.hasLib}`);
+          
+          if (structure.type === 'invalid') {
+            console.log(`[${requestId}] Warning: Project may not be a valid Flutter project, proceeding anyway...`);
           }
           
+          zipBuffer = await fs.readFile(firstFile.path);
+          
         } else {
-          // Use intelligent analyzer for folder uploads
-          console.log(`[${requestId}] 🔍 Running intelligent structure analysis...`);
-          const analyzer = new ProjectAnalyzer(projectFiles, tempDir);
-          const structure = await analyzer.analyze();
+          // Folder upload - create ZIP from files
+          console.log(`[${requestId}] Creating ZIP from folder upload...`);
           
-          console.log(`[${requestId}] 📊 Analysis results:`);
-          console.log(`  - Type: ${structure.type}`);
-          console.log(`  - Entry Point: ${structure.entryPoint}`);
-          console.log(`  - Is Nested: ${structure.isNested}`);
+          const extractDir = path.join(tempDir, 'flutter_source');
+          await fs.mkdir(extractDir, { recursive: true });
           
-          // Prepare optimized structure
-          const wwwDir = await analyzer.prepareForBuild();
+          for (const file of projectFiles) {
+            const relativePath = file.relativePath || file.originalname;
+            const safePath = relativePath.replace(/^\.\.\//, '').replace(/^\//, '');
+            const destPath = path.join(extractDir, safePath);
+            await fs.mkdir(path.dirname(destPath), { recursive: true });
+            await fs.copyFile(file.path, destPath);
+          }
           
-          // Create optimized ZIP
-          console.log(`[${requestId}] 📦 Creating optimized ZIP...`);
-          const zipPath = path.join(tempDir, 'optimized-project.zip');
+          // Analyze the extracted files
+          const analyzer = new FlutterProjectAnalyzer(tempDir);
+          const structure = analyzer.analyzeFromFiles(projectFiles);
+          
+          console.log(`[${requestId}] Flutter analysis: ${structure.type}`);
+          
+          if (structure.type === 'invalid') {
+            console.log(`[${requestId}] Warning: Project may not be a valid Flutter project, proceeding anyway...`);
+          }
+          
+          // Create ZIP
+          console.log(`[${requestId}] Creating project ZIP...`);
+          const zipPath = path.join(tempDir, 'flutter-project.zip');
           const zip = new AdmZip();
           
-          // Add www folder contents to ZIP root (GitHub Actions expects this)
-          const addDirectoryToZip = (dirPath, zipPath) => {
+          const addDirectoryToZip = (dirPath, zipBasePath) => {
             const items = fsSync.readdirSync(dirPath);
             for (const item of items) {
               const fullPath = path.join(dirPath, item);
               const stat = fsSync.statSync(fullPath);
               if (stat.isDirectory()) {
-                addDirectoryToZip(fullPath, path.join(zipPath, item));
+                addDirectoryToZip(fullPath, path.join(zipBasePath, item));
               } else {
-                zip.addLocalFile(fullPath, zipPath);
+                zip.addLocalFile(fullPath, zipBasePath);
               }
             }
           };
           
-          addDirectoryToZip(wwwDir, '');
+          addDirectoryToZip(extractDir, '');
           zip.writeZip(zipPath);
           zipBuffer = await fs.readFile(zipPath);
           
-          console.log(`[${requestId}] ✅ Optimized ZIP created: ${formatFileSize(zipBuffer.length)}`);
+          console.log(`[${requestId}] ZIP created: ${formatFileSize(zipBuffer.length)}`);
         }
 
         // Upload ZIP to Cloudinary
-        console.log(`[${requestId}] 📤 Uploading project ZIP...`);
+        console.log(`[${requestId}] Uploading project ZIP...`);
         
         if (zipBuffer.length > 50 * 1024 * 1024) {
-          // Large file - use stream
           const zipPath = path.join(tempDir, 'large-project.zip');
           await fs.writeFile(zipPath, zipBuffer);
           zipUpload = await uploadLargeFileToCloudinary(zipPath, {
-            folder: 'aite_studio/web-projects',
+            folder: 'flutter_builder/projects',
             public_id: `${sanitizeFilename(packageName)}_source_${requestId}`,
             resource_type: 'raw',
             overwrite: true
           });
         } else {
           zipUpload = await uploadToCloudinaryBuffer(zipBuffer, {
-            folder: 'aite_studio/web-projects',
+            folder: 'flutter_builder/projects',
             public_id: `${sanitizeFilename(packageName)}_source_${requestId}`,
             resource_type: 'raw',
             overwrite: true
           });
         }
         
-        console.log(`[${requestId}] ✅ ZIP uploaded: ${zipUpload.secure_url}`);
+        console.log(`[${requestId}] ZIP uploaded: ${zipUpload.secure_url}`);
         
       } catch (err) {
         await cleanupTemp(tempDir);
         return res.status(500).json(makeErrorResponse(
           'ZIP_PROCESSING_FAIL',
-          'Failed to process project files',
+          'Failed to process Flutter project files',
           err.message
         ));
       }
 
       // Dispatch to GitHub Actions
-      console.log(`[${requestId}] 🚀 Dispatching to GitHub Actions...`);
+      console.log(`[${requestId}] Dispatching Flutter build to GitHub Actions...`);
       
       const githubPayload = {
-        event_type: 'build-web2apk',
+        event_type: 'build-flutter',
         client_payload: {
           app_name: appName,
           safe_name: safeAppName,
@@ -675,8 +508,7 @@ app.post('/build-web2apk',
           zip_url: zipUpload.secure_url,
           upload_type: uploadType || 'folder',
           request_id: requestId,
-          timestamp: new Date().toISOString(),
-          intelligent_build: true
+          timestamp: new Date().toISOString()
         }
       };
 
@@ -694,7 +526,7 @@ app.post('/build-web2apk',
         validateStatus: null
       });
 
-      console.log(`[${requestId}] 📡 GitHub response: ${resp.status}`);
+      console.log(`[${requestId}] GitHub response: ${resp.status}`);
 
       if (resp.status >= 200 && resp.status < 300) {
         await cleanupTemp(tempDir);
@@ -707,8 +539,7 @@ app.post('/build-web2apk',
           icon_url: iconUpload.secure_url,
           zip_url: zipUpload.secure_url,
           upload_type: uploadType,
-          intelligent_build: true,
-          message: 'Build started with intelligent structure detection',
+          message: 'Flutter build started successfully',
           check_status_url: `/check-status/${requestId}`
         }));
       } else {
@@ -722,7 +553,7 @@ app.post('/build-web2apk',
       }
 
     } catch (err) {
-      console.error(`[${requestId}] ❌ Error:`, err.stack || err.message);
+      console.error(`[${requestId}] Error:`, err.stack || err.message);
       await cleanupTemp(tempDir);
       return res.status(500).json(makeErrorResponse(
         'SERVER_ERROR',
@@ -929,13 +760,13 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log('='.repeat(60));
-  console.log('🚀 Aite.studio - Intelligent Web to APK Builder');
+  console.log('Flutter APK Builder - Cloud Build Service');
   console.log('='.repeat(60));
-  console.log(`📡 Port: ${PORT}`);
-  console.log(`📁 Temp: ${CONFIG.TEMP_DIR}`);
-  console.log(`📦 Max Size: ${formatFileSize(CONFIG.MAX_FILE_SIZE)}`);
-  console.log(`🧠 Features: Smart Structure Detection`);
-  console.log(`✅ Supports: HTML, Folders, ZIP, Nested Projects`);
+  console.log(`Port: ${PORT}`);
+  console.log(`Temp: ${CONFIG.TEMP_DIR}`);
+  console.log(`Max Size: ${formatFileSize(CONFIG.MAX_FILE_SIZE)}`);
+  console.log(`Supports: Flutter Folder, ZIP, Old & New Projects`);
+  console.log(`Features: AI Code Repair, Auto SDK Migration`);
   console.log('='.repeat(60));
 });
 

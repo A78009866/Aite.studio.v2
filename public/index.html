@@ -1,1093 +1,1075 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Flutter APK Builder | Build APK from Flutter Projects</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
-    
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-
+    <title>Aite.studio - Flutter to APK Builder</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-dark: #0a0a0a;
-            --bg-card: #161616;
-            --primary: #00E676;
-            --primary-dim: rgba(0, 230, 118, 0.1);
-            --text-main: #ffffff;
+            --primary: #00e676;
+            --primary-dark: #00c853;
+            --bg: #0a0a0a;
+            --card: #141414;
+            --card-hover: #1a1a1a;
+            --border: #222;
+            --text: #fff;
             --text-muted: #888;
-            --border: #2a2a2a;
-            --font-ar: 'Cairo', sans-serif;
-            --font-en: 'Outfit', sans-serif;
-            --glass-bg: rgba(22, 22, 22, 0.6);
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --success: #00E676;
-            --warning: #FFC107;
-            --error: #FF5252;
+            --danger: #ff4444;
+            --info: #2196F3;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; outline: none; -webkit-tap-highlight-color: transparent; }
+        * { margin:0; padding:0; box-sizing:border-box; }
 
         body {
-            font-family: var(--font-ar);
-            background-color: var(--bg-dark);
-            color: var(--text-main);
+            font-family: 'Cairo', 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
             min-height: 100vh;
-            display: flex; flex-direction: column; overflow-x: hidden;
+            overflow-x: hidden;
         }
 
-        /* --- Navbar --- */
-        .navbar {
-            padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center;
-            border-bottom: 1px solid var(--border); background: rgba(10, 10, 10, 0.8);
-            backdrop-filter: blur(20px); position: sticky; top: 0; z-index: 100;
+        /* Background Effect */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 30% 50%, rgba(0,230,118,0.03) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 50%, rgba(33,150,243,0.02) 0%, transparent 50%);
+            animation: bgFloat 20s ease-in-out infinite;
+            z-index: -1;
         }
-        .brand { font-family: var(--font-en); font-size: 1.6rem; font-weight: 700; color: white; text-decoration: none; }
-        .brand span { color: var(--primary); }
-        .nav-actions { display: flex; gap: 15px; align-items: center; }
-        
-        .lang-btn { 
-            background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: #fff; 
-            padding: 8px 14px; border-radius: 12px; cursor: pointer; transition: 0.3s; 
-            font-family: var(--font-en); font-size: 0.9rem;
-        }
-        .lang-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-dim); }
-        
-        .user-avatar { 
-            width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--border); 
-            cursor: pointer; transition: 0.3s; object-fit: cover;
-        }
-        .user-avatar:hover { border-color: var(--primary); box-shadow: 0 0 15px var(--primary-dim); }
 
-        /* --- Layout --- */
-        #appContent { flex: 1; display: none; width: 100%; }
-        .main-container {
-            display: flex; flex-wrap: wrap; padding: 2rem; gap: 4rem;
-            max-width: 1400px; margin: 0 auto; width: 100%;
-            justify-content: center; align-items: flex-start;
+        @keyframes bgFloat {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(-2%, -2%); }
         }
-        .config-panel { flex: 1 1 500px; max-width: 600px; width: 100%; animation: slideIn 0.6s ease; }
-        
-        /* --- Tabs Navigation --- */
-        .tabs-container {
-            display: flex; gap: 10px; margin-bottom: 30px; background: #111;
-            padding: 6px; border-radius: 16px; border: 1px solid var(--border);
-            width: fit-content;
-        }
-        .tab-btn {
-            background: transparent; border: none; color: #777; padding: 10px 25px;
-            border-radius: 12px; cursor: pointer; font-family: inherit; font-weight: 600;
-            transition: 0.3s; font-size: 1rem;
-        }
-        .tab-btn.active { background: var(--bg-card); color: white; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-        .tab-btn:hover:not(.active) { color: #aaa; }
 
-        /* --- Sections --- */
-        .section-view { display: none; animation: fadeIn 0.4s ease; }
-        .section-view.active { display: block; }
-
-        /* --- Form Elements --- */
-        .input-group { margin-bottom: 1.5rem; }
-        .input-label { display: block; margin-bottom: 10px; color: var(--text-muted); font-size: 0.95rem; font-weight: 600; }
-        .input-field {
-            width: 100%; background: var(--bg-card); border: 1px solid var(--border); padding: 16px 20px;
-            border-radius: 14px; color: white; font-size: 1rem; transition: 0.3s;
-        }
-        .input-field:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-dim); }
-
-        .upload-card {
-            background: var(--bg-card); border: 2px dashed var(--border); border-radius: 16px;
-            padding: 2rem; text-align: center; cursor: pointer; transition: 0.3s; position: relative;
-            overflow: hidden; margin-bottom: 1.5rem;
-        }
-        .upload-card:hover { border-color: var(--primary); background: var(--primary-dim); }
-        .upload-card.dragover { border-color: var(--primary); background: var(--primary-dim); transform: scale(1.02); }
-        .upload-icon { font-size: 2.5rem; color: #555; margin-bottom: 15px; transition: 0.3s; }
-        .upload-card:hover .upload-icon { color: var(--primary); transform: scale(1.1); }
-
-        /* --- File Preview Card --- */
-        .file-preview-card {
-            background: rgba(255,255,255,0.03); border: 1px solid var(--border);
-            border-radius: 14px; padding: 15px; display: none; align-items: center; gap: 15px;
-            margin-bottom: 25px; animation: fadeIn 0.4s; position: relative; overflow: hidden;
-        }
-        .file-preview-card::before {
-            content: ''; position: absolute; left: 0; top: 0; height: 100%; width: 4px; background: var(--primary);
-        }
-        .file-icon-box {
-            width: 50px; height: 50px; background: rgba(66, 165, 245, 0.1); border-radius: 12px;
-            display: flex; align-items: center; justify-content: center; color: #42A5F5; font-size: 1.8rem;
-        }
-        .file-info { flex: 1; overflow: hidden; }
-        .file-name { color: white; font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .file-meta { color: #777; font-size: 0.8rem; font-family: monospace; margin-top: 4px; display: flex; align-items: center; gap: 8px; }
-        .file-remove-btn {
-            background: transparent; border: none; color: #ff4444; cursor: pointer;
-            padding: 8px; font-size: 1.1rem; transition: 0.3s;
-        }
-        .file-remove-btn:hover { transform: scale(1.2); }
-
-        /* --- Structure Analysis Display --- */
-        .structure-analysis {
-            background: rgba(0, 230, 118, 0.05);
-            border: 1px solid rgba(0, 230, 118, 0.2);
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 20px;
-            display: none;
-            animation: slideIn 0.4s ease;
-        }
-        .structure-analysis.show { display: block; }
-        .structure-header {
+        /* Language Toggle */
+        .lang-toggle {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 100;
             display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 10px;
-            color: var(--primary);
-            font-weight: 600;
-        }
-        .structure-tree {
-            font-family: monospace;
-            font-size: 0.85rem;
-            color: #aaa;
-            max-height: 150px;
-            overflow-y: auto;
-            background: rgba(0,0,0,0.3);
-            padding: 10px;
+            gap: 5px;
+            background: var(--card);
+            border: 1px solid var(--border);
             border-radius: 8px;
-            line-height: 1.6;
+            padding: 4px;
         }
-        .tree-entry { color: var(--primary); font-weight: bold; }
-        .tree-folder { color: #F4D03F; }
-        .tree-file { color: #42A5F5; }
 
-        /* --- Files List for Folder Upload --- */
-        .files-list {
-            max-height: 200px;
-            overflow-y: auto;
-            background: rgba(0,0,0,0.3);
-            border-radius: 10px;
-            padding: 10px;
-            margin-top: 10px;
+        .lang-btn {
+            padding: 6px 12px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: all 0.2s;
         }
-        .files-list-item {
+
+        .lang-btn.active {
+            background: var(--primary);
+            color: #000;
+        }
+
+        /* Auth Area */
+        .auth-area {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            z-index: 100;
+        }
+
+        .auth-btn {
+            padding: 8px 16px;
+            border: 1px solid var(--border);
+            background: var(--card);
+            color: var(--text);
+            cursor: pointer;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .auth-btn:hover { border-color: var(--primary); }
+
+        .user-info {
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 8px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 12px;
+        }
+
+        .user-avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid var(--primary);
+        }
+
+        /* Nav */
+        nav {
+            background: var(--card);
             border-bottom: 1px solid var(--border);
-            font-size: 0.85rem;
-        }
-        .files-list-item:last-child { border-bottom: none; }
-        .files-list-item i { color: var(--primary); }
-
-        /* --- Phone Preview --- */
-        .preview-panel { flex: 1 1 350px; display: flex; justify-content: center; padding-top: 20px; perspective: 1000px; }
-        .phone-mockup {
-            width: 320px; height: 650px; background: #000; border-radius: 45px;
-            border: 10px solid #222; position: relative; overflow: hidden;
-            box-shadow: 0 50px 100px rgba(0,0,0,0.8); transition: transform 0.5s;
-        }
-        .phone-mockup:hover { transform: rotateY(-5deg) rotateX(5deg); }
-        
-        .phone-screen {
-            width: 100%; height: 100%; background: linear-gradient(135deg, #1a1a1a 0%, #050505 100%);
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            position: relative;
+            padding: 12px 0;
+            text-align: center;
         }
 
-        .phone-status-bar {
-            position: absolute; top: 15px; left: 0; width: 100%; padding: 0 25px;
-            display: flex; justify-content: space-between; align-items: center;
-            color: white; font-size: 12px; font-family: var(--font-en); font-weight: 600;
-            z-index: 10;
-        }
-        .phone-icons { display: flex; gap: 6px; font-size: 11px; }
-
-        .app-icon-preview { width: 90px; height: 90px; border-radius: 22px; margin-bottom: 25px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); object-fit: cover; }
-        .icon-placeholder {
-            width: 90px; height: 90px; border-radius: 22px; background: rgba(255,255,255,0.05);
-            display: flex; align-items: center; justify-content: center; font-size: 2.5rem; color: #333;
-            border: 2px dashed #333; margin-bottom: 25px;
-        }
-        .app-name-preview { font-size: 1.4rem; font-weight: 600; color: white; text-align: center; }
-
-        /* --- Glass Modals --- */
-        .glass-modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);
-            z-index: 2000; display: none; justify-content: center; align-items: center;
-            animation: fadeIn 0.3s;
-        }
-        .glass-card {
-            background: rgba(30, 30, 30, 0.6); backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border);
-            padding: 30px; border-radius: 24px; width: 90%; max-width: 380px;
-            text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-            transform: scale(0.9); animation: popIn 0.3s forwards;
-        }
-        .glass-btn {
-            width: 100%; padding: 12px; border-radius: 12px; border: none; font-weight: 600;
-            margin-top: 10px; cursor: pointer; transition: 0.2s;
-        }
-        .glass-btn.primary { background: var(--primary); color: #000; }
-        .glass-btn.secondary { background: rgba(255,255,255,0.1); color: #fff; }
-        .glass-btn:hover { opacity: 0.9; transform: scale(1.02); }
-
-        /* --- Action Button --- */
-        .action-btn {
-            width: 100%; background: var(--primary); color: #000; padding: 18px; border-radius: 14px;
-            font-weight: 700; font-size: 1.1rem; border: none; cursor: pointer;
-            display: flex; justify-content: center; align-items: center; gap: 12px;
-            transition: all 0.3s ease; box-shadow: 0 5px 20px rgba(0, 230, 118, 0.2);
-        }
-        .action-btn:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(0, 230, 118, 0.3); }
-        
-        .action-btn.not-ready {
-            opacity: 0.4;
-            cursor: not-allowed;
-            background: #333;
-            color: #888;
-            box-shadow: none;
-            transform: none !important;
-        }
-        
-        .action-btn.loading {
-            opacity: 0.7;
-            cursor: wait;
-            pointer-events: none;
+        nav .logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
         }
 
-        #statusContainer { margin-top: 25px; display: none; }
-        .progress-container { width: 100%; background: #222; height: 8px; border-radius: 10px; overflow: hidden; margin: 15px 0; }
-        .progress-bar { width: 0%; height: 100%; background: var(--primary); transition: width 0.4s ease; }
-        
-        .app-item {
-            background: var(--bg-card); padding: 15px; border-radius: 12px; border: 1px solid var(--border);
-            display: flex; align-items: center; gap: 15px; margin-bottom: 10px; transition: 0.3s;
+        nav .logo-icon {
+            width: 36px;
+            height: 36px;
         }
-        .app-item:hover { border-color: var(--primary); transform: translateX(5px); }
 
-        /* --- Upload Type Selector --- */
+        nav .logo-text {
+            font-size: 1.3rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary), var(--info));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Main Container */
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 30px 20px 60px;
+        }
+
+        /* Title */
+        .page-title {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .page-title h1 {
+            font-size: 1.8rem;
+            font-weight: 900;
+            margin-bottom: 8px;
+        }
+
+        .page-title h1 i { color: var(--info); }
+
+        .page-title p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        /* Card */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+
+        /* Form Group */
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .form-group input[type="text"] {
+            width: 100%;
+            padding: 12px 15px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border 0.2s;
+        }
+
+        .form-group input[type="text"]:focus {
+            border-color: var(--primary);
+        }
+
+        /* Upload Type Selector */
         .upload-type-selector {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             margin-bottom: 15px;
         }
+
         .upload-type-btn {
             flex: 1;
             padding: 12px;
-            background: var(--bg-card);
             border: 1px solid var(--border);
-            border-radius: 10px;
-            color: #888;
+            background: var(--bg);
+            color: var(--text-muted);
             cursor: pointer;
-            transition: 0.3s;
+            border-radius: 10px;
             font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
+
+        .upload-type-btn:hover { border-color: var(--primary); color: var(--text); }
+
         .upload-type-btn.active {
+            background: rgba(0,230,118,0.1);
             border-color: var(--primary);
             color: var(--primary);
-            background: var(--primary-dim);
-        }
-        .upload-type-btn:hover:not(.active) {
-            border-color: #444;
-            color: #aaa;
         }
 
-        /* --- Smart Detection Badge --- */
-        .smart-badge {
+        /* Drop Zone */
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 15px;
+        }
+
+        .drop-zone:hover, .drop-zone.drag-over {
+            border-color: var(--primary);
+            background: rgba(0,230,118,0.05);
+        }
+
+        .drop-zone i {
+            font-size: 2.5rem;
+            color: var(--primary);
+            margin-bottom: 10px;
+        }
+
+        .drop-zone .text-main {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 5px;
+        }
+
+        .drop-zone .text-sub {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .drop-zone.has-files {
+            border-color: var(--primary);
+            background: rgba(0,230,118,0.05);
+        }
+
+        /* File Info */
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 15px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        .file-info i { color: var(--primary); font-size: 1.2rem; }
+        .file-info .name { flex: 1; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .file-info .size { font-size: 0.8rem; color: var(--text-muted); }
+
+        /* Icon Area */
+        .icon-upload-area {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .icon-preview {
+            width: 80px;
+            height: 80px;
+            border-radius: 16px;
+            border: 2px dashed var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            overflow: hidden;
+            flex-shrink: 0;
+            transition: border 0.2s;
+        }
+
+        .icon-preview:hover { border-color: var(--primary); }
+
+        .icon-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .icon-preview i {
+            font-size: 1.5rem;
+            color: var(--text-muted);
+        }
+
+        /* Submit Button */
+        .submit-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            border: none;
+            border-radius: 12px;
+            color: #000;
+            font-family: inherit;
+            font-size: 1.1rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        .submit-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,230,118,0.3); }
+        .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+        .submit-btn.loading { pointer-events: none; }
+
+        /* Status Area */
+        .status-container {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .progress-bar-wrapper {
+            width: 100%;
+            height: 6px;
+            background: var(--bg);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--primary), var(--info));
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+
+        .status-label {
+            text-align: center;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        /* Result Area */
+        .result-card {
+            background: rgba(0,230,118,0.08);
+            border: 1px solid var(--primary);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .result-card h3 {
+            color: var(--text);
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+
+        .download-btn {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            background: rgba(0, 230, 118, 0.1);
-            color: var(--primary);
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-right: 10px;
+            gap: 8px;
+            padding: 12px 30px;
+            background: var(--primary);
+            color: #000;
+            border: none;
+            border-radius: 10px;
+            font-family: inherit;
+            font-size: 1rem;
+            font-weight: 700;
+            text-decoration: none;
+            transition: all 0.2s;
         }
 
-        @keyframes popIn { to { transform: scale(1); } }
-        @keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
-        @keyframes slideIn { from{opacity:0; transform:translateX(-20px);} to{opacity:1; transform:translateX(0);} }
-        .loader { width: 50px; height: 50px; border: 4px solid #333; border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { 100% {transform: rotate(360deg);} }
+        .download-btn:hover { background: var(--primary-dark); transform: translateY(-1px); }
 
-        @media (max-width: 900px) {
-            .main-container { flex-direction: column; align-items: center; gap: 2rem; padding: 1rem; }
-            .preview-panel { order: 1; width: 100%; transform: scale(0.9); margin-bottom: 0; margin-top: 20px; }
-            .config-panel { width: 100%; }
+        /* Error Result */
+        .error-card {
+            background: rgba(255,68,68,0.08);
+            border: 1px solid var(--danger);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .error-card h3 { color: var(--danger); margin-bottom: 8px; }
+        .error-card p { color: var(--text-muted); font-size: 0.9rem; }
+
+        /* My Apps Section */
+        .apps-section {
+            margin-top: 30px;
+        }
+
+        .apps-section h2 {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .apps-section h2 i { color: var(--primary); }
+
+        .app-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            transition: border 0.2s;
+        }
+
+        .app-item:hover { border-color: var(--primary); }
+
+        .app-item img {
+            width: 45px;
+            height: 45px;
+            border-radius: 10px;
+            object-fit: cover;
+        }
+
+        .app-item .info { flex: 1; overflow: hidden; }
+        .app-item .info h4 { font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .app-item .info p { font-size: 0.8rem; color: var(--text-muted); }
+
+        .app-item a {
+            color: var(--primary);
+            font-size: 1.2rem;
+            padding: 5px;
+        }
+
+        .empty-apps {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-muted);
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .container { padding: 20px 15px 40px; }
+            .page-title h1 { font-size: 1.4rem; }
+            .upload-type-selector { flex-direction: column; }
         }
     </style>
-<base target="_blank">
 </head>
-
 <body>
-
-    <div id="loadingOverlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg-dark); z-index:9999; display:flex; justify-content:center; align-items:center;">
-        <div class="loader"></div>
+    <!-- Language Toggle -->
+    <div class="lang-toggle">
+        <button class="lang-btn active" onclick="setLanguage('ar')" id="langAr">AR</button>
+        <button class="lang-btn" onclick="setLanguage('en')" id="langEn">EN</button>
     </div>
 
-    <div id="logoutModal" class="glass-modal-overlay">
-        <div class="glass-card">
-            <h3 id="t_logout_title" style="margin-bottom: 10px; color:white;">تسجيل الخروج؟</h3>
-            <p id="t_logout_desc" style="color:#aaa; margin-bottom: 20px;">هل أنت متأكد أنك تريد الخروج من حسابك؟</p>
-            <button onclick="auth.signOut(); closeModal('logoutModal')" class="glass-btn primary" id="t_confirm_logout">نعم، خروج</button>
-            <button onclick="closeModal('logoutModal')" class="glass-btn secondary" id="t_cancel_logout">إلغاء</button>
-        </div>
+    <!-- Auth Area -->
+    <div class="auth-area" id="authArea">
+        <button class="auth-btn" onclick="signInGoogle()" id="authBtn">
+            <i class="fa-brands fa-google"></i> <span id="t_signin">تسجيل الدخول</span>
+        </button>
     </div>
 
-    <div id="langModal" class="glass-modal-overlay">
-        <div class="glass-card">
-            <h3 style="margin-bottom: 20px; color:white;"><i class="fa-solid fa-language"></i> Language</h3>
-            <button onclick="setLanguage('ar'); closeModal('langModal')" class="glass-btn secondary" style="display:flex; justify-content:space-between; align-items:center;">
-                <span>العربية</span> <span style="font-size:1.2rem;">AR</span>
-            </button>
-            <button onclick="setLanguage('en'); closeModal('langModal')" class="glass-btn secondary" style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
-                <span>English</span> <span style="font-size:1.2rem;">EN</span>
-            </button>
-            <button onclick="closeModal('langModal')" class="glass-btn primary" style="margin-top:20px;" id="t_close">إغلاق</button>
-        </div>
-    </div>
-
-    <div id="loginOverlay" class="glass-modal-overlay" style="background:rgba(0,0,0,0.9);">
-        <div class="glass-card">
-            <h2 class="brand" style="font-size: 2rem; margin-bottom: 10px;">Flutter<span>.</span>Builder</h2>
-            <p id="t_login_desc" style="color:#888; margin-bottom: 25px;">قم بتسجيل الدخول لبدء بناء تطبيقات Flutter</p>
-            <button onclick="signInWithGoogle()" class="action-btn" style="background:#fff; color:#000;">
-                <i class="fa-brands fa-google"></i> <span id="t_signin">Google Login</span>
-            </button>
-        </div>
-    </div>
-
-    <div id="cropModal" class="glass-modal-overlay" style="z-index: 3000;">
-        <div class="glass-card" style="max-width: 500px; width:95%;">
-            <h3 id="t_crop_title" style="margin-bottom: 15px; color:white;">ضبط الأيقونة</h3>
-            <div style="background:#000; border-radius:10px; overflow:hidden; margin-bottom:20px; max-height:300px; display:flex; justify-content:center;">
-                <img id="cropImage" src="" style="max-width:100%;">
-            </div>
-            <div style="display:flex; gap:10px;">
-                <button onclick="performCrop()" class="glass-btn primary" id="t_confirm">تأكيد</button>
-                <button onclick="document.getElementById('cropModal').style.display='none'" class="glass-btn secondary" id="t_cancel">إلغاء</button>
-            </div>
-        </div>
-    </div>
-
-    <nav class="navbar">
-        <a href="#" class="brand">Flutter<span>.</span>Builder</a>
-        <div class="nav-actions">
-            <button class="lang-btn" onclick="openModal('langModal')"><i class="fa-solid fa-globe"></i></button>
-            <img id="userAvatar" class="user-avatar" src="" style="display:none;" onclick="openModal('logoutModal')">
+    <!-- Nav -->
+    <nav>
+        <div class="logo">
+            <svg class="logo-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="100" height="100" rx="20" fill="url(#g1)"/>
+                <path d="M50 20L80 40V70L50 90L20 70V40L50 20Z" fill="rgba(255,255,255,0.15)"/>
+                <path d="M50 30L70 42V66L50 78L30 66V42L50 30Z" fill="rgba(0,230,118,0.3)"/>
+                <text x="50" y="62" text-anchor="middle" fill="white" font-size="28" font-weight="bold" font-family="Arial">A</text>
+                <defs><linearGradient id="g1" x1="0" y1="0" x2="100" y2="100"><stop stop-color="#1a1a2e"/><stop offset="1" stop-color="#0a0a0a"/></linearGradient></defs>
+            </svg>
+            <span class="logo-text">Aite.studio</span>
         </div>
     </nav>
 
-    <div id="appContent">
-        <div class="main-container">
-             
-            <div class="config-panel">
-                <h1 id="t_welcome" style="font-size: 2rem; margin-bottom: 10px;">
-                    ابنِ APK من مشروع Flutter!
-                    <span class="smart-badge"><i class="fa-solid fa-wand-magic-sparkles"></i> <span id="t_smart">ذكي</span></span>
-                </h1>
-                <p id="t_sub" style="color: #888; margin-bottom: 30px; line-height: 1.6;">ارفع مشروع Flutter الخاص بك (مجلد أو مضغوط) وسنقوم ببناء APK له. يدعم المشاريع القديمة والحديثة!</p>
+    <!-- Main Content -->
+    <div class="container">
+        <div class="page-title">
+            <h1><i class="fa-brands fa-flutter"></i> <span id="t_title">Flutter to APK Builder</span></h1>
+            <p id="t_subtitle">ارفع مشروع فلاتر (مجلد او ملف مضغوط) وحوله الى APK</p>
+        </div>
 
-                <div class="tabs-container">
-                    <button class="tab-btn active" onclick="switchTab('build')" id="t_tab_build">بناء تطبيق</button>
-                    <button class="tab-btn" onclick="switchTab('apps')" id="t_tab_apps">مكتبة تطبيقاتي</button>
+        <div class="card">
+            <form id="buildForm" autocomplete="off">
+                <!-- App Name -->
+                <div class="form-group">
+                    <label id="t_appname_label">اسم التطبيق</label>
+                    <input type="text" id="appName" placeholder="My Flutter App" required>
                 </div>
 
-                <div id="buildSection" class="section-view active">
-                    <form id="buildForm">
-                        <div class="input-group">
-                            <label class="input-label" id="t_app_name">اسم التطبيق</label>
-                            <input type="text" class="input-field" id="appName" placeholder="مثال: متجري" oninput="updatePreview(); checkFormValidity();" required>
+                <!-- Package Name -->
+                <div class="form-group">
+                    <label id="t_pkgname_label">اسم الحزمة</label>
+                    <input type="text" id="packageName" placeholder="com.example.myapp" required pattern="^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$">
+                </div>
+
+                <!-- App Icon -->
+                <div class="form-group">
+                    <label id="t_icon_label">ايقونة التطبيق</label>
+                    <div class="icon-upload-area">
+                        <div class="icon-preview" id="iconPreview" onclick="document.getElementById('iconInput').click()">
+                            <i class="fa-solid fa-image"></i>
                         </div>
-
-                        <div class="input-group">
-                            <label class="input-label" id="t_pkg_name">معرف الحزمة (Package Name)</label>
-                            <input type="text" class="input-field" id="packageName" placeholder="com.company.app" oninput="checkFormValidity()" required>
-                            <small style="color: #666; margin-top: 5px; display: block;">مثال: com.yourcompany.appname</small>
+                        <div>
+                            <p style="font-size:0.85rem; color:var(--text-muted);" id="t_icon_hint">PNG, 512x512 مفضل</p>
                         </div>
+                        <input type="file" id="iconInput" accept="image/*" style="display:none" onchange="handleIconSelect(this)">
+                    </div>
+                </div>
 
-                        <div class="input-group">
-                            <label class="input-label" id="t_icon">أيقونة التطبيق</label>
-                            <div class="upload-card" onclick="document.getElementById('iconInput').click()">
-                                <div id="iconUploadContent">
-                                    <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
-                                    <p id="t_click_icon" style="color:#aaa;">اضغط هنا لاختيار الصورة</p>
-                                </div>
-                                <input type="file" id="iconInput" accept="image/*" style="display:none">
-                            </div>
-                        </div>
-
-                        <div class="input-group">
-                            <label class="input-label" id="t_project">ملفات المشروع</label>
-                            
-                            <!-- Upload Type Selector -->
-                            <div class="upload-type-selector">
-                                <button type="button" class="upload-type-btn active" onclick="setUploadType('folder')" id="btnTypeFolder">
-                                    <i class="fa-solid fa-folder-open"></i> <span id="t_type_folder">مجلد Flutter</span>
-                                </button>
-                                <button type="button" class="upload-type-btn" onclick="setUploadType('zip')" id="btnTypeZip">
-                                    <i class="fa-solid fa-file-zipper"></i> <span id="t_type_zip">ملف ZIP</span>
-                                </button>
-                            </div>
-
-                            <!-- Folder Upload -->
-                            <div id="folderUploadArea" class="upload-card" onclick="document.getElementById('folderInput').click()">
-                                <div id="folderUploadContent">
-                                    <i class="fa-solid fa-folder-open upload-icon" style="color: #42A5F5;"></i>
-                                    <p id="t_click_folder" style="color:#aaa;">اضغط لاختيار مجلد مشروع Flutter</p>
-                                    <small style="color: #666; display: block; margin-top: 8px;">يجب أن يحتوي على pubspec.yaml و lib/</small>
-                                </div>
-                                <input type="file" id="folderInput" webkitdirectory directory multiple style="display:none">
-                            </div>
-
-                            <!-- ZIP Upload -->
-                            <div id="zipUploadArea" class="upload-card" style="display:none;" onclick="document.getElementById('zipInput').click()">
-                                <div id="zipUploadContent">
-                                    <i class="fa-solid fa-file-zipper upload-icon" style="color: #9B59B6;"></i>
-                                    <p id="t_click_zip" style="color:#aaa;">اضغط لرفع مشروع Flutter مضغوط</p>
-                                    <small style="color: #666; display: block; margin-top: 8px;">يدعم المشاريع القديمة والحديثة</small>
-                                </div>
-                                <input type="file" id="zipInput" accept=".zip,application/zip" style="display:none">
-                            </div>
-
-                            <!-- Structure Analysis Display -->
-                            <div id="structureAnalysis" class="structure-analysis">
-                                <div class="structure-header">
-                                    <i class="fa-solid fa-wand-magic-sparkles"></i>
-                                    <span id="t_detected">تحليل مشروع Flutter:</span>
-                                    <span id="structureType" style="margin-right: auto; background: rgba(0,230,118,0.2); padding: 2px 8px; border-radius: 4px;">Flutter</span>
-                                </div>
-                                <div id="structureTree" class="structure-tree"></div>
-                            </div>
-
-                            <!-- File Preview -->
-                            <div id="filePreview" class="file-preview-card">
-                                <div class="file-icon-box" id="previewIconBox">
-                                    <i class="fa-solid fa-folder"></i>
-                                </div>
-                                <div class="file-info">
-                                    <div id="fileNameDisplay" class="file-name">project.html</div>
-                                    <div class="file-meta">
-                                        <span id="fileSizeDisplay">0 KB</span>
-                                        <span>•</span>
-                                        <span id="fileTypeDisplay" style="color:var(--primary);">HTML</span>
-                                        <span>•</span>
-                                        <span id="fileCountDisplay" style="color:var(--warning);"></span>
-                                    </div>
-                                </div>
-                                <button type="button" class="file-remove-btn" onclick="removeProjectFiles()">
-                                    <i class="fa-solid fa-trash-can"></i>
-                                </button>
-                            </div>
-
-                            <!-- Folder Files List -->
-                            <div id="folderFilesList" class="files-list" style="display:none;"></div>
-                        </div>
-
-                        <button type="submit" id="submitBtn" class="action-btn not-ready">
-                            <i class="fa-solid fa-hammer" id="btnIcon"></i> <span id="t_btn_build">بدء البناء السحابي</span>
+                <!-- Upload Type -->
+                <div class="form-group">
+                    <label id="t_project_label">مشروع فلاتر</label>
+                    <div class="upload-type-selector">
+                        <button type="button" class="upload-type-btn active" onclick="setUploadType('folder')" id="btnTypeFolder">
+                            <i class="fa-solid fa-folder-open"></i> <span id="t_type_folder">مجلد</span>
                         </button>
-                    </form>
-
-                    <div id="statusContainer">
-                        <div class="status-text">
-                            <span id="t_status">الحالة:</span>
-                            <span id="statusLabel" style="color:var(--primary);">جاري الاتصال...</span>
-                        </div>
-                        <div class="progress-container"><div id="progressBar" class="progress-bar"></div></div>
-                        <div id="resultArea"></div>
+                        <button type="button" class="upload-type-btn" onclick="setUploadType('zip')" id="btnTypeZip">
+                            <i class="fa-solid fa-file-zipper"></i> <span id="t_type_zip">ملف مضغوط ZIP</span>
+                        </button>
                     </div>
+
+                    <!-- Folder Upload -->
+                    <div id="folderUploadArea">
+                        <div class="drop-zone" id="folderDropZone" onclick="document.getElementById('folderInput').click()">
+                            <i class="fa-solid fa-folder-open"></i>
+                            <div class="text-main" id="t_folder_main">اختر مجلد مشروع فلاتر</div>
+                            <div class="text-sub" id="t_folder_sub">يجب ان يحتوي على pubspec.yaml و مجلد lib</div>
+                        </div>
+                        <input type="file" id="folderInput" webkitdirectory directory multiple style="display:none" onchange="handleFolderSelect(this)">
+                    </div>
+
+                    <!-- ZIP Upload -->
+                    <div id="zipUploadArea" style="display:none;">
+                        <div class="drop-zone" id="zipDropZone" onclick="document.getElementById('zipInput').click()">
+                            <i class="fa-solid fa-file-zipper"></i>
+                            <div class="text-main" id="t_zip_main">اختر ملف ZIP لمشروع فلاتر</div>
+                            <div class="text-sub" id="t_zip_sub">ملف مضغوط يحتوي على مشروع فلاتر كامل</div>
+                        </div>
+                        <input type="file" id="zipInput" accept=".zip,application/zip" style="display:none" onchange="handleZipSelect(this)">
+                    </div>
+
+                    <!-- File Info Display -->
+                    <div id="fileInfoArea"></div>
                 </div>
 
-                <div id="myAppsSection" class="section-view">
-                    <div id="appsGrid">
-                        <div style="text-align:center; padding:40px; color:#555;">
-                            <i class="fa-solid fa-box-open" style="font-size:3rem; margin-bottom:10px;"></i>
-                            <p>جاري تحميل القائمة...</p>
-                        </div>
-                    </div>
-                </div>
+                <!-- Submit -->
+                <button type="submit" class="submit-btn" id="submitBtn" disabled>
+                    <i class="fa-solid fa-hammer" id="btnIcon"></i>
+                    <span id="t_submit">بناء APK</span>
+                </button>
+            </form>
 
+            <!-- Status -->
+            <div class="status-container" id="statusContainer">
+                <div class="progress-bar-wrapper">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+                <div class="status-label" id="statusLabel"></div>
             </div>
 
-            <div class="preview-panel">
-                <div class="phone-mockup">
-                    <div class="phone-screen">
-                        <div class="phone-status-bar">
-                            <span id="phoneClock">12:00</span>
-                            <div class="phone-icons">
-                                <i class="fa-solid fa-wifi"></i>
-                                <i class="fa-solid fa-signal"></i>
-                                <i class="fa-solid fa-battery-three-quarters"></i>
-                            </div>
-                        </div>
+            <!-- Result -->
+            <div id="resultArea"></div>
+        </div>
 
-                        <div id="iconPlaceholder" class="icon-placeholder"><i class="fa-solid fa-mobile-screen-button"></i></div>
-                        <img id="previewIcon" class="app-icon-preview" style="display:none;">
-                        <div id="previewName" class="app-name-preview">App Name</div>
-                    </div>
-                </div>
-            </div>
-
+        <!-- My Apps -->
+        <div class="apps-section card" id="appsSection" style="display:none;">
+            <h2><i class="fa-solid fa-mobile-screen-button"></i> <span id="t_myapps">تطبيقاتي</span></h2>
+            <div id="appsGrid"></div>
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
+
     <script>
-        // --- UI Interactions ---
-        function openModal(id) { document.getElementById(id).style.display = 'flex'; }
-        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-        
-        // Tab Switcher
-        function switchTab(tabName) {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.section-view').forEach(s => s.classList.remove('active'));
-            
-            if(tabName === 'build') {
-                document.getElementById('t_tab_build').classList.add('active');
-                document.getElementById('buildSection').classList.add('active');
-            } else {
-                document.getElementById('t_tab_apps').classList.add('active');
-                document.getElementById('myAppsSection').classList.add('active');
-                loadMyApps();
-            }
-        }
-
-        // Phone Clock
-        function updateClock() {
-            const now = new Date();
-            const hours = String(now.getHours()).padStart(2, '0');
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            document.getElementById('phoneClock').innerText = `${hours}:${minutes}`;
-        }
-        setInterval(updateClock, 1000);
-        updateClock();
-
-        // --- Upload Type Selector ---
-        let currentUploadType = 'folder';
-        let projectFiles = [];
-
-        function setUploadType(type) {
-            currentUploadType = type;
-            
-            // Update buttons
-            document.querySelectorAll('.upload-type-btn').forEach(btn => btn.classList.remove('active'));
-            document.getElementById(`btnType${type.charAt(0).toUpperCase() + type.slice(1)}`).classList.add('active');
-            
-            // Show/hide upload areas
-            document.getElementById('folderUploadArea').style.display = type === 'folder' ? 'block' : 'none';
-            document.getElementById('zipUploadArea').style.display = type === 'zip' ? 'block' : 'none';
-            
-            // Clear previous selection
-            removeProjectFiles();
-        }
-
-        // --- Flutter Project Analyzer ---
-        function analyzeFlutterStructure(files) {
-            const paths = files.map(f => f.webkitRelativePath || f.name);
-            const dartFiles = paths.filter(p => p.endsWith('.dart'));
-            
-            // Detect nested structure
-            const firstParts = paths[0]?.split('/') || [];
-            let isNested = false;
-            let rootFolder = null;
-            
-            if (firstParts.length > 1) {
-                const potentialRoot = firstParts[0];
-                const allInSameRoot = paths.every(p => p.startsWith(potentialRoot + '/'));
-                if (allInSameRoot && paths.length > 1) {
-                    isNested = true;
-                    rootFolder = potentialRoot;
-                }
-            }
-            
-            // Normalize paths
-            const normalizedPaths = isNested
-                ? paths.map(p => p.replace(new RegExp('^' + rootFolder + '/'), ''))
-                : paths;
-            
-            // Check for Flutter project markers
-            const hasPubspec = normalizedPaths.some(p => p === 'pubspec.yaml' || p.endsWith('/pubspec.yaml'));
-            const hasLib = normalizedPaths.some(p => p.startsWith('lib/') || p === 'lib');
-            const hasAndroid = normalizedPaths.some(p => p.startsWith('android/') || p === 'android');
-            const hasAssets = normalizedPaths.some(p => p.startsWith('assets/') || p === 'assets');
-            const normalizedDartFiles = normalizedPaths.filter(p => p.endsWith('.dart'));
-            
-            let structureType = 'invalid';
-            if (hasPubspec && (hasLib || normalizedDartFiles.length > 0)) {
-                structureType = isNested ? 'nested_flutter' : 'valid_flutter';
-            }
-            
-            // Display analysis
-            displayFlutterAnalysis(structureType, hasPubspec, hasLib, hasAndroid, hasAssets, normalizedDartFiles, isNested, rootFolder);
-            
-            return { structureType, hasPubspec, hasLib, hasAndroid, isNested, rootFolder };
-        }
-        
-        function displayFlutterAnalysis(type, hasPubspec, hasLib, hasAndroid, hasAssets, dartFiles, isNested, rootFolder) {
-            const analysisDiv = document.getElementById('structureAnalysis');
-            const treeDiv = document.getElementById('structureTree');
-            const typeSpan = document.getElementById('structureType');
-            
-            const typeLabels = {
-                'valid_flutter': 'مشروع Flutter صالح',
-                'nested_flutter': 'مشروع Flutter متداخل',
-                'invalid': 'غير معروف - سيتم المحاولة'
-            };
-            
-            typeSpan.textContent = typeLabels[type] || type;
-            typeSpan.style.background = type === 'invalid' ? 'rgba(255,82,82,0.2)' : 'rgba(0,230,118,0.2)';
-            typeSpan.style.color = type === 'invalid' ? '#FF5252' : 'var(--primary)';
-            
-            let treeHtml = '';
-            if (isNested && rootFolder) {
-                treeHtml += `<div><span class="tree-folder">📁 ${rootFolder}/</span></div>`;
-            }
-            
-            // Show Flutter structure markers
-            treeHtml += `<div style="padding-right: 20px;">${hasPubspec ? '✅' : '❌'} <span class="tree-entry">pubspec.yaml</span></div>`;
-            treeHtml += `<div style="padding-right: 20px;">${hasLib ? '✅' : '❌'} <span class="tree-folder">📁 lib/</span></div>`;
-            treeHtml += `<div style="padding-right: 20px;">${hasAndroid ? '✅' : '➖'} <span class="tree-folder">📁 android/</span></div>`;
-            treeHtml += `<div style="padding-right: 20px;">${hasAssets ? '✅' : '➖'} <span class="tree-folder">📁 assets/</span></div>`;
-            treeHtml += `<div style="padding-right: 20px; color: #42A5F5;">📄 ${dartFiles.length} Dart files</div>`;
-            
-            treeDiv.innerHTML = treeHtml;
-            analysisDiv.classList.add('show');
-        }
-
-        // --- Translations ---
-        const translations = {
-            ar: {
-                login_desc: "قم بتسجيل الدخول لبدء بناء تطبيقات Flutter",
-                signin: "تسجيل الدخول عبر Google",
-                crop_title: "ضبط الأيقونة",
-                confirm: "تأكيد",
-                cancel: "إلغاء",
-                welcome: "ابنِ APK من مشروع Flutter!",
-                smart: "ذكي",
-                sub: "ارفع مشروع Flutter الخاص بك (مجلد أو مضغوط) وسنقوم ببناء APK له. يدعم المشاريع القديمة والحديثة!",
-                app_name: "اسم التطبيق",
-                pkg_name: "معرف الحزمة (Package Name)",
-                icon: "أيقونة التطبيق",
-                project: "ملفات مشروع Flutter",
-                click_icon: "اضغط هنا لاختيار الصورة",
-                click_folder: "اضغط لاختيار مجلد مشروع Flutter",
-                click_zip: "اضغط لرفع مشروع Flutter مضغوط",
-                type_folder: "مجلد Flutter",
-                type_zip: "ملف ZIP",
-                btn_build: "بدء بناء APK",
-                status: "الحالة:",
-                detected: "تحليل مشروع Flutter:",
-                ready_title: "تطبيقك جاهز للتحميل",
-                download: "تحميل APK",
-                tab_build: "بناء تطبيق",
-                tab_apps: "مكتبة تطبيقاتي",
-                logout_title: "تسجيل الخروج؟",
-                logout_desc: "هل أنت متأكد أنك تريد الخروج؟",
-                confirm_logout: "نعم، خروج",
-                close: "إغلاق",
-                files_selected: "ملفات محددة"
-            },
-            en: {
-                login_desc: "Sign in to build APK from your Flutter projects",
-                signin: "Sign in with Google",
-                crop_title: "Adjust Icon",
-                confirm: "Confirm",
-                cancel: "Cancel",
-                welcome: "Build APK from Flutter Project!",
-                smart: "Smart",
-                sub: "Upload your Flutter project (folder or ZIP) and we'll build an APK. Supports old and new projects!",
-                app_name: "App Name",
-                pkg_name: "Package Name",
-                icon: "App Icon",
-                project: "Flutter Project Files",
-                click_icon: "Click to upload Image",
-                click_folder: "Click to select Flutter project folder",
-                click_zip: "Click to upload Flutter project ZIP",
-                type_folder: "Flutter Folder",
-                type_zip: "ZIP File",
-                btn_build: "Start APK Build",
-                status: "Status:",
-                detected: "Flutter Project Analysis:",
-                ready_title: "App Ready",
-                download: "Download APK",
-                tab_build: "New Build",
-                tab_apps: "My Library",
-                logout_title: "Log out?",
-                logout_desc: "Are you sure you want to exit?",
-                confirm_logout: "Yes, Logout",
-                close: "Close",
-                files_selected: "files selected"
-            }
-        };
-
-        let currentLang = 'ar';
-
-        function setLanguage(lang) {
-            currentLang = lang;
-            document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
-            document.documentElement.lang = lang;
-            document.body.style.fontFamily = lang === 'ar' ? "var(--font-ar)" : "var(--font-en)";
-            
-            const map = {
-                t_login_desc: 'login_desc', t_signin: 'signin', t_crop_title: 'crop_title',
-                t_confirm: 'confirm', t_cancel: 'cancel', t_welcome: 'welcome', 
-                t_smart: 'smart', t_sub: 'sub',
-                t_app_name: 'app_name', t_pkg_name: 'pkg_name', t_icon: 'icon', t_project: 'project',
-                t_click_icon: 'click_icon', t_click_folder: 'click_folder',
-                t_click_zip: 'click_zip', t_type_folder: 'type_folder', 
-                t_type_zip: 'type_zip', t_btn_build: 'btn_build', t_status: 'status', 
-                t_detected: 'detected',
-                t_tab_build: 'tab_build', t_tab_apps: 'tab_apps',
-                t_logout_title: 'logout_title', t_logout_desc: 'logout_desc', t_confirm_logout: 'confirm_logout',
-                t_close: 'close'
-            };
-
-            for (const [id, key] of Object.entries(map)) {
-                if(document.getElementById(id)) document.getElementById(id).innerText = translations[lang][key];
-            }
-        }
-
-        // --- Firebase & App Logic ---
-        const firebaseConfig = {
+        // Firebase Config
+        firebase.initializeApp({
             apiKey: "AIzaSyAN-9qBeL51nwpctJw9rSQYzz1C7dDRf1E",
             authDomain: "world-3212f.firebaseapp.com",
             databaseURL: "https://world-3212f-default-rtdb.firebaseio.com",
             projectId: "world-3212f",
-            storageBucket: "world-3212f.firebasestorage.app",
-            messagingSenderId: "421425146697",
-            appId: "1:421425146697:web:efa372fbd585e8888e4898"
-        };
-        firebase.initializeApp(firebaseConfig);
+            storageBucket: "world-3212f.appspot.com",
+            messagingSenderId: "961498857764",
+            appId: "1:961498857764:web:abc123"
+        });
+
         const auth = firebase.auth();
         const db = firebase.database();
         let currentUser = null;
 
-        auth.onAuthStateChanged(user => {
-            document.getElementById('loadingOverlay').style.display = 'none';
+        // =================================================================
+        // Translations
+        // =================================================================
+        const translations = {
+            ar: {
+                signin: 'تسجيل الدخول',
+                title: 'Flutter to APK Builder',
+                subtitle: 'ارفع مشروع فلاتر (مجلد او ملف مضغوط) وحوله الى APK',
+                appname_label: 'اسم التطبيق',
+                pkgname_label: 'اسم الحزمة',
+                icon_label: 'ايقونة التطبيق',
+                icon_hint: 'PNG, 512x512 مفضل',
+                project_label: 'مشروع فلاتر',
+                type_folder: 'مجلد',
+                type_zip: 'ملف مضغوط ZIP',
+                folder_main: 'اختر مجلد مشروع فلاتر',
+                folder_sub: 'يجب ان يحتوي على pubspec.yaml و مجلد lib',
+                zip_main: 'اختر ملف ZIP لمشروع فلاتر',
+                zip_sub: 'ملف مضغوط يحتوي على مشروع فلاتر كامل',
+                submit: 'بناء APK',
+                myapps: 'تطبيقاتي',
+                uploading: 'رفع الملفات...',
+                preparing: 'تحضير بيئة البناء...',
+                building: 'بناء وتوقيع APK...',
+                done: 'تم بنجاح!',
+                ready_title: 'التطبيق جاهز للتحميل!',
+                download: 'تحميل APK',
+                error_title: 'فشل البناء',
+                no_apps: 'لا توجد تطبيقات سابقة',
+                files_selected: 'ملف تم اختياره',
+                analyzing: 'تحليل المشروع...'
+            },
+            en: {
+                signin: 'Sign In',
+                title: 'Flutter to APK Builder',
+                subtitle: 'Upload a Flutter project (folder or ZIP) and convert it to APK',
+                appname_label: 'App Name',
+                pkgname_label: 'Package Name',
+                icon_label: 'App Icon',
+                icon_hint: 'PNG, 512x512 preferred',
+                project_label: 'Flutter Project',
+                type_folder: 'Folder',
+                type_zip: 'ZIP File',
+                folder_main: 'Select Flutter project folder',
+                folder_sub: 'Must contain pubspec.yaml and lib/ folder',
+                zip_main: 'Select Flutter project ZIP file',
+                zip_sub: 'ZIP file containing a complete Flutter project',
+                submit: 'Build APK',
+                myapps: 'My Apps',
+                uploading: 'Uploading files...',
+                preparing: 'Setting up build environment...',
+                building: 'Building & signing APK...',
+                done: 'Done!',
+                ready_title: 'Your app is ready!',
+                download: 'Download APK',
+                error_title: 'Build Failed',
+                no_apps: 'No previous apps',
+                files_selected: 'files selected',
+                analyzing: 'Analyzing project...'
+            }
+        };
+
+        let currentLang = 'ar';
+        let currentUploadType = 'folder';
+        let projectFiles = [];
+        let iconBlob = null;
+        let pollingInterval = null;
+
+        // =================================================================
+        // Language
+        // =================================================================
+        function setLanguage(lang) {
+            currentLang = lang;
+            const t = translations[lang];
+            const isAr = lang === 'ar';
+
+            document.documentElement.dir = isAr ? 'rtl' : 'ltr';
+            document.documentElement.lang = lang;
+
+            document.getElementById('langAr').classList.toggle('active', isAr);
+            document.getElementById('langEn').classList.toggle('active', !isAr);
+
+            document.getElementById('t_signin').textContent = t.signin;
+            document.getElementById('t_title').textContent = t.title;
+            document.getElementById('t_subtitle').textContent = t.subtitle;
+            document.getElementById('t_appname_label').textContent = t.appname_label;
+            document.getElementById('t_pkgname_label').textContent = t.pkgname_label;
+            document.getElementById('t_icon_label').textContent = t.icon_label;
+            document.getElementById('t_icon_hint').textContent = t.icon_hint;
+            document.getElementById('t_project_label').textContent = t.project_label;
+            document.getElementById('t_type_folder').textContent = t.type_folder;
+            document.getElementById('t_type_zip').textContent = t.type_zip;
+            document.getElementById('t_folder_main').textContent = t.folder_main;
+            document.getElementById('t_folder_sub').textContent = t.folder_sub;
+            document.getElementById('t_zip_main').textContent = t.zip_main;
+            document.getElementById('t_zip_sub').textContent = t.zip_sub;
+            document.getElementById('t_submit').textContent = t.submit;
+            document.getElementById('t_myapps').textContent = t.myapps;
+        }
+
+        // =================================================================
+        // Auth
+        // =================================================================
+        function signInGoogle() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            auth.signInWithPopup(provider).catch(function(err) {
+                console.error('Auth error:', err);
+            });
+        }
+
+        auth.onAuthStateChanged(function(user) {
+            currentUser = user;
+            const authArea = document.getElementById('authArea');
+
             if (user) {
-                currentUser = user;
-                document.getElementById('loginOverlay').style.display = 'none';
-                document.getElementById('appContent').style.display = 'block';
-                document.getElementById('userAvatar').style.display = 'block';
-                document.getElementById('userAvatar').src = user.photoURL;
+                authArea.innerHTML = '<div class="user-info">' +
+                    '<img class="user-avatar" src="' + (user.photoURL || '') + '" alt="">' +
+                    '<span style="font-size:0.85rem;">' + (user.displayName || user.email) + '</span>' +
+                    '<button onclick="auth.signOut()" style="background:none;border:none;color:var(--danger);cursor:pointer;"><i class="fa-solid fa-right-from-bracket"></i></button>' +
+                    '</div>';
+                document.getElementById('appsSection').style.display = 'block';
                 loadMyApps();
             } else {
-                currentUser = null;
-                document.getElementById('loginOverlay').style.display = 'flex';
-                document.getElementById('appContent').style.display = 'none';
+                authArea.innerHTML = '<button class="auth-btn" onclick="signInGoogle()">' +
+                    '<i class="fa-brands fa-google"></i> <span id="t_signin">' + translations[currentLang].signin + '</span></button>';
+                document.getElementById('appsSection').style.display = 'none';
             }
         });
 
-        function signInWithGoogle() { auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }
-
-        function updatePreview() {
-            document.getElementById('previewName').innerText = document.getElementById('appName').value || "App Name";
-        }
-
-        // --- VALIDATION & BUTTON STATE LOGIC ---
-        function checkFormValidity() {
-            const name = document.getElementById('appName').value.trim();
-            const pkg = document.getElementById('packageName').value.trim();
-            const hasIcon = finalIconBlob !== null;
-            const hasFiles = projectFiles.length > 0;
-            
-            const btn = document.getElementById('submitBtn');
-            
-            if(name && pkg && hasIcon && hasFiles) {
-                btn.classList.remove('not-ready');
-            } else {
-                btn.classList.add('not-ready');
-            }
-        }
-
-        let cropper = null; 
-        let finalIconBlob = null;
-        
-        document.getElementById('iconInput').addEventListener('change', function(e) {
-            if(e.target.files[0]) {
-                const reader = new FileReader();
-                reader.onload = function(evt) {
-                    document.getElementById('cropImage').src = evt.target.result;
-                    document.getElementById('cropModal').style.display = 'flex';
-                    if(cropper) cropper.destroy();
-                    cropper = new Cropper(document.getElementById('cropImage'), { aspectRatio: 1, viewMode: 1 });
-                };
-                reader.readAsDataURL(e.target.files[0]);
-            }
-        });
-
-        function performCrop() {
-            cropper.getCroppedCanvas({width: 512, height: 512}).toBlob(blob => {
-                finalIconBlob = blob;
-                document.getElementById('previewIcon').src = URL.createObjectURL(blob);
-                document.getElementById('previewIcon').style.display = 'block';
-                document.getElementById('iconPlaceholder').style.display = 'none';
-                document.getElementById('cropModal').style.display = 'none';
-                document.getElementById('iconUploadContent').innerHTML = '<i class="fa-solid fa-check-circle" style="color:var(--primary); font-size:3rem;"></i>';
-                checkFormValidity();
-            });
-        }
-
-        // --- FILE UPLOAD HANDLERS ---
-        
-        // Folder Upload
-        document.getElementById('folderInput').addEventListener('change', function(e) {
-            const files = Array.from(e.target.files);
-            if(files.length > 0) {
-                projectFiles = files;
-                const mainFile = files.find(f => f.name === 'pubspec.yaml') || files.find(f => f.name.endsWith('.dart')) || files[0];
-                const totalSize = files.reduce((sum, f) => sum + f.size, 0);
-                
-                showFilePreview(mainFile.name, totalSize, 'Flutter', 'fa-solid fa-folder', '#42A5F5');
-                document.getElementById('fileCountDisplay').textContent = `${files.length} ${translations[currentLang].files_selected}`;
-                
-                // Run Flutter analysis
-                analyzeFlutterStructure(files);
-                showFolderFilesList(files);
-                checkFormValidity();
-            }
-        });
-
-        // ZIP Upload
-        document.getElementById('zipInput').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if(file) {
-                projectFiles = [file];
-                showFilePreview(file.name, file.size, 'ZIP', 'fa-solid fa-file-zipper', '#9B59B6');
-                document.getElementById('fileCountDisplay').textContent = '';
-                document.getElementById('structureAnalysis').classList.remove('show');
-                checkFormValidity();
-            }
-        });
-
-        function showFilePreview(name, size, type, iconClass, iconColor) {
-            // Hide all upload areas
-            document.getElementById('folderUploadArea').style.display = 'none';
-            document.getElementById('zipUploadArea').style.display = 'none';
-            
-            // Show preview
-            const preview = document.getElementById('filePreview');
-            preview.style.display = 'flex';
-            
-            document.getElementById('fileNameDisplay').innerText = name;
-            document.getElementById('fileSizeDisplay').innerText = formatFileSize(size);
-            document.getElementById('fileTypeDisplay').innerText = type;
-            
-            const iconBox = document.getElementById('previewIconBox');
-            iconBox.innerHTML = `<i class="${iconClass}"></i>`;
-            iconBox.style.color = iconColor;
-        }
-
-        function showFolderFilesList(files) {
-            const list = document.getElementById('folderFilesList');
-            list.style.display = 'block';
-            
-            const dartFiles = files.filter(f => f.name.endsWith('.dart'));
-            const yamlFiles = files.filter(f => f.name.endsWith('.yaml') || f.name.endsWith('.yml'));
-            const otherFiles = files.filter(f => !f.name.endsWith('.dart') && !f.name.endsWith('.yaml') && !f.name.endsWith('.yml'));
-            
-            let html = `<div style="color:#888; margin-bottom:8px; font-size:0.8rem;">${files.length} ${translations[currentLang].files_selected}</div>`;
-            
-            [...yamlFiles, ...dartFiles, ...otherFiles].slice(0, 20).forEach(file => {
-                let icon = 'fa-file';
-                let color = '#888';
-                if(file.name.endsWith('.dart')) { icon = 'fa-solid fa-code'; color = '#42A5F5'; }
-                else if(file.name.endsWith('.yaml') || file.name.endsWith('.yml')) { icon = 'fa-solid fa-gear'; color = '#00E676'; }
-                
-                const relativePath = file.webkitRelativePath || file.name;
-                
-                html += `
-                    <div class="files-list-item">
-                        <i class="${icon}" style="color:${color};"></i>
-                        <span style="flex:1; overflow:hidden; text-overflow:ellipsis;" title="${relativePath}">${relativePath}</span>
-                        <span style="color:#666; font-size:0.75rem;">${formatFileSize(file.size)}</span>
-                    </div>
-                `;
-            });
-            
-            if(files.length > 20) {
-                html += `<div style="text-align:center; color:#666; padding:8px;">... و ${files.length - 20} ملفات أخرى</div>`;
-            }
-            
-            list.innerHTML = html;
-        }
-
-        function removeProjectFiles() {
+        // =================================================================
+        // Upload Type Toggle
+        // =================================================================
+        function setUploadType(type) {
+            currentUploadType = type;
             projectFiles = [];
-            
-            // Reset inputs
-            document.getElementById('folderInput').value = '';
-            document.getElementById('zipInput').value = '';
-            
-            // Hide preview and list
-            document.getElementById('filePreview').style.display = 'none';
-            document.getElementById('folderFilesList').style.display = 'none';
-            document.getElementById('structureAnalysis').classList.remove('show');
-            
-            // Show current upload area
-            setUploadType(currentUploadType);
-            
+
+            document.querySelectorAll('.upload-type-btn').forEach(function(b) { b.classList.remove('active'); });
+
+            if (type === 'folder') {
+                document.getElementById('btnTypeFolder').classList.add('active');
+                document.getElementById('folderUploadArea').style.display = 'block';
+                document.getElementById('zipUploadArea').style.display = 'none';
+            } else {
+                document.getElementById('btnTypeZip').classList.add('active');
+                document.getElementById('folderUploadArea').style.display = 'none';
+                document.getElementById('zipUploadArea').style.display = 'block';
+            }
+
+            document.getElementById('fileInfoArea').innerHTML = '';
             checkFormValidity();
         }
 
-        function formatFileSize(bytes) {
-            if(bytes === 0) return '0 B';
-            const sizes = ['B', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(1024));
-            return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
+        // =================================================================
+        // Icon Handling
+        // =================================================================
+        function handleIconSelect(input) {
+            if (!input.files || !input.files[0]) return;
+            var file = input.files[0];
+            iconBlob = file;
+
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('iconPreview').innerHTML = '<img src="' + e.target.result + '" alt="icon">';
+            };
+            reader.readAsDataURL(file);
+            checkFormValidity();
         }
 
-        // --- Submit Logic ---
-        let pollingInterval = null;
-        
-        document.getElementById('buildForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            if(!finalIconBlob || projectFiles.length === 0) return;
+        // =================================================================
+        // Folder Upload
+        // =================================================================
+        function handleFolderSelect(input) {
+            if (!input.files || input.files.length === 0) return;
 
-            const btn = document.getElementById('submitBtn');
-            const btnIcon = document.getElementById('btnIcon');
-            
+            projectFiles = Array.from(input.files);
+            var t = translations[currentLang];
+            var hasPubspec = projectFiles.some(function(f) {
+                return f.webkitRelativePath.split('/').pop() === 'pubspec.yaml';
+            });
+
+            var infoHtml = '<div class="file-info">' +
+                '<i class="fa-solid fa-folder"></i>' +
+                '<span class="name">' + projectFiles.length + ' ' + t.files_selected + '</span>' +
+                '<span class="size">' + (hasPubspec ? '<i class="fa-solid fa-check" style="color:var(--primary)"></i> pubspec.yaml' : '<i class="fa-solid fa-xmark" style="color:var(--danger)"></i> pubspec.yaml') + '</span>' +
+                '</div>';
+
+            document.getElementById('fileInfoArea').innerHTML = infoHtml;
+            document.getElementById('folderDropZone').classList.add('has-files');
+            checkFormValidity();
+        }
+
+        // =================================================================
+        // ZIP Upload
+        // =================================================================
+        function handleZipSelect(input) {
+            if (!input.files || !input.files[0]) return;
+
+            var file = input.files[0];
+            projectFiles = [file];
+
+            var size = file.size;
+            var sizeStr = size < 1024 * 1024
+                ? (size / 1024).toFixed(1) + ' KB'
+                : (size / (1024 * 1024)).toFixed(1) + ' MB';
+
+            var infoHtml = '<div class="file-info">' +
+                '<i class="fa-solid fa-file-zipper" style="color:var(--info)"></i>' +
+                '<span class="name">' + file.name + '</span>' +
+                '<span class="size">' + sizeStr + '</span>' +
+                '</div>';
+
+            document.getElementById('fileInfoArea').innerHTML = infoHtml;
+            document.getElementById('zipDropZone').classList.add('has-files');
+            checkFormValidity();
+        }
+
+        // =================================================================
+        // Form Validation
+        // =================================================================
+        function checkFormValidity() {
+            var appName = document.getElementById('appName').value.trim();
+            var pkgName = document.getElementById('packageName').value.trim();
+            var hasIcon = !!iconBlob;
+            var hasFiles = projectFiles.length > 0;
+            var pkgValid = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/.test(pkgName);
+
+            document.getElementById('submitBtn').disabled = !(appName && pkgName && pkgValid && hasIcon && hasFiles);
+        }
+
+        document.getElementById('appName').addEventListener('input', checkFormValidity);
+        document.getElementById('packageName').addEventListener('input', checkFormValidity);
+
+        // =================================================================
+        // Drag & Drop
+        // =================================================================
+        ['folderDropZone', 'zipDropZone'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+
+            el.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                el.classList.add('drag-over');
+            });
+            el.addEventListener('dragleave', function() {
+                el.classList.remove('drag-over');
+            });
+            el.addEventListener('drop', function(e) {
+                e.preventDefault();
+                el.classList.remove('drag-over');
+
+                if (id === 'zipDropZone' && e.dataTransfer.files.length > 0) {
+                    var file = e.dataTransfer.files[0];
+                    if (file.name.toLowerCase().endsWith('.zip')) {
+                        document.getElementById('zipInput').files = e.dataTransfer.files;
+                        handleZipSelect(document.getElementById('zipInput'));
+                    }
+                }
+            });
+        });
+
+        // =================================================================
+        // Form Submit
+        // =================================================================
+        document.getElementById('buildForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            if (!iconBlob || projectFiles.length === 0) return;
+
+            var btn = document.getElementById('submitBtn');
+            var btnIcon = document.getElementById('btnIcon');
             btn.classList.add('loading');
-            const originalIconClass = btnIcon.className;
-            btnIcon.className = "fa-solid fa-circle-notch fa-spin";
-            
+            btn.disabled = true;
+            btnIcon.className = 'fa-solid fa-circle-notch fa-spin';
+
             document.getElementById('statusContainer').style.display = 'block';
             document.getElementById('progressBar').style.width = '5%';
             document.getElementById('resultArea').innerHTML = '';
 
-            const fd = new FormData();
+            var fd = new FormData();
             fd.append('appName', document.getElementById('appName').value);
             fd.append('packageName', document.getElementById('packageName').value);
-            fd.append('icon', finalIconBlob, 'icon.png');
+            fd.append('icon', iconBlob, 'icon.png');
             fd.append('uploadType', currentUploadType);
-            
-            // Append files
-            projectFiles.forEach((file, index) => {
-                fd.append('projectFiles', file, file.name);
-            });
+
+            if (currentUploadType === 'zip') {
+                fd.append('projectFiles', projectFiles[0], projectFiles[0].name);
+            } else {
+                projectFiles.forEach(function(file) {
+                    fd.append('projectFiles', file, file.name);
+                    if (file.webkitRelativePath) {
+                        fd.append('relativePath_' + file.name, file.webkitRelativePath);
+                    }
+                });
+            }
 
             try {
-                const res = await fetch('/build-flutter', { method: 'POST', body: fd });
-                const data = await res.json();
-                if(data.success) {
+                var res = await fetch('/build-flutter', { method: 'POST', body: fd });
+                var data = await res.json();
+                if (data.success) {
                     startPolling(data.build_id, data.safe_app_name, data.icon_url, data.app_name, data.package_name);
-                } else { throw new Error(data.error); }
-            } catch(err) {
+                } else {
+                    throw new Error(data.error || 'Build failed');
+                }
+            } catch (err) {
                 handleError(err.message);
                 btn.classList.remove('loading');
-                btnIcon.className = originalIconClass;
+                btn.disabled = false;
+                btnIcon.className = 'fa-solid fa-hammer';
             }
         });
 
+        // =================================================================
+        // Polling
+        // =================================================================
         function startPolling(buildId, safeName, iconUrl, realName, pkgName) {
-            const label = document.getElementById('statusLabel');
-            const bar = document.getElementById('progressBar');
-            let startTime = Date.now();
+            var label = document.getElementById('statusLabel');
+            var bar = document.getElementById('progressBar');
+            var startTime = Date.now();
+            var t = translations[currentLang];
 
-            pollingInterval = setInterval(async () => {
-                const elapsed = Math.floor((Date.now() - startTime) / 1000);
-                
-                if(currentLang === 'ar') {
-                    if(elapsed < 20) label.innerText = "رفع مشروع Flutter...";
-                    else if(elapsed < 60) label.innerText = "تحضير بيئة Flutter...";
-                    else label.innerText = "بناء APK من مشروع Flutter...";
-                } else {
-                    label.innerText = elapsed < 60 ? "Setting up Flutter environment..." : "Building Flutter APK...";
-                }
+            pollingInterval = setInterval(async function() {
+                var elapsed = Math.floor((Date.now() - startTime) / 1000);
 
-                let progress = Math.min(10 + (elapsed / 2.5), 90);
+                if (elapsed < 20) label.innerText = t.uploading;
+                else if (elapsed < 90) label.innerText = t.preparing;
+                else label.innerText = t.building;
+
+                var progress = Math.min(10 + (elapsed / 3), 90);
                 bar.style.width = progress + '%';
 
-                if(elapsed % 5 === 0) {
+                if (elapsed % 5 === 0) {
                     try {
-                        const checkRes = await fetch(`/check-status/${buildId}?appName=${safeName}`);
-                        const checkData = await checkRes.json();
-                        if(checkData.completed) finishBuild(checkData.download_url, buildId, iconUrl, realName, pkgName);
-                    } catch(e) {}
+                        var checkRes = await fetch('/check-status/' + buildId + '?appName=' + safeName);
+                        var checkData = await checkRes.json();
+
+                        if (checkData.completed && checkData.status === 'success') {
+                            finishBuild(checkData.download_url, buildId, iconUrl, realName, pkgName);
+                        } else if (checkData.completed && checkData.status === 'failed') {
+                            handleError(checkData.error || 'Build failed');
+                        } else if (checkData.progress) {
+                            bar.style.width = Math.max(progress, checkData.progress) + '%';
+                        }
+                    } catch (e) {}
                 }
-                if(elapsed > 600) handleError("Timeout");
+
+                if (elapsed > 900) handleError('Timeout - build took too long');
             }, 1000);
         }
 
         function finishBuild(url, id, iconUrl, realName, pkgName) {
             clearInterval(pollingInterval);
-            document.getElementById('progressBar').style.width = '100%';
-            document.getElementById('statusLabel').innerText = "Done! 🎉";
-            
-            const btn = document.getElementById('submitBtn');
-            const btnIcon = document.getElementById('btnIcon');
+            var bar = document.getElementById('progressBar');
+            var label = document.getElementById('statusLabel');
+            bar.style.width = '100%';
+            label.innerText = translations[currentLang].done;
+
+            var btn = document.getElementById('submitBtn');
+            var btnIcon = document.getElementById('btnIcon');
             btn.classList.remove('loading');
-            btnIcon.className = "fa-solid fa-hammer";
+            btn.disabled = false;
+            btnIcon.className = 'fa-solid fa-hammer';
 
-            const txt_ready = translations[currentLang].ready_title;
-            const txt_dl = translations[currentLang].download;
+            var t = translations[currentLang];
+            document.getElementById('resultArea').innerHTML =
+                '<div class="result-card">' +
+                '<h3>' + t.ready_title + '</h3>' +
+                '<a href="' + url + '" class="download-btn" target="_blank">' +
+                '<i class="fa-brands fa-android"></i> ' + t.download +
+                '</a></div>';
 
-            document.getElementById('resultArea').innerHTML = `
-                <div class="result-card" style="background:rgba(0,230,118,0.1); border:1px solid var(--primary); border-radius:12px; padding:15px; margin-top:20px; text-align:center;">
-                    <h3 style="color:white; margin-bottom:10px;">${txt_ready}</h3>
-                    <a href="${url}" class="action-btn" target="_blank" style="text-decoration:none; display:inline-flex; width:auto; padding:10px 25px;">
-                        <i class="fa-brands fa-android"></i> ${txt_dl}
-                    </a>
-                </div>
-            `;
-
-            if(currentUser) {
+            if (currentUser) {
                 db.ref('users/' + currentUser.uid + '/apps').push({
-                    appName: realName, packageName: pkgName, iconUrl: iconUrl,
-                    downloadUrl: url, buildId: id, timestamp: Date.now()
+                    appName: realName,
+                    packageName: pkgName,
+                    iconUrl: iconUrl,
+                    downloadUrl: url,
+                    buildId: id,
+                    timestamp: Date.now()
                 });
             }
         }
 
         function handleError(msg) {
             clearInterval(pollingInterval);
-            document.getElementById('statusLabel').innerText = "Error: " + msg;
-            document.getElementById('statusLabel').style.color = "#ff4444";
-            
-            const btn = document.getElementById('submitBtn');
-            const btnIcon = document.getElementById('btnIcon');
+            var t = translations[currentLang];
+
+            document.getElementById('statusLabel').innerText = '';
+            document.getElementById('resultArea').innerHTML =
+                '<div class="error-card">' +
+                '<h3><i class="fa-solid fa-circle-xmark"></i> ' + t.error_title + '</h3>' +
+                '<p>' + msg + '</p></div>';
+
+            var btn = document.getElementById('submitBtn');
+            var btnIcon = document.getElementById('btnIcon');
             btn.classList.remove('loading');
-            btnIcon.className = "fa-solid fa-hammer";
+            btn.disabled = false;
+            btnIcon.className = 'fa-solid fa-hammer';
         }
 
+        // =================================================================
+        // My Apps
+        // =================================================================
         function loadMyApps() {
-            if(!currentUser) return;
-            const grid = document.getElementById('appsGrid');
-            db.ref('users/' + currentUser.uid + '/apps').on('value', snap => {
+            if (!currentUser) return;
+            var grid = document.getElementById('appsGrid');
+            db.ref('users/' + currentUser.uid + '/apps').on('value', function(snap) {
                 grid.innerHTML = '';
-                const d = snap.val();
-                if(d) {
-                    Object.values(d).reverse().forEach(app => {
-                        grid.innerHTML += `
-                            <div class="app-item">
-                                <img src="${app.iconUrl}" style="width:50px; height:50px; border-radius:10px; object-fit:cover;">
-                                <div style="flex:1; overflow:hidden;">
-                                    <h4 style="color:white; font-size:1rem;">${app.appName}</h4>
-                                    <p style="color:#666; font-size:0.8rem;">${app.packageName}</p>
-                                </div>
-                                <a href="${app.downloadUrl}" target="_blank" style="color:var(--primary); font-size:1.2rem;"><i class="fa-solid fa-download"></i></a>
-                            </div>
-                        `;
+                var d = snap.val();
+                if (d) {
+                    Object.values(d).reverse().forEach(function(app) {
+                        grid.innerHTML +=
+                            '<div class="app-item">' +
+                            '<img src="' + app.iconUrl + '" alt="">' +
+                            '<div class="info"><h4>' + app.appName + '</h4><p>' + app.packageName + '</p></div>' +
+                            '<a href="' + app.downloadUrl + '" target="_blank"><i class="fa-solid fa-download"></i></a>' +
+                            '</div>';
                     });
                 } else {
-                    grid.innerHTML = '<p style="text-align:center; color:#666; margin-top:20px;">لا توجد تطبيقات سابقة</p>';
+                    grid.innerHTML = '<div class="empty-apps">' + translations[currentLang].no_apps + '</div>';
                 }
             });
         }
-        
+
+        // =================================================================
         // Init
+        // =================================================================
         setLanguage('ar');
         checkFormValidity();
     </script>

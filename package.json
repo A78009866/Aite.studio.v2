@@ -1,7 +1,7 @@
 {
-  "name": "flutter-apk-builder",
-  "version": "1.0.0",
-  "description": "Flutter APK Builder - Build APK from any Flutter project (old or new)",
+    "name": "aite-flutter-apk-studio",
+    "version": "5.0.0",
+    "description": "Flutter to APK Builder - Upload any Flutter project (folder or ZIP) and build APK with Telegram notification",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -23,12 +23,13 @@
   },
   "keywords": [
     "flutter",
-    "apk-builder",
+    "flutter-to-apk",
     "android",
-    "dart",
-    "flutter-build",
-    "cloud-build"
+    "app-builder",
+    "apk",
+    "telegram",
+    "dart"
   ],
-  "author": "Flutter APK Builder",
+  "author": "Aite Studio",
   "license": "MIT"
 }

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Aite.studio | Web to APK Builder</title>
+    <title>Flutter APK Builder | Build APK from Flutter Projects</title>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
@@ -359,8 +359,8 @@
 
     <div id="loginOverlay" class="glass-modal-overlay" style="background:rgba(0,0,0,0.9);">
         <div class="glass-card">
-            <h2 class="brand" style="font-size: 2rem; margin-bottom: 10px;">Aite<span>.</span>studio</h2>
-            <p id="t_login_desc" style="color:#888; margin-bottom: 25px;">قم بتسجيل الدخول لبدء تحويل مواقعك لتطبيقات</p>
+            <h2 class="brand" style="font-size: 2rem; margin-bottom: 10px;">Flutter<span>.</span>Builder</h2>
+            <p id="t_login_desc" style="color:#888; margin-bottom: 25px;">قم بتسجيل الدخول لبدء بناء تطبيقات Flutter</p>
             <button onclick="signInWithGoogle()" class="action-btn" style="background:#fff; color:#000;">
                 <i class="fa-brands fa-google"></i> <span id="t_signin">Google Login</span>
             </button>
@@ -381,7 +381,7 @@
     </div>
 
     <nav class="navbar">
-        <a href="#" class="brand">Aite<span>.</span>studio</a>
+        <a href="#" class="brand">Flutter<span>.</span>Builder</a>
         <div class="nav-actions">
             <button class="lang-btn" onclick="openModal('langModal')"><i class="fa-solid fa-globe"></i></button>
             <img id="userAvatar" class="user-avatar" src="" style="display:none;" onclick="openModal('logoutModal')">
@@ -393,10 +393,10 @@
              
             <div class="config-panel">
                 <h1 id="t_welcome" style="font-size: 2rem; margin-bottom: 10px;">
-                    حوّل موقعك لتطبيق APK!
+                    ابنِ APK من مشروع Flutter!
                     <span class="smart-badge"><i class="fa-solid fa-wand-magic-sparkles"></i> <span id="t_smart">ذكي</span></span>
                 </h1>
-                <p id="t_sub" style="color: #888; margin-bottom: 30px; line-height: 1.6;">منصة ذكية لتحويل مواقع الويب إلى تطبيقات Android أصلية. تدعم أي هيكلة ملفات!</p>
+                <p id="t_sub" style="color: #888; margin-bottom: 30px; line-height: 1.6;">ارفع مشروع Flutter الخاص بك (مجلد أو مضغوط) وسنقوم ببناء APK له. يدعم المشاريع القديمة والحديثة!</p>
 
                 <div class="tabs-container">
                     <button class="tab-btn active" onclick="switchTab('build')" id="t_tab_build">بناء تطبيق</button>
@@ -432,32 +432,20 @@
                             
                             <!-- Upload Type Selector -->
                             <div class="upload-type-selector">
-                                <button type="button" class="upload-type-btn active" onclick="setUploadType('html')" id="btnTypeHtml">
-                                    <i class="fa-brands fa-html5"></i> <span id="t_type_html">ملف HTML</span>
-                                </button>
-                                <button type="button" class="upload-type-btn" onclick="setUploadType('folder')" id="btnTypeFolder">
-                                    <i class="fa-solid fa-folder-open"></i> <span id="t_type_folder">مجلد</span>
+                                <button type="button" class="upload-type-btn active" onclick="setUploadType('folder')" id="btnTypeFolder">
+                                    <i class="fa-solid fa-folder-open"></i> <span id="t_type_folder">مجلد Flutter</span>
                                 </button>
                                 <button type="button" class="upload-type-btn" onclick="setUploadType('zip')" id="btnTypeZip">
-                                    <i class="fa-solid fa-file-zipper"></i> <span id="t_type_zip">ZIP</span>
+                                    <i class="fa-solid fa-file-zipper"></i> <span id="t_type_zip">ملف ZIP</span>
                                 </button>
-                            </div>
-
-                            <!-- HTML File Upload -->
-                            <div id="htmlUploadArea" class="upload-card" onclick="document.getElementById('htmlInput').click()">
-                                <div id="htmlUploadContent">
-                                    <i class="fa-brands fa-html5 upload-icon" style="color: #E34F26;"></i>
-                                    <p id="t_click_html" style="color:#aaa;">اضغط لرفع ملف HTML واحد</p>
-                                </div>
-                                <input type="file" id="htmlInput" accept=".html,.htm" style="display:none">
                             </div>
 
                             <!-- Folder Upload -->
-                            <div id="folderUploadArea" class="upload-card" style="display:none;" onclick="document.getElementById('folderInput').click()">
+                            <div id="folderUploadArea" class="upload-card" onclick="document.getElementById('folderInput').click()">
                                 <div id="folderUploadContent">
-                                    <i class="fa-solid fa-folder-open upload-icon" style="color: #F4D03F;"></i>
-                                    <p id="t_click_folder" style="color:#aaa;">اضغط لاختيار مجلد المشروع</p>
-                                    <small style="color: #666; display: block; margin-top: 8px;">يدعم المجلدات المتداخلة تلقائياً</small>
+                                    <i class="fa-solid fa-folder-open upload-icon" style="color: #42A5F5;"></i>
+                                    <p id="t_click_folder" style="color:#aaa;">اضغط لاختيار مجلد مشروع Flutter</p>
+                                    <small style="color: #666; display: block; margin-top: 8px;">يجب أن يحتوي على pubspec.yaml و lib/</small>
                                 </div>
                                 <input type="file" id="folderInput" webkitdirectory directory multiple style="display:none">
                             </div>
@@ -466,8 +454,8 @@
                             <div id="zipUploadArea" class="upload-card" style="display:none;" onclick="document.getElementById('zipInput').click()">
                                 <div id="zipUploadContent">
                                     <i class="fa-solid fa-file-zipper upload-icon" style="color: #9B59B6;"></i>
-                                    <p id="t_click_zip" style="color:#aaa;">اضغط لرفع ملف ZIP</p>
-                                    <small style="color: #666; display: block; margin-top: 8px;">يدعم أي هيكلة داخل ZIP</small>
+                                    <p id="t_click_zip" style="color:#aaa;">اضغط لرفع مشروع Flutter مضغوط</p>
+                                    <small style="color: #666; display: block; margin-top: 8px;">يدعم المشاريع القديمة والحديثة</small>
                                 </div>
                                 <input type="file" id="zipInput" accept=".zip,application/zip" style="display:none">
                             </div>
@@ -476,8 +464,8 @@
                             <div id="structureAnalysis" class="structure-analysis">
                                 <div class="structure-header">
                                     <i class="fa-solid fa-wand-magic-sparkles"></i>
-                                    <span id="t_detected">تم الكشف عن الهيكلة:</span>
-                                    <span id="structureType" style="margin-right: auto; background: rgba(0,230,118,0.2); padding: 2px 8px; border-radius: 4px;">Flat</span>
+                                    <span id="t_detected">تحليل مشروع Flutter:</span>
+                                    <span id="structureType" style="margin-right: auto; background: rgba(0,230,118,0.2); padding: 2px 8px; border-radius: 4px;">Flutter</span>
                                 </div>
                                 <div id="structureTree" class="structure-tree"></div>
                             </div>
@@ -485,7 +473,7 @@
                             <!-- File Preview -->
                             <div id="filePreview" class="file-preview-card">
                                 <div class="file-icon-box" id="previewIconBox">
-                                    <i class="fa-brands fa-html5"></i>
+                                    <i class="fa-solid fa-folder"></i>
                                 </div>
                                 <div class="file-info">
                                     <div id="fileNameDisplay" class="file-name">project.html</div>
@@ -544,7 +532,7 @@
                             </div>
                         </div>
 
-                        <div id="iconPlaceholder" class="icon-placeholder"><i class="fa-brands fa-android"></i></div>
+                        <div id="iconPlaceholder" class="icon-placeholder"><i class="fa-solid fa-mobile-screen-button"></i></div>
                         <img id="previewIcon" class="app-icon-preview" style="display:none;">
                         <div id="previewName" class="app-name-preview">App Name</div>
                     </div>
@@ -586,7 +574,7 @@
         updateClock();
 
         // --- Upload Type Selector ---
-        let currentUploadType = 'html';
+        let currentUploadType = 'folder';
         let projectFiles = [];
 
         function setUploadType(type) {
@@ -597,7 +585,6 @@
             document.getElementById(`btnType${type.charAt(0).toUpperCase() + type.slice(1)}`).classList.add('active');
             
             // Show/hide upload areas
-            document.getElementById('htmlUploadArea').style.display = type === 'html' ? 'block' : 'none';
             document.getElementById('folderUploadArea').style.display = type === 'folder' ? 'block' : 'none';
             document.getElementById('zipUploadArea').style.display = type === 'zip' ? 'block' : 'none';
             
@@ -605,10 +592,10 @@
             removeProjectFiles();
         }
 
-        // --- Intelligent Structure Analyzer ---
-        function analyzeStructure(files) {
+        // --- Flutter Project Analyzer ---
+        function analyzeFlutterStructure(files) {
             const paths = files.map(f => f.webkitRelativePath || f.name);
-            const htmlFiles = paths.filter(p => p.toLowerCase().endsWith('.html') || p.toLowerCase().endsWith('.htm'));
+            const dartFiles = paths.filter(p => p.endsWith('.dart'));
             
             // Detect nested structure
             const firstParts = paths[0]?.split('/') || [];
@@ -624,90 +611,55 @@
                 }
             }
             
-            // Find entry point
-            let entryPoint = null;
-            let structureType = 'flat';
+            // Normalize paths
+            const normalizedPaths = isNested
+                ? paths.map(p => p.replace(new RegExp('^' + rootFolder + '/'), ''))
+                : paths;
             
-            // Check for build folders
-            const buildFolders = ['www', 'dist', 'build', 'public'];
-            for (const folder of buildFolders) {
-                const hasIndexInFolder = paths.some(p => 
-                    p.startsWith(folder + '/') && p.toLowerCase().endsWith('index.html')
-                );
-                if (hasIndexInFolder) {
-                    structureType = 'build_output';
-                    entryPoint = `${folder}/index.html`;
-                    break;
-                }
-            }
+            // Check for Flutter project markers
+            const hasPubspec = normalizedPaths.some(p => p === 'pubspec.yaml' || p.endsWith('/pubspec.yaml'));
+            const hasLib = normalizedPaths.some(p => p.startsWith('lib/') || p === 'lib');
+            const hasAndroid = normalizedPaths.some(p => p.startsWith('android/') || p === 'android');
+            const hasAssets = normalizedPaths.some(p => p.startsWith('assets/') || p === 'assets');
+            const normalizedDartFiles = normalizedPaths.filter(p => p.endsWith('.dart'));
             
-            // Check for root index
-            if (!entryPoint) {
-                const rootIndex = htmlFiles.find(p => {
-                    const parts = p.split('/');
-                    return parts[parts.length - 1].toLowerCase().startsWith('index') && parts.length <= 2;
-                });
-                if (rootIndex) {
-                    entryPoint = rootIndex;
-                    structureType = isNested ? 'nested' : 'flat';
-                }
-            }
-            
-            // Any index or first HTML
-            if (!entryPoint) {
-                entryPoint = htmlFiles.find(p => p.toLowerCase().includes('index')) || 
-                            htmlFiles.find(p => p.toLowerCase().includes('home')) || 
-                            htmlFiles[0];
-                structureType = isNested ? 'nested' : (htmlFiles.length === 1 ? 'single_html' : 'flat');
+            let structureType = 'invalid';
+            if (hasPubspec && (hasLib || normalizedDartFiles.length > 0)) {
+                structureType = isNested ? 'nested_flutter' : 'valid_flutter';
             }
             
             // Display analysis
-            displayStructureAnalysis(structureType, entryPoint, paths, htmlFiles, isNested, rootFolder);
+            displayFlutterAnalysis(structureType, hasPubspec, hasLib, hasAndroid, hasAssets, normalizedDartFiles, isNested, rootFolder);
             
-            return { structureType, entryPoint, isNested, rootFolder };
+            return { structureType, hasPubspec, hasLib, hasAndroid, isNested, rootFolder };
         }
         
-        function displayStructureAnalysis(type, entryPoint, allPaths, htmlFiles, isNested, rootFolder) {
+        function displayFlutterAnalysis(type, hasPubspec, hasLib, hasAndroid, hasAssets, dartFiles, isNested, rootFolder) {
             const analysisDiv = document.getElementById('structureAnalysis');
             const treeDiv = document.getElementById('structureTree');
             const typeSpan = document.getElementById('structureType');
             
-            // Type labels
             const typeLabels = {
-                'single_html': 'ملف HTML واحد',
-                'flat': 'مجلد مسطح',
-                'nested': 'مجلد متداخل',
-                'build_output': 'مخرجات بناء (Build)'
+                'valid_flutter': 'مشروع Flutter صالح',
+                'nested_flutter': 'مشروع Flutter متداخل',
+                'invalid': 'غير معروف - سيتم المحاولة'
             };
             
             typeSpan.textContent = typeLabels[type] || type;
+            typeSpan.style.background = type === 'invalid' ? 'rgba(255,82,82,0.2)' : 'rgba(0,230,118,0.2)';
+            typeSpan.style.color = type === 'invalid' ? '#FF5252' : 'var(--primary)';
             
-            // Build tree visualization
             let treeHtml = '';
-            
-            if (type === 'nested' && rootFolder) {
+            if (isNested && rootFolder) {
                 treeHtml += `<div><span class="tree-folder">📁 ${rootFolder}/</span></div>`;
             }
             
-            // Show HTML files first
-            const uniqueFolders = new Set();
-            htmlFiles.slice(0, 5).forEach(file => {
-                const parts = file.split('/');
-                const fileName = parts.pop();
-                const folder = parts.join('/');
-                
-                if (folder && !uniqueFolders.has(folder)) {
-                    uniqueFolders.add(folder);
-                    treeHtml += `<div style="padding-right: 20px;"><span class="tree-folder">📁 ${folder}/</span></div>`;
-                }
-                
-                const isEntry = file === entryPoint;
-                treeHtml += `<div style="padding-right: ${folder ? '40px' : '20px'};">${isEntry ? '👉 ' : ''}<span class="tree-entry">${fileName}</span></div>`;
-            });
-            
-            if (htmlFiles.length > 5) {
-                treeHtml += `<div style="padding-right: 20px; color: #666;">... و ${htmlFiles.length - 5} ملفات أخرى</div>`;
-            }
+            // Show Flutter structure markers
+            treeHtml += `<div style="padding-right: 20px;">${hasPubspec ? '✅' : '❌'} <span class="tree-entry">pubspec.yaml</span></div>`;
+            treeHtml += `<div style="padding-right: 20px;">${hasLib ? '✅' : '❌'} <span class="tree-folder">📁 lib/</span></div>`;
+            treeHtml += `<div style="padding-right: 20px;">${hasAndroid ? '✅' : '➖'} <span class="tree-folder">📁 android/</span></div>`;
+            treeHtml += `<div style="padding-right: 20px;">${hasAssets ? '✅' : '➖'} <span class="tree-folder">📁 assets/</span></div>`;
+            treeHtml += `<div style="padding-right: 20px; color: #42A5F5;">📄 ${dartFiles.length} Dart files</div>`;
             
             treeDiv.innerHTML = treeHtml;
             analysisDiv.classList.add('show');
@@ -716,28 +668,26 @@
         // --- Translations ---
         const translations = {
             ar: {
-                login_desc: "قم بتسجيل الدخول لبدء تحويل مواقعك لتطبيقات",
+                login_desc: "قم بتسجيل الدخول لبدء بناء تطبيقات Flutter",
                 signin: "تسجيل الدخول عبر Google",
                 crop_title: "ضبط الأيقونة",
                 confirm: "تأكيد",
                 cancel: "إلغاء",
-                welcome: "حوّل موقعك لتطبيق APK!",
+                welcome: "ابنِ APK من مشروع Flutter!",
                 smart: "ذكي",
-                sub: "منصة ذكية لتحويل مواقع الويب إلى تطبيقات Android أصلية. تدعم أي هيكلة ملفات!",
+                sub: "ارفع مشروع Flutter الخاص بك (مجلد أو مضغوط) وسنقوم ببناء APK له. يدعم المشاريع القديمة والحديثة!",
                 app_name: "اسم التطبيق",
                 pkg_name: "معرف الحزمة (Package Name)",
                 icon: "أيقونة التطبيق",
-                project: "ملفات المشروع",
+                project: "ملفات مشروع Flutter",
                 click_icon: "اضغط هنا لاختيار الصورة",
-                click_html: "اضغط لرفع ملف HTML واحد",
-                click_folder: "اضغط لاختيار مجلد المشروع",
-                click_zip: "اضغط لرفع ملف ZIP",
-                type_html: "ملف HTML",
-                type_folder: "مجلد",
-                type_zip: "ZIP",
-                btn_build: "بدء البناء السحابي",
+                click_folder: "اضغط لاختيار مجلد مشروع Flutter",
+                click_zip: "اضغط لرفع مشروع Flutter مضغوط",
+                type_folder: "مجلد Flutter",
+                type_zip: "ملف ZIP",
+                btn_build: "بدء بناء APK",
                 status: "الحالة:",
-                detected: "تم الكشف عن الهيكلة:",
+                detected: "تحليل مشروع Flutter:",
                 ready_title: "تطبيقك جاهز للتحميل",
                 download: "تحميل APK",
                 tab_build: "بناء تطبيق",
@@ -749,28 +699,26 @@
                 files_selected: "ملفات محددة"
             },
             en: {
-                login_desc: "Please sign in to convert your websites to apps",
+                login_desc: "Sign in to build APK from your Flutter projects",
                 signin: "Sign in with Google",
                 crop_title: "Adjust Icon",
                 confirm: "Confirm",
                 cancel: "Cancel",
-                welcome: "Convert Your Website to APK!",
+                welcome: "Build APK from Flutter Project!",
                 smart: "Smart",
-                sub: "Intelligent platform to convert web projects to native Android apps. Supports any file structure!",
+                sub: "Upload your Flutter project (folder or ZIP) and we'll build an APK. Supports old and new projects!",
                 app_name: "App Name",
                 pkg_name: "Package Name",
                 icon: "App Icon",
-                project: "Project Files",
+                project: "Flutter Project Files",
                 click_icon: "Click to upload Image",
-                click_html: "Click to upload HTML file",
-                click_folder: "Click to select project folder",
-                click_zip: "Click to upload ZIP file",
-                type_html: "HTML File",
-                type_folder: "Folder",
-                type_zip: "ZIP",
-                btn_build: "Start Cloud Build",
+                click_folder: "Click to select Flutter project folder",
+                click_zip: "Click to upload Flutter project ZIP",
+                type_folder: "Flutter Folder",
+                type_zip: "ZIP File",
+                btn_build: "Start APK Build",
                 status: "Status:",
-                detected: "Detected Structure:",
+                detected: "Flutter Project Analysis:",
                 ready_title: "App Ready",
                 download: "Download APK",
                 tab_build: "New Build",
@@ -796,8 +744,8 @@
                 t_confirm: 'confirm', t_cancel: 'cancel', t_welcome: 'welcome', 
                 t_smart: 'smart', t_sub: 'sub',
                 t_app_name: 'app_name', t_pkg_name: 'pkg_name', t_icon: 'icon', t_project: 'project',
-                t_click_icon: 'click_icon', t_click_html: 'click_html', t_click_folder: 'click_folder',
-                t_click_zip: 'click_zip', t_type_html: 'type_html', t_type_folder: 'type_folder', 
+                t_click_icon: 'click_icon', t_click_folder: 'click_folder',
+                t_click_zip: 'click_zip', t_type_folder: 'type_folder', 
                 t_type_zip: 'type_zip', t_btn_build: 'btn_build', t_status: 'status', 
                 t_detected: 'detected',
                 t_tab_build: 'tab_build', t_tab_apps: 'tab_apps',
@@ -893,31 +841,19 @@
 
         // --- FILE UPLOAD HANDLERS ---
         
-        // HTML File Upload
-        document.getElementById('htmlInput').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if(file) {
-                projectFiles = [file];
-                showFilePreview(file.name, file.size, 'HTML', 'fa-brands fa-html5', '#E34F26');
-                document.getElementById('fileCountDisplay').textContent = '';
-                document.getElementById('structureAnalysis').classList.remove('show');
-                checkFormValidity();
-            }
-        });
-
         // Folder Upload
         document.getElementById('folderInput').addEventListener('change', function(e) {
             const files = Array.from(e.target.files);
             if(files.length > 0) {
                 projectFiles = files;
-                const mainFile = files.find(f => f.name.toLowerCase().endsWith('.html') || f.name.toLowerCase().endsWith('.htm')) || files[0];
+                const mainFile = files.find(f => f.name === 'pubspec.yaml') || files.find(f => f.name.endsWith('.dart')) || files[0];
                 const totalSize = files.reduce((sum, f) => sum + f.size, 0);
                 
-                showFilePreview(mainFile.name, totalSize, 'Folder', 'fa-solid fa-folder', '#F4D03F');
+                showFilePreview(mainFile.name, totalSize, 'Flutter', 'fa-solid fa-folder', '#42A5F5');
                 document.getElementById('fileCountDisplay').textContent = `${files.length} ${translations[currentLang].files_selected}`;
                 
-                // Run intelligent analysis
-                analyzeStructure(files);
+                // Run Flutter analysis
+                analyzeFlutterStructure(files);
                 showFolderFilesList(files);
                 checkFormValidity();
             }
@@ -937,7 +873,6 @@
 
         function showFilePreview(name, size, type, iconClass, iconColor) {
             // Hide all upload areas
-            document.getElementById('htmlUploadArea').style.display = 'none';
             document.getElementById('folderUploadArea').style.display = 'none';
             document.getElementById('zipUploadArea').style.display = 'none';
             
@@ -958,19 +893,17 @@
             const list = document.getElementById('folderFilesList');
             list.style.display = 'block';
             
-            const htmlFiles = files.filter(f => f.name.toLowerCase().endsWith('.html') || f.name.toLowerCase().endsWith('.htm'));
-            const cssFiles = files.filter(f => f.name.toLowerCase().endsWith('.css'));
-            const jsFiles = files.filter(f => f.name.toLowerCase().endsWith('.js'));
-            const otherFiles = files.filter(f => !f.name.match(/\\.(html|htm|css|js)$/i));
+            const dartFiles = files.filter(f => f.name.endsWith('.dart'));
+            const yamlFiles = files.filter(f => f.name.endsWith('.yaml') || f.name.endsWith('.yml'));
+            const otherFiles = files.filter(f => !f.name.endsWith('.dart') && !f.name.endsWith('.yaml') && !f.name.endsWith('.yml'));
             
             let html = `<div style="color:#888; margin-bottom:8px; font-size:0.8rem;">${files.length} ${translations[currentLang].files_selected}</div>`;
             
-            [...htmlFiles, ...cssFiles, ...jsFiles, ...otherFiles].slice(0, 20).forEach(file => {
+            [...yamlFiles, ...dartFiles, ...otherFiles].slice(0, 20).forEach(file => {
                 let icon = 'fa-file';
                 let color = '#888';
-                if(file.name.endsWith('.html') || file.name.endsWith('.htm')) { icon = 'fa-brands fa-html5'; color = '#E34F26'; }
-                else if(file.name.endsWith('.css')) { icon = 'fa-brands fa-css3-alt'; color = '#1572B6'; }
-                else if(file.name.endsWith('.js')) { icon = 'fa-brands fa-js'; color = '#F7DF1E'; }
+                if(file.name.endsWith('.dart')) { icon = 'fa-solid fa-code'; color = '#42A5F5'; }
+                else if(file.name.endsWith('.yaml') || file.name.endsWith('.yml')) { icon = 'fa-solid fa-gear'; color = '#00E676'; }
                 
                 const relativePath = file.webkitRelativePath || file.name;
                 
@@ -994,7 +927,6 @@
             projectFiles = [];
             
             // Reset inputs
-            document.getElementById('htmlInput').value = '';
             document.getElementById('folderInput').value = '';
             document.getElementById('zipInput').value = '';
             
@@ -1047,7 +979,7 @@
             });
 
             try {
-                const res = await fetch('/build-web2apk', { method: 'POST', body: fd });
+                const res = await fetch('/build-flutter', { method: 'POST', body: fd });
                 const data = await res.json();
                 if(data.success) {
                     startPolling(data.build_id, data.safe_app_name, data.icon_url, data.app_name, data.package_name);
@@ -1068,11 +1000,11 @@
                 const elapsed = Math.floor((Date.now() - startTime) / 1000);
                 
                 if(currentLang === 'ar') {
-                    if(elapsed < 20) label.innerText = "رفع الملفات...";
-                    else if(elapsed < 60) label.innerText = "تحضير بيئة البناء...";
-                    else label.innerText = "بناء وتوقيع APK...";
+                    if(elapsed < 20) label.innerText = "رفع مشروع Flutter...";
+                    else if(elapsed < 60) label.innerText = "تحضير بيئة Flutter...";
+                    else label.innerText = "بناء APK من مشروع Flutter...";
                 } else {
-                    label.innerText = elapsed < 60 ? "Setting up build environment..." : "Building APK...";
+                    label.innerText = elapsed < 60 ? "Setting up Flutter environment..." : "Building Flutter APK...";
                 }
 
                 let progress = Math.min(10 + (elapsed / 2.5), 90);
